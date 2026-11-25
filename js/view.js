@@ -78,7 +78,7 @@ export class View {
     this.wind = []; this.windAcc = 0; // daytime wind streaks
     this.hoverId = null; this.outline = [];
     this.olMat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.BackSide });
-    this.ext = { left: 0.5, right: 1.7, top: 0.5 };   // the counter strip sticks out of one wall: frame + aim the camera at the whole shop
+    this.ext = { left: 0.5, right: 0.5, top: 1.7, bottom: 0.5 };   // how far each side sticks out (counter on top, sidewalk on the door side): frame + aim the camera at the whole shop
 
     // cursor + range ring + path dots
     this.cursor = new THREE.Mesh(this.box, new THREE.MeshBasicMaterial({ color: 0x5fe3a1, transparent: true, opacity: 0.55 }));
@@ -120,7 +120,7 @@ export class View {
     this.quadMat.uniforms.uvScale.value.set(this.sx, this.sy);
     // frame the store (wide room + side wall + register)
     const aspect = tw / th;
-    const ex = this.ext; let halfH = ((ROWS + 1.6 + (ex.top - 0.5)) * Math.sin(ELEV) + 2.2) / 2, halfW = (COLS + ex.left + ex.right + 1.2) / 2;
+    const ex = this.ext; let halfH = ((ROWS + 1.6 + (ex.top - 0.5) + (ex.bottom - 0.5)) * Math.sin(ELEV) + 2.2) / 2, halfW = (COLS + ex.left + ex.right + 1.2) / 2;
     if (halfW / aspect > halfH) halfH = halfW / aspect; else halfW = halfH * aspect;
     const c = this.camera; c.left = -halfW; c.right = halfW; c.top = halfH; c.bottom = -halfH;
     c.updateProjectionMatrix();
@@ -130,8 +130,8 @@ export class View {
   setGame(game) {
     this.game = game;
     OX = (COLS - 1) / 2; OZ = (ROWS - 1) / 2;
-    const e = side => game.counterSide === side ? 1.7 : 0.5;   // how far the walls stick out of the floor on each side
-    this.ext = { left: e('left'), right: e('right'), top: e('top') };
+    const e = side => side === 'top' ? 1.7 : game.doorSide === side ? 3.2 : 0.5;   // how far each side sticks out of the floor: counter strip on top, sidewalk on the door side
+    this.ext = { left: e('left'), right: e('right'), top: e('top'), bottom: e('bottom') };
     this.bounds = { L: wx(-0.5), R: wx(COLS - 0.5), T: wz(-0.5), B: wz(ROWS - 0.5) };
     this.fitRoom();
     for (const m of this.meshes.values()) {
@@ -168,8 +168,8 @@ export class View {
 
     // ----- floor: ONE canvas texture (your original checker + lane tints + hazard stripes) on ONE plane -----
     const K = 16, cv = document.createElement('canvas'); cv.width = COLS * K; cv.height = ROWS * K; const cx = cv.getContext('2d');
-    const lane = (x, y) => (cs === 'right' && x === COLS - 1) || (cs === 'left' && x === 0) || (cs === 'top' && y === 0) ? 'counter'
-      : (ds === 'left' && x === 0) || (ds === 'right' && x === COLS - 1) || (ds === 'top' && y === 0) ? 'door' : '';
+    const lane = (x, y) => y === 0 ? 'counter'
+      : (ds === 'left' && x === 0) || (ds === 'right' && x === COLS - 1) || (ds === 'bottom' && y === ROWS - 1) ? 'door' : '';
     for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
       const l = lane(x, y), odd = (x + y) % 2;
       cx.fillStyle = l === 'counter' ? (odd ? '#c9bf9d' : '#bfb48f') : l === 'door' ? (odd ? '#b8c4cc' : '#a9b6c0') : (odd ? '#e7dfc6' : '#d3caaa');
@@ -183,32 +183,57 @@ export class View {
     const tex = new THREE.CanvasTexture(cv); tex.magFilter = tex.minFilter = THREE.NearestFilter; tex.generateMipmaps = false;
     const floor = new THREE.Mesh(this.plane, new THREE.MeshToonMaterial({ map: tex, gradientMap: this.gradient }));
     floor.rotation.x = -Math.PI / 2; floor.scale.set(COLS, ROWS, 1); floor.receiveShadow = true; floor.userData.own = true; S.add(floor);
-    part(this.box, 0x241f45, COLS + 10, 0.2, ROWS + 8, 0, -0.12, 0, false);
+    const slab = new THREE.Mesh(this.box, this.basic(0x000000));   // pure black outside the store (unlit, so it can never look grey)
+    slab.scale.set(COLS + 12, 0.2, ROWS + 10); slab.position.set(0, -0.12, 0); S.add(slab);
 
     // ----- walls: purple, door walls low, counter wall lower and set back behind the desk, back wall with posters. No wall shadows. -----
-    const off = side => side === cs ? 1.45 : 0.25, H = side => side === 'top' ? 1.6 : side === cs ? 0.7 : 1.1;
+    const off = side => side === cs ? 1.45 : 0.25, H = side => side === 'top' ? 1.6 : side === 'bottom' ? 0.55 : 1.1;
     const xL = L - off('left'), xR = R + off('right'), zT = Tt - off('top');
     const wall = (sx, sz, x, z, h) => part(this.box, 0x4b3f8f, sx, h, sz, x, h / 2, z, false);
-    const zA = zT + 0.25, zB = B + 0.5;                                          // side walls run from the back wall's inner face to just past the floor
+    const zBt = B + 0.25, zA = zT + 0.25, zB = B + 0.5;                                          // side walls run from the back wall's inner face to just past the floor
     wall(0.5, zB - zA, xL, (zA + zB) / 2, H('left')); wall(0.5, zB - zA, xR, (zA + zB) / 2, H('right'));
     wall(xR - xL + 0.5, 0.5, (xL + xR) / 2, zT, H('top'));
-    const doorsTop = ds === 'top' ? game.spawns.map(sp => wx(sp.x)) : [];
+    if (ds === 'bottom') wall(xR - xL + 0.5, 0.5, (xL + xR) / 2, zBt, H('bottom'));   // low front wall on the door side
     const PC = [0xff5a5f, 0xffcf4a, 0x5fe3a1, 0x6fa8ff, 0xff9f1c];
-    for (let x = xL + 1.5, i = 0; x < xR - 1; x += 3.5, i++) if (!doorsTop.some(d => Math.abs(d - x) < 1.2)) part(this.box, PC[i % 5], 1.0, 0.6, 0.05, x, 1.0, zT + 0.28, false);   // posters
+    for (let x = xL + 1.5, i = 0; x < xR - 1; x += 3.5, i++) part(this.box, PC[i % 5], 1.0, 0.6, 0.05, x, 1.0, zT + 0.28, false);   // posters
 
     // ----- doors: mat on the floor + glass door set into the wall -----
     for (const sp of game.spawns) {
       part(this.box, 0x6e5f4a, 0.9, 0.03, 0.9, wx(sp.x), 0.02, wz(sp.y), false);
       const orange = sp.from > 1;
-      if (ds === 'top') {
+      if (ds === 'bottom') {
         const dx = wx(sp.x);
-        part(this.box, 0x9ad7ff, 1.3, 1.3, 0.55, dx, 0.65, zT, false); part(this.box, 0x6fb7e8, 0.9, 1.0, 0.58, dx, 0.6, zT, false);
-        if (orange) part(this.box, 0xff9f1c, 0.35, 0.18, 0.35, dx, 1.45, zT, false);
+        part(this.box, 0x9ad7ff, 1.3, 0.9, 0.55, dx, 0.45, zBt, false); part(this.box, 0x6fb7e8, 0.9, 0.7, 0.58, dx, 0.42, zBt, false);
+        if (orange) part(this.box, 0xff9f1c, 0.35, 0.18, 0.35, dx, 1.05, zBt, false);
       } else {
         const dx = ds === 'left' ? xL : xR, dz = wz(sp.y);
         part(this.box, 0x9ad7ff, 0.55, 1.3, 1.3, dx, 0.65, dz, false); part(this.box, 0x6fb7e8, 0.58, 1.0, 0.9, dx, 0.6, dz, false);
         if (orange) part(this.box, 0xff9f1c, 0.35, 0.18, 0.35, dx, 1.45, dz, false);
       }
+    }
+
+    // ----- sidewalk outside the doors (the other sides stay black) -----
+    {
+      const D = 2.6, xl = L - off('left'), xr = R + off('right');
+      let x0, x1, z0, z1;
+      if (ds === 'left') { x1 = xl - 0.25; x0 = x1 - D; z0 = zT - 0.25; z1 = B + 0.9; }
+      else if (ds === 'right') { x0 = xr + 0.25; x1 = x0 + D; z0 = zT - 0.25; z1 = B + 0.9; }
+      else { x0 = xl - 0.25; x1 = xr + 0.25; z0 = zBt + 0.25; z1 = z0 + D; }
+      const K2 = 16, w = x1 - x0, d = z1 - z0, sc = document.createElement('canvas'); sc.width = Math.round(w * K2); sc.height = Math.round(d * K2);
+      const c2 = sc.getContext('2d');
+      for (let y = 0; y < sc.height; y += K2) for (let x = 0; x < sc.width; x += K2) {
+        c2.fillStyle = ((x + y) / K2) % 2 ? '#c9c5ba' : '#bdb9ad'; c2.fillRect(x, y, K2, K2);
+        c2.fillStyle = 'rgba(0,0,0,0.12)'; c2.fillRect(x, y, K2, 1); c2.fillRect(x, y, 1, K2);
+      }
+      c2.fillStyle = '#6f6c66';   // curb along the street edge
+      if (ds === 'left') c2.fillRect(0, 0, 4, sc.height); else if (ds === 'right') c2.fillRect(sc.width - 4, 0, 4, sc.height); else c2.fillRect(0, sc.height - 4, sc.width, 4);
+      const st = new THREE.CanvasTexture(sc); st.magFilter = st.minFilter = THREE.NearestFilter; st.generateMipmaps = false;
+      const sw = new THREE.Mesh(this.plane, new THREE.MeshToonMaterial({ map: st, gradientMap: this.gradient }));
+      sw.rotation.x = -Math.PI / 2; sw.scale.set(w, d, 1); sw.position.set((x0 + x1) / 2, 0.004, (z0 + z1) / 2); sw.receiveShadow = true; sw.userData.own = true; S.add(sw);
+      // two street lamps (the glow stays bright at night)
+      const lamp = (lx, lz) => { part(this.box, 0x2b2b33, 0.1, 1.9, 0.1, lx, 0.95, lz, false); this.glow(S, 0xffe9a6, 0.3, 0.14, 0.3, lx, 1.95, lz); };
+      if (ds === 'bottom') { const lz = z1 - 0.35; lamp(x0 + 0.8, lz); lamp(x1 - 0.8, lz); }
+      else { const lx = ds === 'left' ? x0 + 0.35 : x1 - 0.35; lamp(lx, z0 + 0.8); lamp(lx, z1 - 0.9); }
     }
 
     // ----- checkout counter + register + clerk, built once facing +x and turned onto its wall -----
@@ -626,7 +651,7 @@ export class View {
     // camera shake
     this.shake = Math.max(0, this.shake - dt);
     const sh = this.shake * this.shake * 0.9;
-    const offX = (this.ext.right - this.ext.left) / 2, offZ = -(this.ext.top - 0.5) / 2;   // fixed camera, aimed at the middle of the whole shop
+    const offX = (this.ext.right - this.ext.left) / 2, offZ = (this.ext.bottom - this.ext.top) / 2;   // fixed camera, aimed at the middle of the whole shop
     this.camera.position.set(this.camBase.x + offX + (Math.random() - 0.5) * sh, this.camBase.y + (Math.random() - 0.5) * sh, this.camBase.z + offZ);
     this.camera.lookAt(offX, 0.2, offZ);
 
