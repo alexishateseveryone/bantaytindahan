@@ -21,12 +21,12 @@ export const DAY_LEN = 18;        // seconds during which new customers keep arr
 export const SHELF_COST = 400;    // path weight of a shelf: burglars only push through when nothing else is open
 export const SHELF_HP = 80;
 export const START_CASH = 250;       // the store starts as an EMPTY room with this much cash
-export const CUSTOMER_WEAR = 5;      // every purchase from a machine wears it like this many shots
+export const CUSTOMER_WEAR = 3;      // every purchase from a machine wears it like this many shots
 export const MAX_STOCK = 6;       // goods a shelf holds
 export const START_STOCK = MAX_STOCK;   // the store starts with its shelves fully stocked
 export const UNIT_COST = 2;       // price to restock one good
 export const TOWER_HP = 70;         // turrets can be bombed / rammed to pieces
-export const BOMB_DMG = 45, BOMB_RADIUS = 1.1, BOMB_FUSE = 0.9, DASH_DMG = 32;
+export const BOMB_DMG = 30, BOMB_RADIUS = 1.1, BOMB_FUSE = 1.0, DASH_DMG = 22;
 export const BOUNCE_RANGE = 2.6;   // how far a hotdog can bounce to the next burglar
 export const ICE_TIME = 4.5;       // seconds scattered ice cubes stay on the floor
 export const CAN_COLORS = [0xe0463e, 0x3a86ff, 0x2fb67a, 0xffb703, 0xb26bd6, 0xff7aa2];
@@ -148,23 +148,23 @@ export class Game {
     this.phase = 'prep';
     this.wave = 0;                  // nights completed
     this.cash = START_CASH + 15 * (meta.cash || 0);
-    this.maxLives = 10 + 2 * (meta.lives || 0);
+    this.maxLives = 15 + 2 * (meta.lives || 0);
     this.lives = this.maxLives;
     this.kills = 0; this.served = 0; this.sales = 0; this.daySales = 0; this.dayServed = 0; this.paidOut = 0;
     this.rerolls = meta.reroll || 0;
     this.unlocked = new Set(BASE_UNLOCKS); this.nightIn = 0;
     this.mods = {
       dmg: { cans: 1, sauce: 1, soda: 1, micro: 1, hotdog: 1, fridge: 1 }, rate: { cans: 1, sauce: 1, soda: 1, micro: 1, hotdog: 1, fridge: 1 },
-      bounce: 0, ice: 0, rateAll: 1, range: 1, cost: 1 - 0.04 * (meta.disc || 0), cash: 1, burn: 1, splash: 1, slow: 0, crit: 0,
+      bounce: 0, ice: 0, rateAll: 1, range: 1, cost: 1 - 0.04 * (meta.disc || 0), cash: 1.3, burn: 1, splash: 1, slow: 0, crit: 0,
       mopUses: 0, mopStun: 0, globalDmg: 1 + 0.06 * (meta.dmg || 0), shelfPay: 1, crowd: 1, shelfHp: 1, wear: 1, towerHp: 1,
     };
     // blocked: 0 free, 1 permanent wall/prop, 2 tower, 3 shelf (breakable by burglars)
     this.blocked = new Uint8Array(COLS * ROWS);
-    this.towers = []; this.traps = []; this.enemies = []; this.projectiles = []; this.customers = [];
+    this.towers = []; this.traps = []; this.enemies = []; this.projectiles = []; this.customers = []; this.walkers = [];
     this.fires = []; this.bombs = []; this.ice = [];   // sauce puddles, enemy bombs waiting to blow, scattered ice cubes
     this.shelves = []; this.obstacles = [];
     this.spawnQueue = []; this.waveTime = 0; this.waveTotal = 0;
-    this.dayQueue = []; this.dayTime = 0;
+    this.dayQueue = []; this.dayTime = 0; this.walkT = 0.5; this.dayWalk = 0;
     this.choices = [];
     this.pathVersion = 0;
     this.daySnap = null;            // the store as it was when the day was opened (a lost night rolls back to it)
@@ -195,7 +195,7 @@ export class Game {
     for (let tries = 0; Math.abs(d2 - d1) < sep && tries < 50; tries++) d2 = this.rint(1, dl - 2);
     if (Math.abs(d2 - d1) < sep) d2 = d1 < dl / 2 ? dl - 2 : 1;
     const [ox, oy] = OUT[this.doorSide];
-    this.spawns = [d1, d2].map((p, i) => ({ ...cell(this.doorSide, p), side: this.doorSide, ox, oy, from: i ? 3 : 1 }));
+    this.spawns = [d1, d2].map((p, i) => ({ ...cell(this.doorSide, p), side: this.doorSide, ox, oy, from: i ? 5 : 1 }));
     // the counter: 3 till cells along its wall
     const cl = len(this.counterSide);
     this.counterPos = RANDOM_SIDES ? this.rint(2, cl - 3) : Math.round((cl - 1) / 2);
@@ -485,7 +485,7 @@ export class Game {
 
   // ---------- Morning: customers ----------
   makeDay(n) {
-    const count = Math.min(45, Math.max(1, Math.round((6 + n * 2) * this.mods.crowd)));
+    const count = Math.min(45, Math.max(1, Math.round((8 + n * 2.5) * this.mods.crowd)));
     const sp = this.activeSpawns, q = [], gap = DAY_LEN / count;
     let t = 0.5;
     for (let i = 0; i < count; i++) { q.push({ t, spawn: sp[Math.floor(this.rng() * sp.length)] }); t += gap * (0.6 + this.rng() * 0.8); }
@@ -501,7 +501,7 @@ export class Game {
   startDay() {
     if (!this.canOpen().ok) return false;
     this.daySnap = this.snapshot();
-    this.phase = 'morning'; this.dayTime = 0; this.daySales = 0; this.dayServed = 0;
+    this.phase = 'morning'; this.dayTime = 0; this.daySales = 0; this.dayServed = 0; this.dayWalk = 0;
     this.dayQueue = this.makeDay(this.wave + 1);
     this.emit('dayStart', { n: this.wave + 1, count: this.dayQueue.length });
     return true;
@@ -628,16 +628,16 @@ export class Game {
 
   // ---------- Night: burglars ----------
   makeWave(n) {
-    const pool = ['sneak']; if (n >= 2) pool.push('runner'); if (n >= 3) pool.push('vest'); if (n >= 4) pool.push('bruiser');
+    const pool = ['sneak']; if (n >= 3) pool.push('runner'); if (n >= 5) pool.push('vest'); if (n >= 7) pool.push('bruiser');
     // endless: grows fast early, then settles into steady growth (enemy HP keeps scaling per night)
-    let budget = 5 + n * 4 + Math.min(n, 12) ** 2 * 0.6 + Math.max(0, n - 12) * 6;
+    let budget = 3 + n * 2.2 + Math.min(n, 12) ** 2 * 0.35 + Math.max(0, n - 12) * 4;
     const list = [];
     while (budget > 0) {
       const t = pool[Math.floor(this.rng() * pool.length)];
       list.push(t); budget -= ENEMIES[t].cost;
     }
     if (n % 10 === 0) list.splice(Math.floor(list.length * 0.55), 0, 'boss');   // a Mastermind every 10th night
-    const gap = Math.max(0.35, 1.0 - n * 0.065);
+    const gap = Math.max(0.6, 1.25 - n * 0.05);
     let t = 0; const q = [];
     const sp = this.activeSpawns;
     list.forEach((type, i) => {
@@ -658,10 +658,10 @@ export class Game {
 
   spawnEnemy(type, s) {
     const def = ENEMIES[type], n = this.wave + 1;
-    const hpMul = type === 'boss' ? 1 + 0.5 * (n - 1) * 0.5 : 1 + 0.26 * (n - 1);
+    const hpMul = type === 'boss' ? 1 + 0.18 * (n - 1) : 1 + 0.15 * (n - 1);
     const e = {
       id: this.nextId++, type, x: s.x + s.ox * 0.9, y: s.y + s.oy * 0.9, hp: def.hp * hpMul, maxhp: def.hp * hpMul,
-      speed: def.speed, push: def.push, pushT: 0, armor: def.armor, steal: def.steal, bounty: def.bounty,
+      speed: def.speed * 0.88, push: def.push, pushT: 0, armor: def.armor, steal: def.steal, bounty: def.bounty,
       tx: s.x, ty: s.y, burn: 0, burnDps: 0, slow: 0, slowF: 0, stun: 0, slipped: new Set(), iced: new Set(), angle: 0,
       jitter: (this.rng() - 0.5) * 0.0,
       flee: 0, wind: 0, pending: null, dash: null, abCd: def.cd * (0.5 + this.rng() * 0.8) * (1.15 - 0.03 * n), dashMul: def.dashMul || 1,
@@ -953,7 +953,53 @@ export class Game {
     while (dt > 0) { const s = Math.min(dt, 0.04); this.step(s); dt -= s; }
   }
 
+  // ---------- daytime sidewalk: passers-by stroll past the doors, fade in / out at the ends, and some walk in ----------
+  // purely cosmetic unless one decides to enter: then it turns into a real customer (a few extra sales per day)
+  stepWalkers(dt) {
+    const ph = this.phase, day = ph === 'prep' || ph === 'morning' || ph === 'evening';
+    if (!this.walkers) this.walkers = [];
+    if (!day || !this.spawns || !this.spawns.length) { this.walkers.length = 0; return; }
+    const s0 = this.spawns[0], horiz = s0.side === 'bottom', LEN = horiz ? COLS : ROWS, A0 = -0.8, A1 = LEN + 0.2, FADE = 1.1;
+    const at = (w, along) => {   // grid position of a walker on its lane
+      if (horiz) { w.x = along; w.y = s0.y + w.lane; }
+      else { w.x = s0.x + s0.ox * w.lane; w.y = along; }
+    };
+    if (ph !== 'evening' && this.walkers.length < 7) {
+      this.walkT -= dt;
+      if (this.walkT <= 0) {
+        this.walkT = 1.2 + Math.random() * 2.4;
+        const dir = Math.random() < 0.5 ? 1 : -1;
+        const w = { id: this.nextId++, kind: 'walker', state: 'walk', bags: [], dir, along: dir > 0 ? A0 : A1, lane: 2.2 + (Math.random() - 0.5) * 0.5,
+          speed: 1.2 + Math.random() * 0.9, look: Math.floor(Math.random() * 100000), a: 0, rolled: [], angle: 0, x: 0, y: 0 };
+        w.angle = horiz ? (dir > 0 ? Math.PI / 2 : -Math.PI / 2) : (dir > 0 ? 0 : Math.PI);
+        at(w, w.along); this.walkers.push(w);
+      }
+    }
+    for (const w of this.walkers) {
+      const prev = w.along; w.along += w.dir * w.speed * dt;
+      w.a = Math.max(0, Math.min(1, Math.min(w.along - A0, A1 - w.along) / FADE));
+      at(w, w.along);
+      if (ph === 'morning' && this.dayWalk < 8) {
+        const sp = this.activeSpawns;
+        for (let i = 0; i < sp.length; i++) {
+          const s = sp[i], dp = horiz ? s.x : s.y;
+          if (w.rolled.includes(i) || (prev - dp) * (w.along - dp) > 0) continue;
+          w.rolled.push(i);
+          if (Math.random() < 0.3) {   // this one walks in
+            this.spawnCustomer(s);
+            const c = this.customers[this.customers.length - 1]; c.x = w.x; c.y = w.y; c.angle = w.angle;
+            w.gone = true; this.dayWalk++;
+            break;
+          }
+        }
+      }
+      if ((w.dir > 0 && w.along >= A1) || (w.dir < 0 && w.along <= A0)) w.gone = true;
+    }
+    this.walkers = this.walkers.filter(w => !w.gone);
+  }
+
   step(dt) {
+    this.stepWalkers(dt);
     if (this.phase === 'lost') return;
     this.time += dt;
     if (this.phase === 'morning') {
@@ -1017,7 +1063,7 @@ export class Game {
     // night end
     if (this.phase === 'wave' && !this.spawnQueue.length && !this.enemies.length) {
       this.wave++;
-      const bonus = 12 + this.wave * 3;
+      const bonus = 20 + this.wave * 4;
       this.cash += bonus;
       this.emit('waveClear', { bonus });
       this.phase = 'restock'; this.rollChoices(); this.emit('restock', {});
@@ -1124,7 +1170,7 @@ export class Game {
     this.blocked = new Uint8Array(COLS * ROWS);
     for (const sh of this.shelves) this.blocked[idx(sh.x, sh.y)] = 3;
     for (const t of this.towers) this.blocked[idx(t.x, t.y)] = 2;
-    this.enemies = []; this.projectiles = []; this.fires = []; this.bombs = []; this.ice = []; this.customers = [];
+    this.enemies = []; this.projectiles = []; this.fires = []; this.bombs = []; this.ice = []; this.customers = []; this.walkers = [];
     this.spawnQueue = []; this.dayQueue = []; this.waveTime = 0; this.dayTime = 0; this.waveTotal = 0; this.nightIn = 0;
     this.phase = s.phase; this.daySnap = null;
     this.choices = (s.choices || []).map(id => UPGRADES.find(u => u.id === id)).filter(Boolean);
@@ -1138,7 +1184,7 @@ export class Game {
     if (this.phase !== 'lost') return false;
     if (this.daySnap) this.restore(this.daySnap, { retry: true });
     else {
-      this.enemies = []; this.projectiles = []; this.fires = []; this.bombs = []; this.ice = []; this.customers = [];
+      this.enemies = []; this.projectiles = []; this.fires = []; this.bombs = []; this.ice = []; this.customers = []; this.walkers = [];
       this.spawnQueue = []; this.dayQueue = []; this.waveTime = 0; this.dayTime = 0; this.phase = 'prep';
     }
     this.lives = this.maxLives;
