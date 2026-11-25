@@ -248,47 +248,93 @@ function rangeFor() {
   return [null, 0];
 }
 
-const bar = (cls, v) => `<span class="bar ${cls}"><i style="width:${Math.round(Math.max(0, Math.min(1, v)) * 100)}%"></i></span>`;
+// ---------- floating action icons (replaces the old bottom-left info card) ----------
+// Tap a shelf / machine and a little row of icon buttons pops up right on top of it. Delegated click handler, so the
+// buttons survive refresh() calls; the markup is only rebuilt when something in it actually changed.
+const popCss = document.createElement('style');
+popCss.textContent = `
+#pop{position:fixed;z-index:30;display:none;flex-direction:column;align-items:center;gap:4px;pointer-events:none;transform:translate(-50%,-100%);font-family:inherit}
+#pop.on{display:flex}
+#pop .hd{pointer-events:none;background:rgba(17,13,38,.92);color:#fff;border:2px solid #0d0b1d;border-radius:8px;padding:2px 8px;font-size:12px;line-height:1.3;text-align:center;white-space:nowrap}
+#pop .hd small{color:#ffcf4a;margin-left:4px}
+#pop .bars{display:flex;gap:4px;margin-top:2px}
+#pop .b{display:block;width:34px;height:5px;background:#2a2450;border-radius:3px;overflow:hidden}
+#pop .b i{display:block;height:100%;background:#5fe3a1}#pop .b.lo i{background:#ff5a5f}#pop .b.wear i{background:#6fa8ff}#pop .b.hot i{background:#ffb703}
+#pop .row{display:flex;gap:6px;pointer-events:auto}
+#pop .pi{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:46px;min-height:46px;padding:3px 6px;border-radius:12px;border:2px solid #0d0b1d;background:#ffcf4a;color:#1b1530;font:inherit;font-weight:700;cursor:pointer;box-shadow:0 3px 0 #0d0b1d;touch-action:manipulation}
+#pop .pi .ic{font-size:20px;line-height:1}#pop .pi .lb{font-size:11px;line-height:1.1;margin-top:1px}
+#pop .pi.green{background:#5fe3a1}#pop .pi.red{background:#ff6b6b}#pop .pi.gray{background:#d9d4ec}
+#pop .pi:active:not(:disabled){transform:translateY(2px);box-shadow:0 1px 0 #0d0b1d}
+#pop .pi:disabled{opacity:.45;cursor:default}
+#info{display:none!important}
+canvas#view{touch-action:none;-webkit-tap-highlight-color:transparent;user-select:none}
+html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%}
+@media (max-width:760px),(pointer:coarse){
+  #card{max-width:94vw;max-height:86vh;overflow:auto;box-sizing:border-box}
+  #tray{max-width:96vw!important;max-height:84vh!important;overflow:auto;box-sizing:border-box}
+  #trayGrid{-webkit-overflow-scrolling:touch}
+  #pop .pi{min-width:52px;min-height:52px}
+}`;
+document.head.appendChild(popCss);
+const pop = document.createElement('div'); pop.id = 'pop'; document.body.appendChild(pop);
+let popHTML = '', popKey = '';
+const pbtn = (act, icon, label, dis, cls = '') => `<button class="pi ${cls}" data-a="${act}" ${dis ? 'disabled' : ''}><span class="ic">${icon}</span>${label ? `<span class="lb">${label}</span>` : ''}</button>`;
+const pbar = (cls, v) => `<span class="b ${cls}"><i style="width:${Math.round(Math.max(0, Math.min(1, v)) * 100)}%"></i></span>`;
+
+function hidePop() { pop.classList.remove('on'); popKey = ''; }
+function placePop(x, y, h) {
+  const p = view.project(x, y, h), w = pop.offsetWidth, ph = pop.offsetHeight, below = p.y - ph < 56;
+  const px = Math.max(w / 2 + 6, Math.min(innerWidth - w / 2 - 6, p.x));
+  let py = below ? view.project(x, y, 0).y + 14 : p.y;
+  py = Math.max(ph + 4, Math.min(innerHeight - 4, below ? py + ph : py));
+  pop.style.left = px + 'px'; pop.style.top = py + 'px';
+}
 function renderInfo() {
-  const el = $('info');
-  let html = '';
+  $('info').classList.add('off');
+  if (!game || !running || game.phase === 'lost' || trayOpen()) { hidePop(); return; }
+  let html = '', at = null, key = '';
   if (pickedTower && pickedTower.kind === 'shelf' && game.shelves.includes(pickedTower)) {
     const s = pickedTower, need = MAX_STOCK - s.units, can = Math.min(need, Math.floor(game.cash / game.unitCost()));
-    html = `<div><div class="t">Shelf <span class="lvl">${s.units}/${MAX_STOCK} goods</span></div><div class="d">${s.units === 0 ? 'Empty — customers skip it.' : 'Customers buy from stocked shelves.'}</div>
-      <div class="bars">HP ${bar(s.hp / s.maxhp < 0.35 ? 'lo' : '', s.hp / s.maxhp)}</div></div>
-      <div class="acts"><button class="pxb green" id="rst" ${can <= 0 ? 'disabled' : ''}>${need === 0 ? 'FULL' : '📦 $' + can * game.unitCost()}</button>${s.placed ? `<button class="pxb red" id="sell">SELL $${game.sellValue(s)}</button>` : ''}</div>`;
-    setHTML(el, html);
-    $('rst').onclick = () => { if (game.restock(s)) refresh(); else sfx.bad(); };
-    const sl = $('sell'); if (sl) sl.onclick = () => { game.sell(s); pickedTower = null; refresh(); };
-  } else if (pickedTower && game.towers.includes(pickedTower)) {
-    const t = pickedTower, def = ITEMS[t.type], isT = t.kind === 'tower', up = game.upgradeCost(t);
-    let stats = '';
-    if (isT) stats = t.broken ? '<span style="color:#ff5a5f">Out of order. Replace it to use it again.</span>' : `DMG ${game.stat(t, 'dmg').toFixed(0)} · RNG ${game.stat(t, 'range').toFixed(1)} · ${game.stat(t, 'rate').toFixed(1)}/s`;
-    const hp = t.hp / t.maxhp;
-    const bars = isT ? `<div class="bars">HP ${bar(hp < 0.35 ? 'lo' : '', hp)} WEAR ${bar(t.wear > 0.7 ? 'hot' : 'wear', t.wear)}</div>` : '';
+    at = [s.x, s.y, 1.5];
+    html = `<div class="hd">Shelf <small>${s.units}/${MAX_STOCK}</small><div class="bars">${pbar(s.hp / s.maxhp < 0.35 ? 'lo' : '', s.hp / s.maxhp)}</div></div><div class="row">`
+      + pbtn('rst', '📦', need === 0 ? 'FULL' : '$' + can * game.unitCost(), can <= 0, 'green') + (s.placed ? pbtn('sell', '💰', '$' + game.sellValue(s), false, 'red') : '') + '</div>';
+  } else if (pickedTower && (game.towers.includes(pickedTower) || game.traps.includes(pickedTower))) {
+    const t = pickedTower, def = ITEMS[t.type], isT = t.kind === 'tower', up = isT ? game.upgradeCost(t) : 0;
+    at = [t.x, t.y, isT ? 1.9 : 0.8];
+    const bars = isT ? `<div class="bars">${pbar(t.hp / t.maxhp < 0.35 ? 'lo' : '', t.hp / t.maxhp)}${pbar(t.wear > 0.7 ? 'hot' : 'wear', t.wear)}</div>` : '';
+    const tag = !isT ? `${t.uses} left` : t.broken ? 'BROKEN' : `Lv ${t.level}/${MAX_LEVEL}`;
     let acts = '';
-    if (isT && t.broken) acts += `<button class="pxb gold" id="rpl" ${game.replaceCost(t) > game.cash ? 'disabled' : ''}>REPLACE $${game.replaceCost(t)}</button>`;
+    if (isT && t.broken) acts += pbtn('rpl', '🛠️', '$' + game.replaceCost(t), game.replaceCost(t) > game.cash, 'gold');
     if (isT && !t.broken) {
-      acts += `<button class="pxb green" id="upg" ${up > game.cash ? 'disabled' : ''}>${t.level >= MAX_LEVEL ? 'MAX' : '⏫ $' + up}</button>`;
-      if (game.needsService(t)) acts += `<button class="pxb" id="svc" ${game.serviceCost(t) > game.cash ? 'disabled' : ''}>🔧 $${game.serviceCost(t)}</button>`;
+      acts += pbtn('upg', '⏫', t.level >= MAX_LEVEL ? 'MAX' : '$' + up, t.level >= MAX_LEVEL || up > game.cash, 'green');
+      if (game.needsService(t)) acts += pbtn('svc', '🔧', '$' + game.serviceCost(t), game.serviceCost(t) > game.cash);
     }
-    acts += `<button class="pxb red" id="sell">SELL $${game.sellValue(t)}</button>`;
-    html = `<div><div class="t">${def.name} <span class="lvl">${t.broken ? 'BROKEN' : 'Lv ' + t.level + (isT ? '/' + MAX_LEVEL : '')}</span></div><div class="d">${stats || def.desc}</div>${bars}</div><div class="acts">${acts}</div>`;
-    setHTML(el, html);
-    const u = $('upg'); if (u) u.onclick = () => { if (game.upgrade(t)) refresh(); else sfx.bad(); };
-    const sv = $('svc'); if (sv) sv.onclick = () => { if (!game.service(t)) sfx.bad(); refresh(); };
-    const rp = $('rpl'); if (rp) rp.onclick = () => { if (!game.replace(t)) sfx.bad(); refresh(); };
-    $('sell').onclick = () => { game.sell(t); pickedTower = null; refresh(); };
-  } else if (selected) {
-    const def = ITEMS[selected];
-    const touch = preview ? ' <b style="color:#5fe3a1">Tap again to place.</b>' : '';
-    setHTML(el, `<div><div class="t">${def.name} — $${game.costOf(selected)}</div><div class="d">${def.desc}${touch}</div></div><div class="acts"><button class="pxb" id="cancel">CANCEL</button></div>`);
-    $('cancel').onclick = () => { selected = null; preview = null; view.setCursor(null); refresh(); };
-  } else {
-    el.innerHTML = ''; el.classList.add('off'); return;   // nothing picked: no help card
-  }
-  el.classList.remove('off');
+    acts += pbtn('sell', '💰', '$' + game.sellValue(t), false, 'red');
+    html = `<div class="hd">${def.name} <small>${tag}</small>${bars}</div><div class="row">${acts}</div>`;
+  } else if (selected && preview) {   // touch: first tap previews the spot, then confirm / cancel right on it
+    at = [preview.x, preview.y, 1.3];
+    html = `<div class="hd">${ITEMS[selected].name} <small>$${game.costOf(selected)}</small></div><div class="row">${pbtn('place', '✔', '', !game.canPlace(selected, preview.x, preview.y).ok, 'green')}${pbtn('cancel', '✖', '', false, 'gray')}</div>`;
+  } else if (selected) {   // mouse: nothing on the map to hang icons on, so just a small cancel chip
+    hidePop(); return;
+  } else { hidePop(); return; }
+  key = html + at.join(',');
+  if (key !== popKey) { pop.innerHTML = html; popKey = key; }
+  pop.classList.add('on'); placePop(...at);
 }
+pop.addEventListener('click', e => {
+  const b = e.target.closest('button[data-a]'); if (!b || b.disabled || !game) return;
+  const t = pickedTower, a = b.dataset.a;
+  if (a === 'rst') { if (!game.restock(t)) sfx.bad(); }
+  else if (a === 'sell') { game.sell(t); pickedTower = null; }
+  else if (a === 'upg') { if (!game.upgrade(t)) sfx.bad(); }
+  else if (a === 'svc') { if (!game.service(t)) sfx.bad(); }
+  else if (a === 'rpl') { if (!game.replace(t)) sfx.bad(); }
+  else if (a === 'place' && selected && preview) { if (game.canPlace(selected, preview.x, preview.y).ok) { game.place(selected, preview.x, preview.y); preview = null; view.setCursor(null); } else sfx.bad(); }
+  else if (a === 'cancel') { selected = null; preview = null; pickedTower = null; view.setCursor(null); }
+  refresh();
+});
+window.addEventListener('resize', () => game && refresh());
+window.addEventListener('orientationchange', () => setTimeout(() => game && refresh(), 250));
 
 // ---------- input ----------
 const cv = $('view');
