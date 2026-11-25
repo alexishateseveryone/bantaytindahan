@@ -11,7 +11,8 @@ export const ROOM_BASE = 9, ROOM_STEP = 2;
 export let COLS = ROOM_BASE;      // doors and the counter spawn on a random side (left / top / right)
 export let ROWS = ROOM_BASE;
 export function setRoom(level = 0) { COLS = ROWS = ROOM_BASE + ROOM_STEP * level; }
-// true = counter + doors on a random wall (left / top / right). false = always doors left, counter right.
+// The counter and the doors are ALWAYS on opposite walls: counter top / doors bottom, counter left / doors right, or counter right / doors left.
+// false = always counter right, doors left.
 export const RANDOM_SIDES = true;
 export const WAVES = Infinity;    // endless: nights never stop coming
 export const HOURS = ['10 PM', '11 PM', '12 AM', '1 AM', '2 AM', '3 AM', '4 AM', '5 AM'];
@@ -19,6 +20,8 @@ export const NIGHT_DELAY = 3;      // seconds between the store closing and the 
 export const DAY_LEN = 18;        // seconds during which new customers keep arriving
 export const SHELF_COST = 400;    // path weight of a shelf: burglars only push through when nothing else is open
 export const SHELF_HP = 80;
+export const START_CASH = 250;       // the store starts as an EMPTY room with this much cash
+export const CUSTOMER_WEAR = 5;      // every purchase from a machine wears it like this many shots
 export const MAX_STOCK = 6;       // goods a shelf holds
 export const START_STOCK = MAX_STOCK;   // the store starts with its shelves fully stocked
 export const UNIT_COST = 2;       // price to restock one good
@@ -144,7 +147,7 @@ export class Game {
     // prep (before opening) -> morning (customers) -> evening (closed, get ready) -> wave (night) -> restock -> prep ...
     this.phase = 'prep';
     this.wave = 0;                  // nights completed
-    this.cash = 150 + 15 * (meta.cash || 0);
+    this.cash = START_CASH + 15 * (meta.cash || 0);
     this.maxLives = 10 + 2 * (meta.lives || 0);
     this.lives = this.maxLives;
     this.kills = 0; this.served = 0; this.sales = 0; this.daySales = 0; this.dayServed = 0; this.paidOut = 0;
@@ -177,15 +180,13 @@ export class Game {
   // ---------- random room ----------
   // Long shelf rows run top-to-bottom with a gap in each, so everyone snakes through aisles.
   genRoom() {
-    const rng = this.rng, B = this.blocked;
-    // the counter and the doors each get a random wall: left, top or right (never the same wall)
-    const SIDES = ['left', 'top', 'right'];
-    this.counterSide = RANDOM_SIDES ? SIDES[this.rint(0, 2)] : 'right';
-    const others = SIDES.filter(x => x !== this.counterSide);
-    this.doorSide = RANDOM_SIDES ? others[this.rint(0, 1)] : 'left';
-    const len = side => side === 'top' ? COLS : ROWS;
-    const cell = (side, p) => side === 'left' ? { x: 0, y: p } : side === 'right' ? { x: COLS - 1, y: p } : { x: p, y: 0 };
-    const OUT = { left: [-1, 0], right: [1, 0], top: [0, -1] };
+    // counter and doors sit on OPPOSITE walls (top/bottom or left/right)
+    const OPP = { top: 'bottom', left: 'right', right: 'left' };
+    this.counterSide = RANDOM_SIDES ? ['top', 'left', 'right'][this.rint(0, 2)] : 'right';
+    this.doorSide = OPP[this.counterSide];
+    const len = side => side === 'top' || side === 'bottom' ? COLS : ROWS;
+    const cell = (side, p) => side === 'left' ? { x: 0, y: p } : side === 'right' ? { x: COLS - 1, y: p } : side === 'bottom' ? { x: p, y: ROWS - 1 } : { x: p, y: 0 };
+    const OUT = { left: [-1, 0], right: [1, 0], top: [0, -1], bottom: [0, 1] };
 
     // two doors on the door wall; far enough apart for the room size (kept small so this can never loop forever)
     const dl = len(this.doorSide), sep = dl >= 11 ? 4 : 3;
@@ -195,34 +196,16 @@ export class Game {
     if (Math.abs(d2 - d1) < sep) d2 = d1 < dl / 2 ? dl - 2 : 1;
     const [ox, oy] = OUT[this.doorSide];
     this.spawns = [d1, d2].map((p, i) => ({ ...cell(this.doorSide, p), side: this.doorSide, ox, oy, from: i ? 3 : 1 }));
-    // the counter: 3 till cells on its wall
+    // the counter: 3 till cells along its wall
     const cl = len(this.counterSide);
     this.counterPos = RANDOM_SIDES ? this.rint(2, cl - 3) : Math.round((cl - 1) / 2);
     this.tills = [-1, 0, 1].map(k => cell(this.counterSide, this.counterPos + k));
-
-    // fewer, longer-gapped shelf rows: every 3 columns, each row with a wide gap. The wall with the counter / doors stays clear.
-    const topUsed = this.counterSide === 'top' || this.doorSide === 'top';
-    const rows = [];
-    for (let x = 3; x < COLS - 2; x += 3) rows.push(x);
-    const startTop = rng() < 0.5;
-    rows.forEach((bx, k) => {
-      const gap = ROWS > 9 ? this.rint(4, 5) : this.rint(3, 4);
-      const top = (k % 2 === 0) === startTop;
-      const g0 = top ? this.rint(1, 2) : ROWS - gap - this.rint(1, 2);
-      for (let y = topUsed ? 2 : 0; y < ROWS; y++) {
-        if (y >= g0 && y < g0 + gap) continue;
-        if (rng() < 0.12) continue;   // a few random holes so rows never look like a wall
-        B[y * COLS + bx] = 3;
-        this.shelves.push({ id: this.nextId++, kind: 'shelf', x: bx, y, v: this.rint(0, 2), units: START_STOCK, hp: SHELF_HP, maxhp: SHELF_HP, hit: 0, placed: false });
-      }
-    });
+    // the store starts EMPTY: no shelves, no machines. Everything is built by the player.
   }
   // cells on the counter / door walls are never buildable
   reserved(x, y) {
-    for (const side of [this.counterSide, this.doorSide]) {
-      if (side === 'left' && x === 0) return true;
-      if (side === 'right' && x === COLS - 1) return true;
-      if (side === 'top' && y === 0) return true;
+    for (const s of [this.counterSide, this.doorSide]) {
+      if ((s === 'left' && x === 0) || (s === 'right' && x === COLS - 1) || (s === 'top' && y === 0) || (s === 'bottom' && y === ROWS - 1)) return true;
     }
     return false;
   }
@@ -245,7 +228,8 @@ export class Game {
     const nb = new Uint8Array(COLS * ROWS);
     for (let y = 0; y < orw; y++) for (let x = 0; x < oc; x++) nb[y * COLS + x] = this.blocked[y * oc + x];
     this.blocked = nb;
-    for (const o of [...this.spawns, ...this.tills]) if (this.counterSide === 'right' && this.tills.includes(o) || this.doorSide === 'right' && this.spawns.includes(o)) o.x = COLS - 1;
+    for (const o of this.tills) if (this.counterSide === 'right') o.x = COLS - 1;
+    for (const o of this.spawns) { if (this.doorSide === 'right') o.x = COLS - 1; if (this.doorSide === 'bottom') o.y = ROWS - 1; }
     this.refreshPaths();
     this.emit('renovate', { level: this.room });
     return true;
@@ -409,8 +393,8 @@ export class Game {
   // ---------- wear, damage, service ----------
   // Turrets wear out with every shot; past 55% wear each shot has a growing chance to break them.
   // Bombs and dashes also hurt them. A broken turret does nothing until you REPLACE it.
-  wearTower(t) {
-    t.wear = Math.min(1, t.wear + ITEMS[t.type].wear * this.mods.wear);
+  wearTower(t, mul = 1) {
+    t.wear = Math.min(1, t.wear + ITEMS[t.type].wear * this.mods.wear * mul);
     if (t.wear > 0.7 && !t.warned) { t.warned = true; this.emit('towerWarn', { tower: t }); }
     if (t.wear > 0.55 && this.rng() < (t.wear - 0.55) * 0.14) this.breakTower(t, 'worn');
   }
@@ -508,8 +492,14 @@ export class Game {
     return q;
   }
 
+  // you can't open an empty store: customers need something to buy (a stocked shelf or a working machine)
+  canOpen() {
+    if (this.phase !== 'prep') return { ok: false, reason: 'The store is already open' };
+    if (this.shelves.some(s => s.units > 0) || this.towers.some(t => t.kind === 'tower' && !t.broken)) return { ok: true };
+    return { ok: false, reason: this.shelves.length ? 'Restock a shelf before opening' : 'Build a shelf or a machine before opening' };
+  }
   startDay() {
-    if (this.phase !== 'prep') return false;
+    if (!this.canOpen().ok) return false;
     this.daySnap = this.snapshot();
     this.phase = 'morning'; this.dayTime = 0; this.daySales = 0; this.dayServed = 0;
     this.dayQueue = this.makeDay(this.wave + 1);
@@ -595,6 +585,7 @@ export class Game {
     const price = Math.max(1, Math.round((def.sale[0] + this.rng() * (def.sale[1] - def.sale[0])) * this.mods.shelfPay));
     c.cart += price; c.bags.push(st.kind === 'shelf' ? CAN_COLORS[(st.id + c.bags.length) % CAN_COLORS.length] : ITEMS[type].color);
     this.emit('buy', { c, id: st.id, x: st.x, y: st.y, kind: type, price });
+    if (st.kind === 'tower') this.wearTower(st, CUSTOMER_WEAR);   // customers wear machines out too: overuse can break them
   }
 
   stepMove(c, dt, tx, ty) {
@@ -706,7 +697,7 @@ export class Game {
   towerFire(t) {
     const range = this.stat(t, 'range'), dmg = this.stat(t, 'dmg');
     const inRange = [];
-    for (const e of this.enemies) if (!e.dead && e.x > -0.5 && e.y > -0.5 && Math.hypot(e.x - t.x, e.y - t.y) <= range) inRange.push(e);
+    for (const e of this.enemies) if (!e.dead && e.x > -0.5 && e.y > -0.5 && e.x < COLS - 0.5 && e.y < ROWS - 0.5 && Math.hypot(e.x - t.x, e.y - t.y) <= range) inRange.push(e);
     if (!inRange.length) { if (t.facing !== undefined) t.angle = t.facing; return false; }   // idle: face an open side
     if (t.type === 'micro') {
       for (const e of inRange) this.damage(e, dmg);
@@ -1113,7 +1104,7 @@ export class Game {
   snapshot() {
     const c = o => JSON.parse(JSON.stringify(o));
     return c({
-      v: 1, seed: this.seed, rng: this.rng.get(), room: this.room, wave: this.wave, cash: this.cash, lives: this.lives, maxLives: this.maxLives,
+      v: 3, seed: this.seed, rng: this.rng.get(), room: this.room, wave: this.wave, cash: this.cash, lives: this.lives, maxLives: this.maxLives,
       kills: this.kills, served: this.served, sales: this.sales, paidOut: this.paidOut, rerolls: this.rerolls, unlocked: [...this.unlocked],
       mods: this.mods, nextId: this.nextId, phase: this.phase === 'restock' ? 'restock' : 'prep', choices: this.choices.map(u => u.id),
       counterSide: this.counterSide, doorSide: this.doorSide, counterPos: this.counterPos, tills: this.tills, spawns: this.spawns,
@@ -1121,6 +1112,7 @@ export class Game {
     });
   }
   restore(s, o = {}) {
+    if (s.v !== 3) throw new Error('old save');   // saves from older layouts can't be loaded
     const c = x => JSON.parse(JSON.stringify(x));
     this.room = s.room; setRoom(s.room);
     if (!o.retry) { this.seed = s.seed; this.rng = mulberry32(s.seed); this.rng.set(s.rng); this.paidOut = s.paidOut; }
