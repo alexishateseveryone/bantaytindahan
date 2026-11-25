@@ -11,44 +11,126 @@ let save = { bank: 0, levels: {}, best: 0, shifts: 0, run: null };   // run = th
 try { Object.assign(save, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) { /* storage may be blocked */ }
 const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(save)); } catch (e) { /* ignore */ } };
 
-// ---------- tiny synth sfx ----------
-let ac = null, muted = false;
-function beep(freq, dur = 0.08, type = 'square', vol = 0.05, slide = 0) {
-  if (muted) return;
+// ---------- audio: synthesized sfx (every machine sounds different) + background music ----------
+let ac = null, master = null, echo = null, noiseBuf = null, muted = false;
+function audio() {
+  if (muted) return null;
   try {
-    ac ||= new (window.AudioContext || window.webkitAudioContext)();
+    if (!ac) {
+      ac = new (window.AudioContext || window.webkitAudioContext)();
+      const comp = ac.createDynamicsCompressor(); comp.threshold.value = -16; comp.ratio.value = 5;
+      const out = ac.createGain(); out.gain.value = 0.95; comp.connect(out); out.connect(ac.destination); master = comp;
+      const d = ac.createDelay(1), fb = ac.createGain(), wet = ac.createGain();   // soft echo for chimes
+      d.delayTime.value = 0.15; fb.gain.value = 0.33; wet.gain.value = 0.38; d.connect(fb); fb.connect(d); d.connect(wet); wet.connect(master); echo = d;
+      noiseBuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+      const ch = noiseBuf.getChannelData(0); for (let i = 0; i < ch.length; i++) ch[i] = Math.random() * 2 - 1;
+    }
     if (ac.state === 'suspended') ac.resume();
-    const o = ac.createOscillator(), g = ac.createGain(), t = ac.currentTime;
-    o.type = type; o.frequency.setValueAtTime(freq, t);
-    if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, freq + slide), t + dur);
-    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    o.connect(g).connect(ac.destination); o.start(t); o.stop(t + dur);
-  } catch (e) { /* audio unavailable */ }
+    return ac;
+  } catch (e) { return null; }
 }
+// one pitched blip: frequency f gliding by `slide` Hz, started `delay` seconds from now, optional echo
+function tone(f, dur = 0.1, type = 'square', vol = 0.05, slide = 0, delay = 0, fx = false) {
+  const a = audio(); if (!a) return;
+  const t = a.currentTime + delay, o = a.createOscillator(), g = a.createGain();
+  o.type = type; o.frequency.setValueAtTime(f, t);
+  if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, f + slide), t + dur);
+  g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vol, t + 0.005); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(master); if (fx) g.connect(echo);
+  o.start(t); o.stop(t + dur + 0.03);
+}
+// filtered noise burst (hiss, crash, splash, whoosh...)
+function noise(dur = 0.1, vol = 0.05, o = {}) {
+  const a = audio(); if (!a) return;
+  const { f = 2000, q = 1, type = 'bandpass', slide = 0, delay = 0, fx = false } = o;
+  const t = a.currentTime + delay, s = a.createBufferSource(), fl = a.createBiquadFilter(), g = a.createGain();
+  s.buffer = noiseBuf; fl.type = type; fl.Q.value = q; fl.frequency.setValueAtTime(f, t);
+  if (slide) fl.frequency.exponentialRampToValueAtTime(Math.max(40, f + slide), t + dur);
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  s.connect(fl); fl.connect(g); g.connect(master); if (fx) g.connect(echo);
+  s.start(t, Math.random() * Math.max(0, 0.95 - dur), dur + 0.02);
+}
+const arp = (notes, step, dur, type, vol, fx = true) => notes.forEach((f, i) => tone(f, dur, type, vol, 0, i * step, fx));
+const lastPlayed = {};
+const gate = (k, ms) => { const n = performance.now(); if (n - (lastPlayed[k] || 0) < ms) return false; lastPlayed[k] = n; return true; };
+
 const sfx = {
-  place: () => { beep(260, 0.07, 'square', 0.06); setTimeout(() => beep(390, 0.08), 60); },
-  bad: () => beep(110, 0.12, 'sawtooth', 0.05),
-  shoot: k => k === 'sauce' ? sfx.lob() : k === 'soda' ? beep(820, 0.14, 'sawtooth', 0.02, -500) : k === 'cans' ? beep(240, 0.07, 'triangle', 0.05, -100) : k === 'hotdog' ? beep(420, 0.08, 'triangle', 0.04, 160) : k === 'fridge' ? beep(980, 0.1, 'sine', 0.03, -300) : beep(330, 0.05, 'square', 0.025, -200),
-  buy: () => beep(620, 0.05, 'triangle', 0.025),
-  day: () => [392, 523, 659].forEach((f, i) => setTimeout(() => beep(f, 0.14, 'triangle', 0.05), i * 110)),
-  kill: () => beep(880, 0.09, 'triangle', 0.05, 300),
-  leak: () => beep(160, 0.3, 'sawtooth', 0.07, -100),
-  pulse: () => beep(120, 0.2, 'sawtooth', 0.04, 200),
-  wave: () => { beep(330, 0.1); setTimeout(() => beep(440, 0.1), 100); setTimeout(() => beep(660, 0.2), 200); },
-  sale: () => { beep(988, 0.05, 'square', 0.03); setTimeout(() => beep(1319, 0.08, 'square', 0.03), 50); },
-  crash: () => { beep(90, 0.25, 'sawtooth', 0.08, -40); setTimeout(() => beep(60, 0.2, 'square', 0.06), 60); },
-  splat: () => { beep(200, 0.16, 'sawtooth', 0.04, -120); setTimeout(() => beep(520, 0.06, 'triangle', 0.03, 200), 40); },
-  lob: () => beep(300, 0.18, 'triangle', 0.04, 260),
-  whistle: () => beep(900, 0.35, 'sine', 0.03, -600),
-  boom: () => { beep(70, 0.45, 'sawtooth', 0.1, -40); setTimeout(() => beep(45, 0.35, 'square', 0.08, -15), 40); },
-  dash: () => beep(180, 0.16, 'sawtooth', 0.04, 500),
-  tick: () => beep(1200, 0.04, 'square', 0.025),
-  thud: () => beep(100, 0.12, 'square', 0.07, -50),
-  warn: () => { beep(740, 0.08, 'square', 0.04); setTimeout(() => beep(740, 0.08, 'square', 0.04), 120); },
-  freeze: () => { beep(1400, 0.1, 'sine', 0.03, -700); setTimeout(() => beep(900, 0.12, 'sine', 0.03, -300), 60); },
-  bounce: () => beep(500, 0.05, 'triangle', 0.03, 250),
-  win: () => [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, 0.18, 'square', 0.06), i * 120)),
+  // --- buttons & building ---
+  click: () => { if (gate('click', 40)) tone(1250, 0.035, 'triangle', 0.03, -450); },
+  bad: () => { tone(150, 0.16, 'sawtooth', 0.05, -50); tone(110, 0.2, 'square', 0.04, -30, 0.08); },
+  place: () => { tone(120, 0.12, 'sine', 0.11, -60); noise(0.06, 0.05, { f: 700, type: 'lowpass' }); tone(520, 0.09, 'triangle', 0.05, 380, 0.05, true); tone(780, 0.12, 'sine', 0.035, 0, 0.1, true); },
+  upgrade: () => { arp([392, 523, 659, 784, 1047], 0.055, 0.16, 'triangle', 0.045); tone(300, 0.3, 'sawtooth', 0.025, 700); noise(0.25, 0.02, { f: 3000, type: 'highpass', delay: 0.1 }); },
+  sell: () => { tone(1319, 0.06, 'square', 0.04); tone(1760, 0.07, 'square', 0.045, 0, 0.06); tone(2349, 0.3, 'sine', 0.05, 0, 0.12, true); noise(0.07, 0.03, { f: 6500, type: 'highpass', delay: 0.02 }); },
+  fix: () => { for (let i = 0; i < 4; i++) { tone(1400 + i * 110, 0.025, 'square', 0.035, 0, i * 0.055); noise(0.02, 0.03, { f: 3500, delay: i * 0.055 }); } arp([659, 880, 1175], 0.07, 0.18, 'sine', 0.04); },
+  replace: () => { tone(90, 0.16, 'square', 0.08, -30); noise(0.1, 0.06, { f: 900, type: 'lowpass' }); setTimeout(() => sfx.fix(), 130); },
+  restock: () => { noise(0.16, 0.05, { f: 1400, q: 0.6, slide: -700 }); tone(430, 0.08, 'triangle', 0.05, 250, 0.06); tone(640, 0.1, 'triangle', 0.04, 0, 0.12, true); },
+  unlock: () => { arp([392, 523, 659, 784, 1047, 1319], 0.07, 0.22, 'square', 0.035); tone(2093, 0.4, 'sine', 0.04, 0, 0.45, true); },
+  renovate: () => { for (let i = 0; i < 3; i++) { tone(95, 0.1, 'square', 0.08, -30, i * 0.14); noise(0.06, 0.06, { f: 1800, delay: i * 0.14 }); } arp([523, 659, 784, 1047], 0.08, 0.2, 'triangle', 0.04); },
+  // --- tarot cards ---
+  deal: () => { noise(0.12, 0.045, { f: 2600, q: 0.7, type: 'highpass', slide: -1200 }); tone(240, 0.08, 'sine', 0.03, 120); },
+  flip: () => { noise(0.18, 0.05, { f: 3200, q: 0.8, slide: -2200 }); tone(520, 0.14, 'triangle', 0.035, 420, 0, true); tone(1040, 0.12, 'sine', 0.02, 0, 0.08, true); },
+  pick: () => { arp([523, 659, 784, 1047, 1319, 1568], 0.06, 0.4, 'sine', 0.05); noise(0.5, 0.03, { f: 5000, type: 'highpass', delay: 0.05, fx: true }); tone(130, 0.5, 'sine', 0.08, 60); },
+  // --- shop life ---
+  buy: () => { if (gate('buy', 60)) { tone(700, 0.05, 'triangle', 0.03, 350); } },
+  sale: () => { tone(1568, 0.06, 'square', 0.035); tone(2093, 0.14, 'square', 0.035, 0, 0.06, true); noise(0.03, 0.025, { f: 5000, type: 'highpass' }); },
+  day: () => arp([392, 523, 659, 784], 0.11, 0.22, 'triangle', 0.045),
+  // --- combat: every machine has its own voice ---
+  shoot: k => {
+    if (!gate('shoot' + k, 45)) return;
+    if (k === 'cans') { tone(190, 0.09, 'triangle', 0.08, -110); noise(0.05, 0.05, { f: 1900, q: 2 }); tone(1350, 0.05, 'sine', 0.025, -300, 0.02); }      // clunk-pop
+    else if (k === 'sauce') sfx.lob();                                                                                                                  // bloop
+    else if (k === 'soda') { noise(0.22, 0.06, { f: 4800, q: 0.6, type: 'highpass', slide: -2200 }); tone(1100, 0.12, 'sawtooth', 0.012, -500); }        // psssht
+    else if (k === 'hotdog') { tone(150, 0.13, 'sine', 0.1, -80); tone(520, 0.07, 'triangle', 0.045, 260, 0.03); noise(0.05, 0.03, { f: 900 }); }       // thwump
+    else if (k === 'fridge') { tone(950, 0.14, 'sine', 0.04, -420, 0, true); tone(1420, 0.2, 'triangle', 0.022, -500, 0.02, true); noise(0.08, 0.025, { f: 6000, type: 'highpass' }); }  // glassy
+    else tone(330, 0.05, 'square', 0.025, -200);
+  },
+  lob: () => { tone(230, 0.22, 'sine', 0.07, 430); noise(0.14, 0.03, { f: 600, type: 'lowpass', slide: 400 }); tone(120, 0.1, 'sawtooth', 0.025, 60, 0.05); },
+  pulse: () => { if (!gate('pulse', 120)) return; tone(95, 0.28, 'sawtooth', 0.055, 140); noise(0.14, 0.05, { f: 3200, q: 4, slide: -1800 }); tone(1760, 0.28, 'sine', 0.04, 0, 0.16, true); },   // bzzt-ding
+  hit: () => { if (gate('hit', 55)) noise(0.035, 0.03, { f: 2600, q: 1.5 }); },
+  wet: () => { if (gate('wet', 60)) { noise(0.12, 0.045, { f: 1800, q: 1, slide: -1200 }); tone(420, 0.09, 'sine', 0.03, -200); } },
+  splat: () => { noise(0.18, 0.06, { f: 1200, q: 0.8, slide: -800 }); tone(200, 0.14, 'sawtooth', 0.035, -110); tone(560, 0.07, 'triangle', 0.03, 200, 0.04); },
+  shatter: () => { noise(0.3, 0.07, { f: 7000, type: 'highpass', q: 0.5 }); arp([2093, 2637, 3136, 2349], 0.04, 0.2, 'sine', 0.025); },
+  can: () => { if (gate('can', 70)) { tone(1500, 0.06, 'triangle', 0.025, -400); tone(1100, 0.08, 'triangle', 0.02, -300, 0.05); } },
+  bounce: () => tone(480, 0.07, 'triangle', 0.045, 380),
+  slip: () => { tone(620, 0.2, 'sine', 0.06, -420); tone(300, 0.14, 'triangle', 0.04, 200, 0.14); },
+  freeze: () => { tone(1500, 0.12, 'sine', 0.035, -750, 0, true); tone(950, 0.14, 'sine', 0.03, -300, 0.06, true); },
+  kill: () => { if (!gate('kill', 35)) return; tone(660, 0.08, 'triangle', 0.05, 520); tone(1175, 0.18, 'sine', 0.04, 0, 0.05, true); noise(0.04, 0.025, { f: 6000, type: 'highpass', delay: 0.04 }); },
+  leak: () => { tone(220, 0.3, 'sawtooth', 0.07, -140); tone(165, 0.4, 'square', 0.05, -100, 0.12); },
+  crash: () => { noise(0.35, 0.11, { f: 900, q: 0.5, slide: -600 }); tone(85, 0.3, 'sawtooth', 0.09, -45); for (let i = 0; i < 4; i++) tone(500 + Math.random() * 900, 0.03, 'square', 0.03, 0, 0.05 + i * 0.05); },
+  whistle: () => tone(950, 0.4, 'sine', 0.035, -650),
+  boom: () => { noise(0.65, 0.16, { f: 700, type: 'lowpass', q: 0.7, slide: -550 }); tone(62, 0.55, 'sine', 0.17, -36); tone(40, 0.4, 'square', 0.06, -10, 0.03); },
+  dash: () => { noise(0.2, 0.05, { f: 700, q: 1.5, slide: 1800 }); tone(180, 0.16, 'sawtooth', 0.04, 500); },
+  tick: () => tone(1250, 0.04, 'square', 0.025),
+  thud: () => { tone(105, 0.13, 'square', 0.07, -55); noise(0.05, 0.04, { f: 500, type: 'lowpass' }); },
+  warn: () => { tone(740, 0.08, 'square', 0.04); tone(740, 0.08, 'square', 0.04, 0, 0.12); },
+  wave: () => { for (let i = 0; i < 2; i++) { tone(660, 0.17, 'square', 0.045, 0, i * 0.4); tone(880, 0.17, 'square', 0.045, 0, i * 0.4 + 0.19); } tone(110, 0.8, 'sawtooth', 0.04, -30); },
+  win: () => arp([523, 659, 784, 1047, 1319], 0.1, 0.3, 'square', 0.04),
+  lost: () => arp([392, 330, 262, 196], 0.18, 0.35, 'sawtooth', 0.045),
 };
+// every button gets a soft click (the action itself - build, upgrade, sell, fix - adds its own sound)
+let musicOn = false;
+document.addEventListener('pointerdown', e => {
+  musicOn = true; audio();
+  const b = e.target.closest && e.target.closest('button');
+  if (b && !b.disabled) sfx.click();
+}, true);
+window.addEventListener('keydown', () => { musicOn = true; audio(); }, true);
+
+// background music: assets/sfx/newday.mp3 by day, assets/sfx/robbery.mp3 while burglars are in the store. Cross-fades.
+const MUSIC_VOL = 0.4;
+const music = { day: new Audio('assets/sfx/newday.mp3'), night: new Audio('assets/sfx/robbery.mp3') };
+let musicWant = null;
+for (const k in music) { music[k].loop = true; music[k].preload = 'auto'; music[k].volume = 0; }
+function musicTick(dt) {
+  for (const k in music) {
+    const m = music[k], want = musicOn && !muted && musicWant === k ? MUSIC_VOL : 0, diff = want - m.volume;
+    m.volume = Math.max(0, Math.min(1, m.volume + Math.sign(diff) * Math.min(Math.abs(diff), dt * 0.7)));
+    if (want > 0 && m.paused && !m._busy && performance.now() > (m._retry || 0)) {
+      m._busy = true;
+      m.play().catch(() => { m._retry = performance.now() + 3000; }).finally(() => { m._busy = false; });   // blocked or missing file: try again later
+    } else if (want === 0 && m.volume <= 0.001 && !m.paused) { m.pause(); m.currentTime = 0; }
+  }
+}
 
 // ---------- state ----------
 const view = new View($('stage'), $('view'));
@@ -77,7 +159,7 @@ function newStore(fresh = false) {
   $('speed').textContent = '1x';
   $('hud').classList.add('off'); $('info').classList.add('off'); $('dock').classList.add('off'); closeTray(); setTab('stocks'); $('title').classList.remove('off');
   setHTML($('t-stats'), `Banked 💰 ${save.bank} · Runs ${save.shifts} · Best: ${save.best} nights`);
-  closeModal(); buildCards(); refresh();
+  closeModal(); hideTarot(); buildCards(); refresh();
 }
 
 function startRun() {
@@ -107,8 +189,17 @@ function banner(t) { const b = $('banner'); b.innerHTML = pxText(t); b.classList
 function onEvent(type, d) {
   view.onEvent(type, d);
   switch (type) {
-    case 'place': case 'upgrade': case 'stock': sfx.place(); break;
-    case 'unlock': sfx.place(); banner(`🔓 ${ITEMS[d.type].name} unlocked!`); break;
+    case 'place': sfx.place(); break;
+    case 'upgrade': sfx.upgrade(); break;
+    case 'stock': sfx.restock(); break;
+    case 'sell': if (d.tower.broken !== 'destroyed') sfx.sell(); break;
+    case 'renovate': sfx.renovate(); break;
+    case 'hit': sfx.hit(); break;
+    case 'splash': sfx.wet(); break;
+    case 'iceBurst': sfx.shatter(); break;
+    case 'canHit': sfx.can(); break;
+    case 'slip': sfx.slip(); break;
+    case 'unlock': sfx.unlock(); banner(`🔓 ${ITEMS[d.type].name} unlocked!`); break;
     case 'buy': sfx.buy(); floatText(d.x, d.y, '🛒', 'sale', 1.5); break;
     case 'pay': sfx.sale(); floatText(d.x, d.y, '+$' + d.amount, 'sale', 1.5); break;
     case 'soldout': floatText(d.x, d.y, 'Sold out!', 'bad', 1.5); break;
@@ -131,15 +222,15 @@ function onEvent(type, d) {
     case 'towerHit': sfx.thud(); break;
     case 'towerWarn': sfx.warn(); floatText(d.tower.x, d.tower.y, 'Overheating!', 'bad', 1.8); break;
     case 'towerBreak': sfx.crash(); floatText(d.tower.x, d.tower.y, d.why === 'destroyed' ? 'Destroyed!' : 'Broke down!', 'bad', 1.8); break;
-    case 'service': sfx.place(); floatText(d.tower.x, d.tower.y, 'Serviced', 'good', 1.6); break;
-    case 'replace': sfx.place(); floatText(d.tower.x, d.tower.y, 'Replaced!', 'good', 1.6); break;
+    case 'service': sfx.fix(); floatText(d.tower.x, d.tower.y, 'Serviced', 'good', 1.6); break;
+    case 'replace': sfx.replace(); floatText(d.tower.x, d.tower.y, 'Replaced!', 'good', 1.6); break;
     case 'waveStart': sfx.wave(); banner(`🌙 Night ${d.n} — ${d.count} burglars!`); break;
-    case 'waveClear': bankProgress(); banner('Clear! +$' + d.bonus); break;
+    case 'waveClear': bankProgress(); sfx.win(); banner('Clear! +$' + d.bonus); break;
     case 'freeze': sfx.freeze(); floatText(d.enemy.x, d.enemy.y, '🧊 Frozen!', 'good', 1.5); break;
     case 'bounce': sfx.bounce(); break;
     case 'retry': banner(`☀ Day ${d.n} again — you've got this`); break;
     case 'restock': setTimeout(showRestock, 900); break;
-    case 'lost': sfx.leak(); setTimeout(showLost, 700); break;
+    case 'lost': sfx.lost(); setTimeout(showLost, 700); break;
   }
   if (SAVE_EVENTS.has(type)) saveRun();
   refresh();
@@ -198,7 +289,7 @@ function renderReno() {
     <p style="color:var(--dim)">Only before you open the store for the day.</p>
     <button class="pxb ${maxed ? '' : 'gold'}" id="renoBtn" ${chk.ok ? '' : 'disabled'}>${maxed ? 'MAX SIZE' : chk.ok ? '🔨 RENOVATE $' + cost : (game.phase !== 'prep' ? '🔒 CLOSED: ' : '') + '$' + cost + ' — ' + chk.reason.toUpperCase()}</button>`);
   $('renoBtn').onclick = () => {
-    if (game.renovate()) { view.setGame(game); sfx.place(); banner(`🏠 Renovated: ${size(game.room)}x${size(game.room)} store`); pickedTower = null; preview = null; refresh(); }
+    if (game.renovate()) { view.setGame(game); banner(`🏠 Renovated: ${size(game.room)}x${size(game.room)} store`); pickedTower = null; preview = null; refresh(); }
     else sfx.bad();
   };
 }
@@ -231,11 +322,12 @@ function refresh() {
   if (selected && icons[selected]) { if (bi.dataset.k !== selected) { bi.src = icons[selected]; bi.className = ''; bi.dataset.k = selected; } }
   else if (bi.dataset.k !== 'hammer') { bi.src = pxEmoji('🔨', 16); bi.className = 'pxe'; bi.dataset.k = 'hammer'; }
   const go = $('go'), setGo = (cls, dis, txt) => { go.disabled = dis; go.className = 'pxb ' + cls; setHTML(go, txt); };
-  if (game.phase === 'prep') setGo('gold', false, '☀ OPEN<br>STORE');
+  if (game.phase === 'prep') { if (game.canOpen().ok) setGo('gold', false, '☀ OPEN<br>STORE'); else setGo('', false, '🔒 OPEN<br>STORE'); }   // an empty store can't open
   else if (game.phase === 'morning') setGo('', true, `🛒 ${game.customers.length + game.dayQueue.length}<br>SHOPPERS`);
   else if (game.phase === 'evening') setGo('red', false, `🌙 NIGHT IN ${Math.max(1, Math.ceil(game.nightIn))}<br>TAP: NOW`);   // starts by itself; tapping skips the wait
   else if (game.phase === 'wave') setGo('', true, `🦹 ${game.enemies.length + game.spawnQueue.length}<br>LEFT`);
   else setGo('', true, '...');
+  musicWant = !running ? null : game.phase === 'wave' ? 'night' : game.phase === 'lost' ? null : 'day';
   renderInfo();
   renderReno();
   view.setRange(...rangeFor());
@@ -325,7 +417,7 @@ pop.addEventListener('click', e => {
   const b = e.target.closest('button[data-a]'); if (!b || b.disabled || !game) return;
   const t = pickedTower, a = b.dataset.a;
   if (a === 'rst') { if (!game.restock(t)) sfx.bad(); }
-  else if (a === 'sell') { game.sell(t); pickedTower = null; }
+  else if (a === 'sell') { if (t.kind === 'trap') sfx.sell(); game.sell(t); pickedTower = null; }
   else if (a === 'upg') { if (!game.upgrade(t)) sfx.bad(); }
   else if (a === 'svc') { if (!game.service(t)) sfx.bad(); }
   else if (a === 'rpl') { if (!game.replace(t)) sfx.bad(); }
@@ -376,10 +468,13 @@ window.addEventListener('keydown', e => {
   else if (e.key === ' ' && (game.phase === 'prep' || game.phase === 'evening')) { e.preventDefault(); $('go').click(); }
   else if ((e.key === 'r' || e.key === 'R') && !$('restockAll').disabled) $('restockAll').click();
 });
-$('go').onclick = () => { if (game.startDay() || game.startWave()) { preview = null; view.setCursor(null); refresh(); } };
+$('go').onclick = () => {
+  if (game.phase === 'prep') { const c = game.canOpen(); if (!c.ok) { sfx.bad(); banner('🔒 ' + c.reason); return; } }
+  if (game.startDay() || game.startWave()) { preview = null; view.setCursor(null); refresh(); }
+};
 $('restockAll').onclick = () => { if (!game.restockAll()) sfx.bad(); refresh(); };
 $('speed').onclick = () => { speed = speed % 3 + 1; $('speed').textContent = speed + 'x'; };
-$('mute').onclick = () => { muted = !muted; setHTML($('mute'), muted ? '🔇' : '🔊'); };
+$('mute').onclick = () => { muted = !muted; if (!muted) { musicOn = true; audio(); } setHTML($('mute'), muted ? '🔇' : '🔊'); };
 
 // ---------- modals ----------
 const modal = $('modal'), card = $('card');
@@ -431,13 +526,84 @@ function showShop() {
 }
 let shopDirty = false;
 
+// ---------- the morning delivery: tarot cards (3D tilt, flip to reveal, pick one) ----------
+const tarotCss = document.createElement('style');
+tarotCss.textContent = `
+#tarot{position:fixed;inset:0;z-index:60;display:none;align-items:center;justify-content:center;background:radial-gradient(ellipse at 50% 35%,rgba(70,34,130,.9),rgba(6,3,16,.97));overflow:auto;padding:14px;box-sizing:border-box;color:#fff;font-family:inherit}
+#tarot.on{display:flex;animation:tfade .45s both}
+@keyframes tfade{from{opacity:0}to{opacity:1}}
+#tarot .tt{display:flex;flex-direction:column;align-items:center;gap:12px;max-width:100%;margin:auto}
+#tarot .th{font-size:clamp(18px,4.6vw,30px);color:#ffcf4a;text-align:center;text-shadow:0 3px 0 #000}
+#tarot .ts{font-size:clamp(11px,2.8vw,14px);color:#cfc6ff;text-align:center}
+#tarot .tr{display:flex;flex-wrap:wrap;justify-content:center;gap:clamp(8px,2.4vw,22px);perspective:1200px}
+#tarot .tc{--w:min(172px,28vw);width:var(--w);height:calc(var(--w)*1.62);font-size:max(10px,calc(var(--w)/11.5));position:relative;cursor:pointer;perspective:900px;-webkit-tap-highlight-color:transparent;user-select:none;
+  animation:tdeal .8s cubic-bezier(.2,.9,.25,1.12) both;animation-delay:calc(var(--i)*.14s)}
+@keyframes tdeal{from{transform:translateY(90vh) rotate(-24deg) scale(.5);opacity:0}to{transform:none;opacity:1}}
+#tarot .ti{position:absolute;inset:0;transform-style:preserve-3d;transform:translateZ(var(--z,0px)) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg));transition:transform .16s ease-out}
+#tarot .tf{position:absolute;inset:0;transform-style:preserve-3d;transition:transform .9s cubic-bezier(.2,.8,.2,1)}
+#tarot .tc.up .tf{transform:rotateY(180deg)}
+#tarot .face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;border-radius:calc(var(--w)/12);border:calc(var(--w)/36) solid #e3b93c;box-shadow:0 16px 30px rgba(0,0,0,.6),inset 0 0 0 calc(var(--w)/55) rgba(0,0,0,.55);overflow:hidden;box-sizing:border-box;display:flex;flex-direction:column;align-items:center}
+#tarot .back{background:repeating-linear-gradient(45deg,#2b1662 0 9px,#37197f 9px 18px);justify-content:center;gap:.4em;color:#e3b93c}
+#tarot .back::after{content:'';position:absolute;inset:7%;border:2px dashed rgba(227,185,60,.65);border-radius:calc(var(--w)/16)}
+#tarot .back .sg{font-size:4.2em;text-shadow:0 0 18px rgba(255,207,74,.8)}#tarot .back .sg2{font-size:1.8em;opacity:.8;letter-spacing:.3em}
+#tarot .front{transform:rotateY(180deg);background:linear-gradient(165deg,hsl(var(--hue) 55% 32%),hsl(var(--hue) 50% 13%));padding:7% 8%;gap:.35em;text-align:center}
+#tarot .rn{color:#e3b93c;font-size:1.15em;letter-spacing:.2em;border-bottom:1px solid rgba(227,185,60,.5);padding-bottom:.2em;width:70%}
+#tarot .ic{font-size:3.7em;line-height:1.15;filter:drop-shadow(0 4px 6px rgba(0,0,0,.5))}
+#tarot .nm{font-weight:800;font-size:1.2em;color:#ffe08a;line-height:1.15}
+#tarot .ds{font-size:.98em;color:#e9e4ff;line-height:1.25}
+#tarot .gl{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .2s;mix-blend-mode:screen;background:radial-gradient(circle at var(--gx,50%) var(--gy,30%),rgba(255,255,255,.42),transparent 55%)}
+#tarot .tc:hover .gl{opacity:1}
+#tarot .tc.up:hover .face{border-color:#fff1b8}
+#tarot .tc.chosen{z-index:3;animation:tchosen 1s ease-in forwards}
+@keyframes tchosen{0%{transform:none}35%{transform:translateY(-4%) scale(1.22)}100%{transform:translateY(-8%) scale(1.55);opacity:0}}
+#tarot .tc.chosen .face{box-shadow:0 0 50px 14px rgba(255,207,74,.95)}
+#tarot .tc.gone{animation:tgone .6s ease-in forwards;pointer-events:none}
+@keyframes tgone{to{transform:translateY(70vh) rotate(16deg) scale(.7);opacity:0}}
+#tarot .tbtn{font:inherit;font-weight:800;padding:10px 18px;border-radius:12px;border:2px solid #0d0b1d;background:#ffcf4a;color:#1b1530;cursor:pointer;box-shadow:0 3px 0 #0d0b1d;min-height:44px}
+#tarot .tbtn:disabled{opacity:.45}
+@media (max-width:640px){#tarot .tc{--w:min(172px,42vw)}}
+@media (max-height:520px){#tarot .tc{--w:min(150px,25vh)}#tarot .tt{gap:6px}}`;
+document.head.appendChild(tarotCss);
+const tarot = document.createElement('div'); tarot.id = 'tarot'; document.body.appendChild(tarot);
+const hideTarot = () => tarot.classList.remove('on');
+let tarotTimers = [];
 function showRestock() {
   if (!game || game.phase !== 'restock') return;
-  const opts = game.choices.map(u => `<button class="choice pxb" data-id="${u.id}"><span class="ic">${u.icon}</span><span><div class="nm">${u.name}</div><div class="ds">${u.desc}</div></span></button>`).join('');
-  openModal(`<h2>📦 Morning delivery — day ${game.wave + 1}</h2><div class="sub">You survived night ${game.wave}. Truck's here: pick one delivery. Till: ${game.lives}/${game.maxLives}</div>${opts}
-    <div class="row"><button class="pxb" id="m-reroll" ${game.rerolls ? '' : 'disabled'}>🔄 Reroll (${game.rerolls})</button></div>`);
-  card.querySelectorAll('.choice').forEach(b => b.onclick = () => { game.pickUpgrade(b.dataset.id); sfx.place(); closeModal(); refresh(); });
-  $('m-reroll').onclick = () => { game.reroll(); showRestock(); };
+  tarotTimers.forEach(clearTimeout); tarotTimers = [];
+  const ROM = ['I', 'II', 'III', 'IV', 'V', 'VI'];
+  const hue = id => { let h = 0; for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) % 360; return h; };
+  const cards = game.choices.map((u, i) => `<div class="tc" data-id="${u.id}" style="--i:${i};--hue:${hue(u.id)}"><div class="ti"><div class="tf">
+    <div class="face back"><div class="sg">✦</div><div class="sg2">☾ ☀</div></div>
+    <div class="face front"><div class="rn">${ROM[i] || i + 1}</div><div class="ic">${u.icon}</div><div class="nm">${u.name}</div><div class="ds">${u.desc}</div><div class="gl"></div></div>
+  </div></div></div>`).join('');
+  tarot.innerHTML = `<div class="tt"><div class="th">📦 Morning delivery — day ${game.wave + 1}</div>
+    <div class="ts">You survived night ${game.wave}. Draw one card · Till ${game.lives}/${game.maxLives}</div>
+    <div class="tr">${cards}</div><button class="tbtn" id="t-reroll" ${game.rerolls ? '' : 'disabled'}>🔄 Reroll (${game.rerolls})</button></div>`;
+  tarot.classList.add('on');
+  const els = [...tarot.querySelectorAll('.tc')]; let busy = false;
+  const flip = el => { if (el.classList.contains('up')) return; el.classList.add('up'); el._up = performance.now(); sfx.flip(); };
+  const pick = el => {
+    busy = true; sfx.pick();
+    els.forEach(o => o.classList.add(o === el ? 'chosen' : 'gone'));
+    tarotTimers.push(setTimeout(() => { hideTarot(); game.pickUpgrade(el.dataset.id); refresh(); }, 950));
+  };
+  els.forEach((el, i) => {
+    tarotTimers.push(setTimeout(() => sfx.deal(), i * 140 + 120));
+    tarotTimers.push(setTimeout(() => flip(el), 1000 + i * 280));   // they turn over by themselves; tap to turn one early
+    el.addEventListener('pointermove', e => {
+      const r = el.getBoundingClientRect(), px = (e.clientX - r.left) / r.width, py = (e.clientY - r.top) / r.height;
+      el.style.setProperty('--ry', ((px - 0.5) * 30) + 'deg'); el.style.setProperty('--rx', ((0.5 - py) * 24) + 'deg'); el.style.setProperty('--z', '36px');
+      el.style.setProperty('--gx', (px * 100) + '%'); el.style.setProperty('--gy', (py * 100) + '%');
+    });
+    el.addEventListener('pointerleave', () => { el.style.setProperty('--rx', '0deg'); el.style.setProperty('--ry', '0deg'); el.style.setProperty('--z', '0px'); });
+    el.addEventListener('click', () => {
+      if (busy) return;
+      if (!el.classList.contains('up')) { flip(el); return; }
+      if (performance.now() - el._up < 500) return;   // not while it is still turning over
+      pick(el);
+    });
+  });
+  $('t-reroll').onclick = () => { if (busy) return; if (game.reroll()) showRestock(); else sfx.bad(); };
 }
 
 // losing never wipes anything: the same day just starts again with the same store, cash and upgrades
@@ -460,6 +626,7 @@ function showLost(again = false) {
 let last = performance.now(), clock = 0;
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now; clock += dt;
+  musicTick(dt);
   if (game) {
     const was = game.phase; game.update(dt * speed);
     if (game.phase === 'wave' || game.phase === 'morning' || game.phase === 'evening' || was !== game.phase) { if (Math.floor(clock * 4) !== Math.floor((clock - dt) * 4)) refresh(); }
