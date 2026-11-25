@@ -328,7 +328,7 @@ export class Game {
   unitCost() { return Math.max(1, Math.round(UNIT_COST * this.mods.cost)); }
   costOf(type) { return Math.max(1, Math.round(ITEMS[type].cost * this.mods.cost)); }
   upgradeCost(t) { return t.level >= MAX_LEVEL ? Infinity : Math.round(ITEMS[t.type].cost * (t.level === 1 ? 0.8 : 1.2) * this.mods.cost); }
-  sellValue(t) { return t.kind === 'shelf' ? Math.floor((t.cost || 0) * 0.5) : Math.floor(t.invested * (t.broken ? 0.3 : 0.7)); }
+  sellValue(t) { if (t.kind === 'trap') return Math.floor(this.costOf(t.type) * 0.5 * Math.min(1, t.uses / ITEMS[t.type].uses)); return t.kind === 'shelf' ? Math.floor((t.cost || 0) * 0.5) : Math.floor(t.invested * (t.broken ? 0.3 : 0.7)); }
   towerAt(x, y) { return this.towers.find(t => t.x === x && t.y === y) || null; }
   trapAt(x, y) { return this.traps.find(t => t.x === x && t.y === y) || null; }
   shelfAt(x, y) { return this.shelves.find(s => s.x === x && s.y === y) || null; }
@@ -396,6 +396,7 @@ export class Game {
 
   sell(t) {
     this.cash += this.sellValue(t);
+    if (t.kind === 'trap') { this.traps = this.traps.filter(x => x !== t); this.emit('trapGone', { trap: t }); return; }
     if (t.kind === 'shelf') {
       if (!t.placed) return;
       this.shelves = this.shelves.filter(x => x !== t); this.blocked[idx(t.x, t.y)] = 0;
