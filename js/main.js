@@ -134,8 +134,24 @@ function musicTick(dt) {
 
 // ---------- state ----------
 const view = new View($('stage'), $('view'));
-let game = null, running = false, selected = null /* build item id */, pickedTower = null, preview = null, hover = null, speed = 1;
+let game = null, running = false, selected = null /* build item id */, pickedTower = null, preview = null, hover = null, speed = 1, paused = false;
 pxifyStatic();
+
+// ---------- HUD: the time sits in the top-left corner, the till and the money right below it. No containers. ----------
+(function layoutHud() {
+  const hud = $('hud'); if (!hud) return;
+  const top = id => { let el = $(id); while (el && el.parentElement && el.parentElement !== hud) el = el.parentElement; return el; };
+  const parts = [...new Set([top('hour') || $('clock'), top('lives'), top('cash')].filter(Boolean))];
+  const box = document.createElement('div'); box.id = 'hudL'; hud.appendChild(box);
+  for (const p of parts) box.appendChild(p);
+  const css = document.createElement('style');
+  css.textContent = `
+#hudL{position:fixed;top:max(8px,env(safe-area-inset-top));left:max(12px,env(safe-area-inset-left));z-index:6;display:flex;flex-direction:column;align-items:flex-start;gap:3px;pointer-events:none}
+#hudL>*{position:static!important;transform:none!important;margin:0!important;background:none!important;border:0!important;box-shadow:none!important;padding:0!important;min-width:0!important;width:auto!important;height:auto!important;display:flex!important;flex-direction:row;align-items:center;gap:8px;text-shadow:0 2px 0 #000,0 0 8px rgba(0,0,0,.9);filter:drop-shadow(0 2px 0 rgba(0,0,0,.75))}
+#hudL #hour{font-size:clamp(20px,5.2vw,30px)}
+#hudL #lives,#hudL #cash{font-size:clamp(16px,4.2vw,22px)}`;
+  document.head.appendChild(css);
+})();
 
 // the run is saved in localStorage: at the start of every day (layout, machines, cash, upgrades) and while you build in prep.
 // Closing the game mid-day puts you back at the moment you opened that day.
@@ -156,15 +172,15 @@ function newStore(fresh = false) {
   if (save.run) { try { game.restore(save.run); } catch (e) { save.run = null; game = new Game({ meta: save.levels }); game.on = onEvent; } }
   view.setGame(game); view.menu = true; view.tod = 0;
   running = false; selected = null; pickedTower = null; preview = null; speed = 1;
-  $('speed').textContent = '1x';
-  $('hud').classList.add('off'); $('info').classList.add('off'); $('dock').classList.add('off'); closeTray(); setTab('stocks'); $('title').classList.remove('off');
-  setHTML($('t-stats'), `Banked 💰 ${save.bank} · Runs ${save.shifts} · Best: ${save.best} nights`);
+  $('speed').textContent = '1x'; setPaused(false);
+  $('hud').classList.add('off'); $('info').classList.add('off'); $('dock').classList.add('off'); closeTray(); setTab('stocks'); $('title').classList.remove('off', 'pop'); $('stage').classList.add('menu');
   closeModal(); hideTarot(); buildCards(); refresh();
 }
 
 function startRun() {
   running = true; view.menu = false; selected = null;
-  $('title').classList.add('off'); $('hud').classList.remove('off'); $('info').classList.remove('off'); $('dock').classList.remove('off');
+  $('stage').classList.remove('menu'); $('title').classList.add('pop'); setTimeout(() => { if (running) $('title').classList.add('off'); }, 480);
+  $('hud').classList.remove('off'); $('info').classList.remove('off'); $('dock').classList.remove('off');
   banner(game.wave ? `☀ Day ${game.wave + 1} — welcome back` : '☀ Day 1 — stock up, then open the store!'); refresh();
   if (game.phase === 'restock') showRestock();
 }
@@ -204,8 +220,8 @@ function onEvent(type, d) {
     case 'pay': sfx.sale(); floatText(d.x, d.y, '+$' + d.amount, 'sale', 1.5); break;
     case 'soldout': floatText(d.x, d.y, 'Sold out!', 'bad', 1.5); break;
     case 'empty': floatText(d.x, d.y, '😕 nothing to buy', 'bad', 1.2); break;
-    case 'dayStart': sfx.day(); banner(`☀ Day ${d.n} — ${d.count} customers coming`); break;
-    case 'evening': banner(`Store closed: +$${d.sales} from ${d.served} customers`); break;
+    case 'dayStart': sfx.day(); banner(`☀ Day ${d.n}`); break;
+    case 'evening': banner(`Store closed: +$${d.sales}`); break;
     case 'newDay': banner(`☀ Day ${d.n} — restock and open up`); break;
     case 'shelfBreak': sfx.crash(); floatText(d.shelf.x, d.shelf.y, 'Shelf smashed!', 'bad', 1.4); break;
     case 'shoot': sfx.shoot(d.tower.type); break;
@@ -224,7 +240,7 @@ function onEvent(type, d) {
     case 'towerBreak': sfx.crash(); floatText(d.tower.x, d.tower.y, d.why === 'destroyed' ? 'Destroyed!' : 'Broke down!', 'bad', 1.8); break;
     case 'service': sfx.fix(); floatText(d.tower.x, d.tower.y, 'Serviced', 'good', 1.6); break;
     case 'replace': sfx.replace(); floatText(d.tower.x, d.tower.y, 'Replaced!', 'good', 1.6); break;
-    case 'waveStart': sfx.wave(); banner(`🌙 Night ${d.n} — ${d.count} burglars!`); break;
+    case 'waveStart': sfx.wave(); banner(`🌙 Night ${d.n} — burglars!`); break;
     case 'waveClear': bankProgress(); sfx.win(); banner('Clear! +$' + d.bonus); break;
     case 'freeze': sfx.freeze(); floatText(d.enemy.x, d.enemy.y, '🧊 Frozen!', 'good', 1.5); break;
     case 'bounce': sfx.bounce(); break;
@@ -323,9 +339,9 @@ function refresh() {
   else if (bi.dataset.k !== 'hammer') { bi.src = pxEmoji('🔨', 16); bi.className = 'pxe'; bi.dataset.k = 'hammer'; }
   const go = $('go'), setGo = (cls, dis, txt) => { go.disabled = dis; go.className = 'pxb ' + cls; setHTML(go, txt); };
   if (game.phase === 'prep') { if (game.canOpen().ok) setGo('gold', false, '☀ OPEN<br>STORE'); else setGo('', false, '🔒 OPEN<br>STORE'); }   // an empty store can't open
-  else if (game.phase === 'morning') setGo('', true, `🛒 ${game.customers.length + game.dayQueue.length}<br>SHOPPERS`);
+  else if (game.phase === 'morning') setGo('', true, '🛒 STORE<br>OPEN');
   else if (game.phase === 'evening') setGo('red', false, `🌙 NIGHT IN ${Math.max(1, Math.ceil(game.nightIn))}<br>TAP: NOW`);   // starts by itself; tapping skips the wait
-  else if (game.phase === 'wave') setGo('', true, `🦹 ${game.enemies.length + game.spawnQueue.length}<br>LEFT`);
+  else if (game.phase === 'wave') setGo('', true, '🌙 NIGHT<br>DEFEND!');
   else setGo('', true, '...');
   musicWant = !running ? null : game.phase === 'wave' ? 'night' : game.phase === 'lost' ? null : 'day';
   renderInfo();
@@ -460,20 +476,29 @@ cv.addEventListener('pointerdown', e => {
 });
 window.addEventListener('keydown', e => {
   if (!game || !running) return;
+  if (paused) { if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') $('pause').click(); return; }
   const i = parseInt(e.key, 10);
   const av = available();
   if (i >= 1 && i <= av.length) { selected = av[i - 1]; pickedTower = null; preview = null; closeTray(); refresh(); }
   else if (e.key === 'b' || e.key === 'B') { trayOpen() ? closeTray() : openTray(); }
   else if (e.key === 'Escape') { selected = null; pickedTower = null; preview = null; view.setCursor(null); refresh(); }
   else if (e.key === ' ' && (game.phase === 'prep' || game.phase === 'evening')) { e.preventDefault(); $('go').click(); }
+  else if (e.key === 'p' || e.key === 'P') $('pause').click();
   else if ((e.key === 'r' || e.key === 'R') && !$('restockAll').disabled) $('restockAll').click();
 });
 $('go').onclick = () => {
+  if (paused) setPaused(false);
   if (game.phase === 'prep') { const c = game.canOpen(); if (!c.ok) { sfx.bad(); banner('🔒 ' + c.reason); return; } }
   if (game.startDay() || game.startWave()) { preview = null; view.setCursor(null); refresh(); }
 };
 $('restockAll').onclick = () => { if (!game.restockAll()) sfx.bad(); refresh(); };
 $('speed').onclick = () => { speed = speed % 3 + 1; $('speed').textContent = speed + 'x'; };
+function setPaused(v) {
+  paused = v; $('pause').textContent = v ? '▶' : '❚❚'; $('pause').classList.toggle('on', v); $('pauseMenu').classList.toggle('off', !v);
+}
+$('p-continue').onclick = () => setPaused(false);
+$('p-exit').onclick = () => { setPaused(false); persist(); newStore(); };
+$('pause').onclick = () => { if (game && running) setPaused(!paused); };
 $('mute').onclick = () => { muted = !muted; if (!muted) { musicOn = true; audio(); } setHTML($('mute'), muted ? '🔇' : '🔊'); };
 
 // ---------- modals ----------
@@ -628,7 +653,7 @@ function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now; clock += dt;
   musicTick(dt);
   if (game) {
-    const was = game.phase; game.update(dt * speed);
+    const was = game.phase; game.update(paused ? 0 : dt * speed);
     if (game.phase === 'wave' || game.phase === 'morning' || game.phase === 'evening' || was !== game.phase) { if (Math.floor(clock * 4) !== Math.floor((clock - dt) * 4)) refresh(); }
   }
   view.render(dt, clock);
