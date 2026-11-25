@@ -130,7 +130,7 @@ export class View {
   setGame(game) {
     this.game = game;
     OX = (COLS - 1) / 2; OZ = (ROWS - 1) / 2;
-    const e = side => side === 'top' ? 1.7 : game.doorSide === side ? 3.2 : 0.5;   // how far each side sticks out of the floor: counter strip on top, sidewalk on the door side
+    const e = side => game.counterSide === side ? 1.7 : game.doorSide === side ? 3.2 : 0.5;   // how far each side sticks out of the floor: counter strip, sidewalk on the door side
     this.ext = { left: e('left'), right: e('right'), top: e('top'), bottom: e('bottom') };
     this.bounds = { L: wx(-0.5), R: wx(COLS - 0.5), T: wz(-0.5), B: wz(ROWS - 0.5) };
     this.fitRoom();
@@ -168,7 +168,7 @@ export class View {
 
     // ----- floor: ONE canvas texture (your original checker + lane tints + hazard stripes) on ONE plane -----
     const K = 16, cv = document.createElement('canvas'); cv.width = COLS * K; cv.height = ROWS * K; const cx = cv.getContext('2d');
-    const lane = (x, y) => y === 0 ? 'counter'
+    const lane = (x, y) => (cs === 'right' && x === COLS - 1) || (cs === 'left' && x === 0) || (cs === 'top' && y === 0) ? 'counter'
       : (ds === 'left' && x === 0) || (ds === 'right' && x === COLS - 1) || (ds === 'bottom' && y === ROWS - 1) ? 'door' : '';
     for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
       const l = lane(x, y), odd = (x + y) % 2;
@@ -187,7 +187,7 @@ export class View {
     slab.scale.set(COLS + 12, 0.2, ROWS + 10); slab.position.set(0, -0.12, 0); S.add(slab);
 
     // ----- walls: purple, door walls low, counter wall lower and set back behind the desk, back wall with posters. No wall shadows. -----
-    const off = side => side === cs ? 1.45 : 0.25, H = side => side === 'top' ? 1.6 : side === 'bottom' ? 0.55 : 1.1;
+    const off = side => side === cs ? 1.45 : 0.25, H = side => side === 'top' ? 1.6 : side === cs ? 0.7 : side === 'bottom' ? 0.55 : 1.1;
     const xL = L - off('left'), xR = R + off('right'), zT = Tt - off('top');
     const wall = (sx, sz, x, z, h) => part(this.box, 0x4b3f8f, sx, h, sz, x, h / 2, z, false);
     const zBt = B + 0.25, zA = zT + 0.25, zB = B + 0.5;                                          // side walls run from the back wall's inner face to just past the floor
@@ -485,7 +485,7 @@ export class View {
   onEvent(type, d) {
     if (type === 'shoot') { const o = this.meshes.get(d.tower.id); if (o) o.kick = 0.18; if (d.tower.type === 'soda') this.burst(d.tower.x, d.tower.y, 0.8, 0x7df0d8, 5, 1.4, 0.8); if (d.tower.type === 'sauce') { this.burst(d.tower.x, d.tower.y, 1.1, 0xff5a1f, 6, 1.8, 0.9); this.burst(d.tower.x, d.tower.y, 1.1, 0xffd23f, 3, 1.4, 0.7); } }
     else if (type === 'canHit') { this.scatterCans(d.x, d.y, d.dx, d.dy, d.color); this.burst(d.x, d.y, 0.5, 0xffffff, 4, 1.8); }
-    else if (type === 'buy') { this.burst(d.x, d.y, 0.9, 0xffcf4a, 4, 1.6); const o = this.meshes.get(d.id); if (o) { o.kick = 0.18; o.flash = 0.35; } }
+    else if (type === 'buy') { this.burst(d.x, d.y, 0.9, 0xffcf4a, 4, 1.6); const o = this.meshes.get(d.id); if (o) { o.kick = 0.18; o.flash = 0.35; if (d.kind === 'shelf') o.pop = 0.34; } }
     else if (type === 'pay') this.burst(d.x, d.y, 1.1, 0xffe45c, 7, 2.2, 1.2);
     else if (type === 'hit') this.burst(d.x, d.y, 0.5, d.crit ? 0xffee58 : 0xffffff, d.crit ? 6 : 3, 1.5);
     else if (type === 'kill') this.burst(d.enemy.x, d.enemy.y, 0.4, 0xffcf4a, 8, 2.5);
@@ -555,10 +555,20 @@ export class View {
       const k = sh.hit > 0 ? 0.05 : 0;
       u.body.position.x = (Math.random() - 0.5) * k * 2; u.body.position.z = (Math.random() - 0.5) * k;
       u.body.rotation.z = sh.hit > 0 ? (Math.random() - 0.5) * 0.08 : 0;
+      // a customer took something: the shelf hops and squashes (jelly pop)
+      if (m.pop > 0) {
+        m.pop -= dt; const p = 1 - Math.max(0, m.pop) / 0.34, s = Math.sin(p * Math.PI) * (1 - p * 0.35), w = Math.sin(p * Math.PI * 3) * (1 - p) * 0.06;
+        m.group.scale.set(1 + 0.16 * s + w, 1 + 0.26 * s - w, 1 + 0.16 * s + w); m.group.position.y = 0.16 * s; m.popping = true;
+      } else if (m.popping) { m.popping = false; m.group.scale.set(1, 1, 1); m.group.position.y = 0; }
     });
     sync(g.traps, t => this.at(makeItem(this, t), t), (t, m) => { const s = 0.7 + 0.3 * Math.min(1, t.uses / 12); m.group.scale.setScalar(s); });
     sync(g.enemies, e => makeEnemy(this, e), (e, m) => this.updEnemy(e, m, time, dt));
     sync(g.customers, c => makeCustomer(this, c), (c, m) => this.updCustomer(c, m, time, dt));
+    sync(g.walkers || [], w => makeCustomer(this, w), (w, m) => {
+      this.updCustomer(w, m, time, dt);
+      if (!m.fade) { m.fade = []; m.group.traverse(o => { if (o.isMesh && o.material && !Array.isArray(o.material)) { o.material = o.material.clone(); o.material.transparent = true; m.fade.push(o.material); } }); }
+      for (const mt of m.fade) mt.opacity = w.a;
+    });
     sync(g.fires, f => this.at(makeFire(this, f), f), (f, m) => animFire(this, m.group, f, time));
     sync(g.bombs, b => this.at(makeGroundBomb(this, b), b), (b, m) => animGroundBomb(m.group, b, time));
     sync(g.projectiles, p => p.kind === 'hotdog' ? this.makeHotdogProj() : p.kind === 'ice' ? this.makeIceProj() : makeProjectile(this, p), (p, m) => {
