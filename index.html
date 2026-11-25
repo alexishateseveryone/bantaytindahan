@@ -55,7 +55,7 @@
   #hud > * { pointer-events:auto; }
   .chip { --c:var(--glass); padding:9px 12px; white-space:nowrap; font:400 10px/1.3 var(--pf); display:flex; align-items:center; gap:2px; }
   .chip b { color:var(--gold); font-weight:400; }
-  #clock { margin-left:auto; transition:background .6s; } #clock small { color:var(--dim); font-size:8px; margin-left:8px; }
+  #clock { margin-left:0; transition:background .6s; } #clock small { color:var(--dim); font-size:8px; margin-left:8px; }
   #clock.night { --c:rgba(84,50,28,.92); }
   #restockAll { padding:10px; }
 
@@ -71,7 +71,23 @@
   .bar.wear i { background-color:#ffb703; } .bar.hot i, .bar.lo i { background-color:var(--red); }
 
   /* ---- bottom-right dock: open/close the store + the build icon ---- */
-  #dock { position:absolute; right:max(12px, env(safe-area-inset-right)); bottom:max(12px, env(safe-area-inset-bottom)); display:flex; gap:10px; align-items:flex-end; }
+  #dock { position:absolute; right:max(12px, env(safe-area-inset-right)); bottom:max(12px, env(safe-area-inset-bottom)); display:flex; flex-direction:column; gap:10px; align-items:stretch; }
+  #dockTop, #dockBot { display:flex; gap:10px; align-items:flex-end; }
+  #dockTop #restockAll { flex:1; display:flex; align-items:center; justify-content:center; gap:4px; }
+  #pauseMenu { position:absolute; inset:0; z-index:6; background:rgba(8,5,3,.68); display:flex; align-items:center; justify-content:center; animation:fadeIn .2s ease; }
+  #pauseMenu .pbox { display:flex; flex-direction:column; gap:14px; width:min(300px, 80%); text-align:center; }
+  #pauseMenu h1 { margin:0 0 6px; font:700 clamp(34px,6vw,52px)/1 var(--cf); letter-spacing:6px; color:#ffd23f; text-shadow:0 4px 0 rgba(0,0,0,.6), 0 0 18px rgba(0,0,0,.6); }
+  #pauseMenu .pxb { padding:16px; font-size:18px; }
+  @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+  #hud { z-index:7; }
+  #hud #mute, #hud #pause { position:absolute; top:0; } #hud #pause { right:0; } #hud #mute { right:52px; }
+  #view { transition:filter .7s ease; }
+  #stage.menu #view { filter:blur(7px) brightness(.75); }
+  #title { left:0 !important; right:0; max-width:none !important; text-align:center; display:flex; flex-direction:column; align-items:center; }
+  #title .btns { width:min(320px, 80%); }
+  #title.pop { animation:titlePop .5s cubic-bezier(.3,.7,.4,1) forwards; pointer-events:none; }
+  @keyframes titlePop { 0% { transform:translateY(-50%) scale(1); opacity:1; } 100% { transform:translateY(-50%) scale(1.6); opacity:0; } }
+  #pause.on { background:linear-gradient(180deg,#ffe98a,#ffc233); color:#5a3a00; box-shadow:0 4px 0 #d9962a; }
   #go { padding:16px 14px; min-width:150px; font-size:9px; line-height:1.6; }
   #buildBtn { width:68px; height:68px; padding:0; display:grid; place-items:center; position:relative; }
   #buildBtn img { width:44px; height:44px; image-rendering:pixelated; }
@@ -257,9 +273,8 @@
       <div class="chip px"><img data-emoji="🧾" alt=""> <b id="lives">10</b></div>
       <div class="chip px"><img data-emoji="💵" alt=""> <b id="cash">0</b></div>
       <div id="clock" class="chip px"><span id="hour"></span><small id="waveTxt">DAY 1</small></div>
-      <button class="pxb" id="restockAll" title="Restock every shelf"><img data-emoji="📦" alt=""> $<span id="rsCost">0</span></button>
-      <button class="pxb sq" id="speed">1x</button>
-      <button class="pxb sq" id="mute"><img data-emoji="🔊" alt=""></button>
+      <button class="pxb sq" id="mute" title="Mute"><img data-emoji="🔊" alt=""></button>
+      <button class="pxb sq" id="pause" title="Pause (P)">❚❚</button>
     </div>
     <div id="info" class="px off"></div>
     <div id="trayBack" class="off hide"></div>
@@ -270,14 +285,25 @@
       <div id="shopPane" class="off"></div>
     </div>
     <div id="dock" class="off">
-      <button id="go" class="pxb gold">OPEN STORE</button>
-      <button id="buildBtn" class="pxb gold" title="Build (B)"><img id="buildIcon" alt=""><kbd>B</kbd></button>
+      <div id="dockTop">
+        <button class="pxb" id="restockAll" title="Restock every shelf (R)"><img data-emoji="📦" alt=""> $<span id="rsCost">0</span></button>
+        <button class="pxb sq" id="speed" title="Game speed">1x</button>
+      </div>
+      <div id="dockBot">
+        <button id="go" class="pxb gold">OPEN STORE</button>
+        <button id="buildBtn" class="pxb gold" title="Build (B)"><img id="buildIcon" alt=""><kbd>B</kbd></button>
+      </div>
+    </div>
+    <div id="pauseMenu" class="off">
+      <div class="pbox">
+        <h1>PAUSED</h1>
+        <button class="pxb gold" id="p-continue">▶ CONTINUE</button>
+        <button class="pxb red" id="p-exit">EXIT TO MENU</button>
+      </div>
     </div>
     <div id="title">
       <h1>SHELF<br>DEFENSE</h1><h2>CLOSING TIME</h2>
-      <p>By day, customers shop your shelves and machines. By night, burglars come for the till. Survive as many nights as you can.</p>
       <div class="btns"><button class="pxb gold" id="t-start">▶ START RUN</button></div>
-      <div class="stats" id="t-stats"></div>
     </div>
   </div>
 </div>
