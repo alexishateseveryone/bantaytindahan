@@ -1,7 +1,8 @@
 // UI, input, save data, audio and the main loop
-import { Game, ITEMS, BUILD_ORDER, SKILLS, META, ROOM_UPGRADE, UNLOCKS, MAX_LEVEL, MAX_STOCK, MAX_ROOM, ROOM_BASE, ROOM_STEP, RENO_COST, STATUE_RANGE, MAX_PERMIT, PERMIT_FOR_RENO, ITEM_LIMITS } from './game.js';
+import { Game, ITEMS, BUILD_ORDER, SKILLS, META, ROOM_UPGRADE, UNLOCKS, MAX_LEVEL, MAX_STOCK, MAX_ROOM, ROOM_BASE, ROOM_STEP, RENO_COST, STATUE_RANGE, MAX_PERMIT, PERMIT_FOR_RENO, ITEM_LIMITS, UNLOCK_DAY } from './game.js';
 import { View } from './view.js';
 import { pxText, setHTML, pxEmoji, pxifyStatic } from './ui/pixel.js';
+import { loader } from './loadingscreen.js';   // install screen on phones, loading screen otherwise
 
 const $ = id => document.getElementById(id);
 
@@ -506,7 +507,7 @@ function applySub() {
 let detailKey = '';
 function renderDetail() {
   const id = focusId, def = ITEMS[id]; if (!def || !game) return;
-  const locked = !game.isUnlocked(id), cost = game.costOf(id), uc = UNLOCKS[id];
+  const locked = !game.isUnlocked(id), cost = game.costOf(id), uc = UNLOCKS[id], reach = !locked || game.canUnlock(id), ud = UNLOCK_DAY[id] || 1;
   const key = id + '|' + locked; if (key !== detailKey) {
     detailKey = key;
     $('dImg').src = icons[id] || ''; $('dNm').textContent = def.name; $('dDs').textContent = def.desc; $('dDs').scrollTop = 0;
@@ -515,10 +516,10 @@ function renderDetail() {
   const act = $('dAct');
   act.className = 'pxb ' + (locked ? 'gold' : selected === id ? 'green' : '');
   const lm = game.limitOf(id), cn = game.countOf(id), full = !locked && lm !== Infinity && cn >= lm;
-  act.disabled = locked ? game.cash < uc : (cost > game.cash || (full && selected !== id));
-  const txt = locked ? `Unlock  $${uc}` : selected === id ? 'Selected ✓' : full ? 'Limit reached' : `Build  $${cost}`;
+  act.disabled = locked ? (!reach || game.cash < uc) : (cost > game.cash || (full && selected !== id));
+  const txt = locked ? (reach ? `Unlock  $${uc}` : `🔒 Day ${ud}`) : selected === id ? 'Selected ✓' : full ? 'Limit reached' : `Build  $${cost}`;
   if (act.textContent !== txt) act.textContent = txt;
-  const info = locked ? `<b>${def.name}</b>Locked` : `<b>${def.name}</b>${selected === id ? 'Tap the store to place it' : 'Cost $' + cost}${lm === Infinity ? '' : ' · Placed ' + cn + '/' + lm}`;
+  const info = locked ? `<b>${def.name}</b>${reach ? 'Locked · buy it to use it' : 'Unlocks on day ' + ud}` : `<b>${def.name}</b>${selected === id ? 'Tap the store to place it' : 'Cost $' + cost}${lm === Infinity ? '' : ' · Placed ' + cn + '/' + lm}`;
   if ($('gInfo').dataset.k !== info) { $('gInfo').dataset.k = info; $('gInfo').innerHTML = info; }
   renderRecent();
 }
@@ -541,7 +542,7 @@ function renderRecent() {
 }
 $('dAct').onclick = () => {
   const id = focusId;
-  if (!game.isUnlocked(id)) { if (!game.unlock(id)) { sfx.bad(); banner(`Need $${UNLOCKS[id]} to unlock ${ITEMS[id].name}`); } else { noteSkill(id, true); noteRecent(id); } return; }   // unlocking costs store profit
+  if (!game.isUnlocked(id)) { if (!game.canUnlock(id)) { sfx.bad(); banner(`🔒 ${ITEMS[id].name} unlocks on day ${UNLOCK_DAY[id]}`); return; } if (!game.unlock(id)) { sfx.bad(); banner(`Need $${UNLOCKS[id]} to unlock ${ITEMS[id].name}`); } else { noteSkill(id, true); noteRecent(id); } return; }   // unlocking costs store profit
   selected = selected === id ? null : id; if (selected) noteSkill(id, true); pickedTower = null; preview = null; view.setCursor(null); closeTray(); refresh();
 };
 $('subSell').onclick = () => { subTab = 'sell'; applySub(); };
@@ -657,7 +658,7 @@ function refresh() {
     const locked = !game.isUnlocked(id), cost = game.costOf(id);
     c.classList.toggle('lock', locked); c.classList.toggle('sel', !locked && selected === id); c.classList.toggle('foc', focusId === id);
     c.querySelector('[data-k]').textContent = locked ? '' : av.indexOf(id) + 1;
-    c.querySelector('[data-pr]').textContent = '$' + (locked ? UNLOCKS[id] : cost);
+    c.querySelector('[data-pr]').textContent = locked && !game.canUnlock(id) ? 'Day ' + UNLOCK_DAY[id] : '$' + (locked ? UNLOCKS[id] : cost);
     const lm = game.limitOf(id), ct = c.querySelector('[data-ct]'), cn = game.countOf(id);
     ct.textContent = locked || lm === Infinity ? '' : cn + '/' + lm; ct.classList.toggle('full', cn >= lm);
   }
@@ -1278,6 +1279,8 @@ tRestart.onclick = () => {
   $('m-yes').onclick = () => { closeModal(); newStore(true); };
 };
 newStore();
+loader.setIcons(icons);   // the real shelf / machine icons are placed on the loading screen's floor
 requestAnimationFrame(frame);
+requestAnimationFrame(() => requestAnimationFrame(() => loader.ready()));   // first frame is drawn: the loading screen may fade out
 window.__game = () => game;   // debugging helpers
 window.__view = view;
