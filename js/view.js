@@ -1062,6 +1062,7 @@ export class View {
   updEnemy(e, m, time, dt) {
     const grp = m.group, u = grp.userData;
     grp.position.set(wx(e.x), 0, wz(e.y));
+    if (e.tier && m.tierScale !== e.tier) { m.tierScale = e.tier; grp.scale.setScalar(1 + Math.min(0.3, 0.07 * e.tier)); }   // every 10 days the burglars look bigger
     u.body.rotation.y += (Math.atan2(Math.sin(e.angle - u.body.rotation.y), Math.cos(e.angle - u.body.rotation.y))) * Math.min(1, dt * 10);
     const stunned = e.stun > 0;
     const sw = stunned ? 0 : Math.sin(time * 9 * (0.5 + e.speed * 0.5) + e.id) * 0.5;
