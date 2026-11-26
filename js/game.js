@@ -29,11 +29,24 @@ export const START_STOCK = MAX_STOCK;   // the store starts with its shelves ful
 export const UNIT_COST = 2;       // price to restock one good
 export const TOWER_HP = 70;         // turrets can be bombed / rammed to pieces
 export const BOMB_DMG = 30, BOMB_RADIUS = 1.1, BOMB_FUSE = 1.0, DASH_DMG = 22;
+export const MOLO_TIME = 2.6;          // seconds a molotov fire patch lasts (longer when it feeds on an item)
+export const FIRE_ITEM_DPS = 2.5;       // damage per second a burning shelf / machine takes
+export const FIRE_MAX = 5;             // never more than this many enemy fire patches at once
+export const MOTO_DMG = 55;            // the motor bandit slamming into a shelf / machine
+export const SMASH_DMG = 30;           // one bat swing
+export const DEFLECT_CHANCE = 0.4;     // chance the bat swats away a shot that is about to hit it
+export const TOWER_FUSE = 5;        // a broken-down machine that is not replaced within this many seconds explodes
+export const BLAST_RADIUS = 1.7, BLAST_DMG = 35, BLAST_ITEM_DMG = 30;
 export const BOUNCE_RANGE = 2.6;   // how far a hotdog can bounce to the next burglar
 export const ICE_TIME = 4.5;       // seconds scattered ice cubes stay on the floor
 export const CAN_COLORS = [0xe0463e, 0x3a86ff, 0x2fb67a, 0xffb703, 0xb26bd6, 0xff7aa2];
 export const GUM_COLORS = [0xff5a8a, 0x5fe3a1, 0xffcf4a, 0x6fa8ff, 0xb26bd6, 0xffffff, 0xff8c1a];
 export const COLA_PUSH_CAP = 3.2;   // max speed (tiles/s) a burglar can be shoved or dragged at
+export const STEEL_REFUND = 0.75;   // share of its price a steel shelf pays back when burglars destroy it
+export const FRUIT_DMG = 18, FRUIT_RADIUS = 1.15;   // one scattered fruit explosion
+export const STATUE_RANGE = 5;      // the soda statue repairs everything within this many tiles (an 11x11 square around it)
+export const STATUE_HEAL = 0.10;    // share of max HP it restores per second to each damaged item
+export const STATUE_UNIT_HP = 150;  // one unit of statue stock repairs this much HP in total
 
 // ---------- Build cards ----------
 // 'shelf' is the shelf itself: place a new one on the floor. Tap any shelf to restock it.
@@ -61,19 +74,43 @@ ITEMS.cola = { id: 'cola', kind: 'tower', name: 'Cola Dispenser', cost: 150, ran
   desc: 'Customers fill a cup. At night it sprays fizzy cola that shoves burglars back and keeps soaking them for damage.' };
 ITEMS.atm = { id: 'atm', kind: 'tower', name: 'ATM', cost: 260, range: 3.0, dmg: 7, rate: 0.75, swirlR: 1.35, swirlTime: 2.2, swirlDps: 6, wear: 1 / 100, color: 0x2a5db0, sale: [6, 10],
   desc: 'Customers withdraw cash (fees included). At night it shoots receipts that swirl around every burglar nearby, dragging and hurting them.' };
+ITEMS.water = { id: 'water', kind: 'tower', name: 'Water Dispenser', cost: 130, range: 3.8, dmg: 7, rate: 0.4, count: 3, splash: 1.15, slow: 0.3, slowTime: 1.6, wear: 1 / 110, color: 0x4aa8ff, sale: [2, 4],
+  desc: 'Customers fill a cup. At night it lobs 3 drops of water that each splash an area and slow burglars. Slow, but wide.' };
+ITEMS.donut = { id: 'donut', kind: 'tower', name: 'Donut Tray', cost: 140, range: 3.6, dmg: 13, rate: 0.75, count: 3, speed: 9, back: 0.9, wear: 1 / 105, color: 0xff7aa2, sale: [3, 5],
+  desc: 'Customers grab a donut. At night it throws 3 donuts in a row; a donut that hits a burglar flies back to the tray like a boomerang, hitting again on the way.' };
+ITEMS.cereal = { id: 'cereal', kind: 'tower', name: 'Cereal Shelf', cost: 110, range: 3.6, dmg: 14, rate: 0.65, boxHp: 60, boxLife: 5, wear: 1 / 100, color: 0xff9f1c, sale: [3, 5],
+  desc: 'Customers grab a box. At night it lobs a giant cereal box ahead of the burglars. It stands as a wall for 5 seconds: they must walk around or smash it.' };
+ITEMS.tissue = { id: 'tissue', kind: 'tower', name: 'Tissue Dispenser', cost: 120, range: 4.5, dmg: 14, rate: 1.1, speed: 9.5, chill: 0.4, chillTime: 1.6, wear: 1 / 110, color: 0x8fb4e8, sale: [2, 4],
+  desc: 'Customers pull a tissue. Only fires along its own row or column (never omni): a roll of tissue unrolls down the lane and pierces EVERY burglar on it.' };
+ITEMS.cerealbox = { id: 'cerealbox', kind: 'shelf', name: 'Cereal Box', cost: 0, hp: 60, cap: 0, color: 0xff9f1c,
+  desc: 'A temporary wall made by the Cereal Shelf. It disappears after a few seconds.' };
 // SKILL ITEMS: one-off tricks (not sellables). The mop is a floor trap; the other two are used at night and go off right where you drop them.
 ITEMS.shakecola = { id: 'shakecola', kind: 'skill', name: 'Shaken Cola', cost: 45, fuse: 1.1, radius: 1.9, dmg: 8, push: 8, soak: 3, soakTime: 2.2, color: 0xd6262b,
   desc: 'Night skill. Drop it and it bursts in a huge fizzy splash that blasts every burglar around it away.' };
 ITEMS.cigs = { id: 'cigs', kind: 'skill', name: 'Cigarette Pack', cost: 70, count: 20, range: 5.2, spread: 3.4, interval: 0.07, radius: 0.8, dmg: 7, burn: 2.5, burnTime: 1.5, color: 0xd62828,
   desc: 'Night skill. Drop it and it lobs 20 lit cigarettes at the burglars. Each one pops in a small blast when it hits the floor.' };
-export const SELLABLES = ['shelf', 'cans', 'gum', 'sauce', 'soda', 'cola', 'hotdog', 'micro', 'atm', 'fridge'];   // shelves + turrets: the things customers buy from
+// ---- shelf family: all of these are "shelves" (burglars smash them, tap to restock), each with a twist ----
+ITEMS.steel = { id: 'steel', kind: 'shelf', name: 'Steel Shelf', cost: 70, hp: 360, cap: MAX_STOCK * 3, foot: 3, onShelves: true, color: 0xaab2c0, sale: [4, 8],
+  desc: 'Upgrades a row of 3 shelves into one steel shelf: holds all their stock and is much harder to smash. Pays back 75% of its price when destroyed.' };
+ITEMS.fruit = { id: 'fruit', kind: 'shelf', name: 'Fruit Basket Shelf', cost: 40, hp: 80, cap: MAX_STOCK, color: 0xf08a24, sale: [4, 9],
+  desc: 'A shelf of fresh fruit. When burglars smash it the fruit rolls out and blows up one by one, hurting everyone nearby.' };
+ITEMS.statue = { id: 'statue', kind: 'shelf', name: 'Soda Statue', cost: 150, hp: 220, cap: 6, foot: 3, range: STATUE_RANGE, unitMul: 4, color: 0xd6262b,
+  desc: 'A big 3x3 soda statue. While it has stock it keeps repairing every damaged shelf and machine within 5 tiles. Restock it when it runs dry.' };
+ITEMS.fence = { id: 'fence', kind: 'shelf', name: 'Security Fence', cost: 10, hp: 140, cap: 0, color: 0xc9ced6,
+  desc: 'A cheap, sturdy steel barrier. Burglars have to walk around it or smash through. Use it to build a maze.' };
+export const SELLABLES = ['shelf', 'fence', 'cans', 'gum', 'fruit', 'sauce', 'soda', 'cola', 'steel', 'hotdog', 'micro', 'atm', 'statue', 'fridge', 'water', 'donut', 'cereal', 'tissue'];   // shelves + turrets: the things customers buy from
 export const SKILLS = ['mop', 'shakecola', 'cigs'];
 export const BUILD_ORDER = [...SELLABLES, ...SKILLS];
 // Only shelves and the vending machine are available on day one. The rest are bought in the Paycheck Shop.
 export const BASE_UNLOCKS = ['shelf', 'cans'];
 // Unlocking is paid with the run's own cash (store profit), from the build menu. Each run starts with only the base items.
-export const UNLOCKS = { shakecola: 90, cigs: 130, mop: 30, sauce: 60, gum: 70, soda: 80, hotdog: 100, cola: 110, micro: 130, atm: 145, fridge: 160 };
+export const UNLOCKS = { shakecola: 90, cigs: 130, fence: 20, mop: 30, fruit: 45, sauce: 60, gum: 70, steel: 75, soda: 80, hotdog: 100, cola: 110, micro: 130, atm: 145, statue: 150, fridge: 160, tissue: 105, cereal: 100, water: 115, donut: 120 };
 export const MAX_ROOM = 4;
+export const MAX_PERMIT = 12;
+export const PERMIT_FOR_RENO = [3, 6, 9, 12];   // store permit level you need for the 1st / 2nd / 3rd / 4th renovation
+// how many of each thing you may place before the first renovation; every renovation raises each limit (by half the base, at least 1)
+export const ITEM_LIMITS = { shelf: 20, fence: 20, fruit: 8, steel: 4, statue: 1, cans: 6, gum: 4, sauce: 4, soda: 4, cola: 3, hotdog: 3, micro: 2, atm: 2, fridge: 2, mop: 8, water: 3, donut: 3, cereal: 3, tissue: 3 };
+export const limitGrow = base => Math.max(1, Math.round(base / 2));
 export const RENO_COST = [180, 380, 650, 1000];   // cash price of the next room level (RENOVATE tab)
 export const MAX_LEVEL = 3;
 
@@ -84,6 +121,11 @@ export const ENEMIES = {
   runner: { name: 'Runner',  hp: 14,  push: 8,  speed: 2.5,  steal: 1, bounty: 4,  armor: 0, cost: 1, abil: { bomb: 1, dash: 4 }, cd: 5 },
   vest:   { name: 'Vest',    hp: 45,  push: 16, speed: 1.25,  steal: 1, bounty: 7,  armor: 3, cost: 2, abil: { bomb: 2, dash: 2 }, cd: 7 },
   bruiser:{ name: 'Bruiser', hp: 95,  push: 32, speed: 1.0, steal: 2, bounty: 12, armor: 1, cost: 3, abil: { bomb: 1, dash: 3 }, cd: 6, dashMul: 1.6 },
+  // new robbers. noSlow = immune to slow and freeze. molo = molotov throw weight, smash = bat swing weight
+  jacket: { name: 'Jacket',  hp: 70,  push: 14, speed: 1.15, steal: 1, bounty: 9,  armor: 1, cost: 2, abil: { bomb: 2, dash: 2 }, cd: 7, noSlow: true },
+  molotov:{ name: 'Molotov', hp: 40,  push: 10, speed: 1.3,  steal: 1, bounty: 9,  armor: 0, cost: 2, abil: { molo: 4, dash: 1 }, cd: 5 },
+  moto:   { name: 'Motor Bandit', hp: 50, push: 0, speed: 4, steal: 0, bounty: 10, armor: 1, cost: 3, abil: {}, cd: 99 },
+  bat:    { name: 'Bat',     hp: 110, push: 24, speed: 1.1,  steal: 2, bounty: 14, armor: 1, cost: 3, abil: { smash: 1 }, cd: 3.2 },
   boss:   { name: 'Mastermind', hp: 520, push: 70, speed: 0.95, steal: 5, bounty: 80, armor: 2, cost: 0, abil: { bomb: 3, dash: 2 }, cd: 3.5, dashMul: 1.6 },
 };
 
@@ -108,6 +150,16 @@ export const UPGRADES = [
   { id: 'colarate', icon: '⛲', name: 'Fountain Pressure', desc: 'Cola Dispensers fire 30% faster.', apply: g => g.mods.rate.cola *= 1.3, avail: g => hasTower(g, 'cola') },
   { id: 'paperjam', icon: '🌀', name: 'Paper Jam', desc: 'ATM receipt swirls last 50% longer and hit 30% harder.', apply: g => { g.mods.swirlTime *= 1.5; g.mods.swirlDmg *= 1.3; }, avail: g => hasTower(g, 'atm') },
   { id: 'atmrate', icon: '💳', name: 'Overdraft Fees', desc: 'ATMs print 30% faster.', apply: g => g.mods.rate.atm *= 1.3, avail: g => hasTower(g, 'atm') },
+  { id: 'ripefruit', icon: '🍉', name: 'Ripe Fruit', desc: 'Fruit explosions hit 50% harder.', apply: g => g.mods.fruitDmg *= 1.5, avail: g => g.shelves.some(s => s.type === 'fruit') },
+  { id: 'statuefast', icon: '🗿', name: 'Fizzy Fix', desc: 'Soda Statues repair 50% faster and stretch their stock further.', apply: g => g.mods.statueRate *= 1.5, avail: g => g.shelves.some(s => s.type === 'statue') },
+  { id: 'bigjug', icon: '🚰', name: 'Big Jug', desc: 'Water Dispensers lob 2 more drops per volley.', apply: g => g.mods.waterExtra += 2, avail: g => hasTower(g, 'water') },
+  { id: 'coldwater', icon: '💦', name: 'Ice Cold Water', desc: 'Water splashes are 30% wider and hit 20% harder.', apply: g => { g.mods.waterR *= 1.3; g.mods.dmg.water *= 1.2; }, avail: g => hasTower(g, 'water') },
+  { id: 'dozen', icon: '🍩', name: "Baker's Dozen", desc: 'Donut Trays throw 1 more donut per volley.', apply: g => g.mods.donutExtra += 1, avail: g => hasTower(g, 'donut') },
+  { id: 'glaze', icon: '🍯', name: 'Extra Glaze', desc: 'Donut damage +35%.', apply: g => g.mods.dmg.donut *= 1.35, avail: g => hasTower(g, 'donut') },
+  { id: 'familybox', icon: '📦', name: 'Family Size Box', desc: 'Cereal walls last 3 s longer and have 60% more HP.', apply: g => { g.mods.boxLife += 3; g.mods.boxHp *= 1.6; }, avail: g => hasTower(g, 'cereal') },
+  { id: 'breakfast', icon: '🥣', name: 'Breakfast Rush', desc: 'Cereal Shelves fire 30% faster.', apply: g => g.mods.rate.cereal *= 1.3, avail: g => hasTower(g, 'cereal') },
+  { id: 'triple', icon: '🧻', name: 'Triple Ply', desc: 'Tissue Dispenser damage +35%.', apply: g => g.mods.dmg.tissue *= 1.35, avail: g => hasTower(g, 'tissue') },
+  { id: 'quickroll', icon: '📏', name: 'Quick Unroll', desc: 'Tissue Dispensers fire 30% faster.', apply: g => g.mods.rate.tissue *= 1.3, avail: g => hasTower(g, 'tissue') },
   { id: 'maint', icon: '🔧', name: 'Maintenance Contract', desc: 'Turrets wear out 40% slower.', apply: g => g.mods.wear *= 0.6, avail: g => g.towers.some(t => t.kind === 'tower') },
   { id: 'casing', icon: '🛡️', name: 'Reinforced Casing', desc: 'Turrets +50% HP vs bombs and dashes (heals them).', apply: g => { g.mods.towerHp *= 1.5; g.towers.forEach(t => { if (t.kind === 'tower') { t.maxhp *= 1.5; t.hp = t.maxhp; } }); }, avail: g => g.towers.some(t => t.kind === 'tower') },
   { id: 'mirror', icon: '🪞', name: 'Convex Mirror', desc: 'All tower range +12%.', apply: g => g.mods.range *= 1.12 },
@@ -136,7 +188,7 @@ export const META = [
 // Room expansion: every level makes the (square) store 2 tiles wider and taller. Applies to the next new store.
 export const ROOM_UPGRADE = { id: 'room', icon: '📐', name: 'Bigger Starting Store', desc: 'New stores start 2 tiles wider and taller / level (you can also renovate in the build menu)', max: MAX_ROOM, cost: l => 120 + l * 140 };
 // Every machine except the starter ones is a one-time purchase.
-export const UNLOCK_ICONS = { shakecola: '🍾', cigs: '🚬', mop: '🧹', sauce: '🌶️', gum: '🍬', soda: '🥤', cola: '🍹', hotdog: '🌭', micro: '🍲', atm: '🏧', fridge: '🧊' };
+export const UNLOCK_ICONS = { shakecola: '🍾', cigs: '🚬', mop: '🧹', sauce: '🌶️', gum: '🍬', soda: '🥤', cola: '🍹', hotdog: '🌭', micro: '🍲', atm: '🏧', fridge: '🧊', fence: '🚧', fruit: '🍎', steel: '🗄️', statue: '🗿', water: '🚰', donut: '🍩', cereal: '🥣', tissue: '🧻' };
 export const UNLOCK_META = Object.keys(UNLOCKS).map(id => ({
   id: 'u_' + id, item: id, icon: UNLOCK_ICONS[id], name: ITEMS[id].name, desc: 'Unlocks this in the build menu.', max: 1, cost: () => UNLOCKS[id],
 }));
@@ -162,6 +214,7 @@ export class Game {
     this.meta = meta;
     this.room = Math.min(MAX_ROOM, meta.room || 0);
     setRoom(this.room);
+    this.permit = this.room ? PERMIT_FOR_RENO[this.room - 1] : 1;   // a store that starts bigger already has the permit for it
     this.seed = opts.seed ?? ((Math.random() * 4294967296) >>> 0);
     this.rng = mulberry32(this.seed);
     this.on = null;
@@ -177,15 +230,16 @@ export class Game {
     this.rerolls = meta.reroll || 0;
     this.unlocked = new Set(BASE_UNLOCKS); this.nightIn = 0;
     this.mods = {
-      dmg: { cans: 1, sauce: 1, soda: 1, micro: 1, hotdog: 1, fridge: 1, gum: 1, cola: 1, atm: 1 }, rate: { cans: 1, sauce: 1, soda: 1, micro: 1, hotdog: 1, fridge: 1, gum: 1, cola: 1, atm: 1 },
-      gumExtra: 0, push: 1, soak: 1, swirlTime: 1, swirlDmg: 1,
+      dmg: { cans: 1, sauce: 1, soda: 1, micro: 1, hotdog: 1, fridge: 1, gum: 1, cola: 1, atm: 1, water: 1, donut: 1, cereal: 1, tissue: 1 }, rate: { cans: 1, sauce: 1, soda: 1, micro: 1, hotdog: 1, fridge: 1, gum: 1, cola: 1, atm: 1, water: 1, donut: 1, cereal: 1, tissue: 1 },
+      waterExtra: 0, waterR: 1, donutExtra: 0, boxLife: 0, boxHp: 1,
+      gumExtra: 0, push: 1, soak: 1, swirlTime: 1, swirlDmg: 1, fruitDmg: 1, statueRate: 1,
       bounce: 0, ice: 0, rateAll: 1, range: 1, cost: 1 - 0.04 * (meta.disc || 0), cash: 1.3, burn: 1, splash: 1, slow: 0, crit: 0,
       mopUses: 0, mopStun: 0, globalDmg: 1 + 0.06 * (meta.dmg || 0), shelfPay: 1, crowd: 1, shelfHp: 1, wear: 1, towerHp: 1,
     };
     // blocked: 0 free, 1 permanent wall/prop, 2 tower, 3 shelf (breakable by burglars)
     this.blocked = new Uint8Array(COLS * ROWS);
     this.towers = []; this.traps = []; this.enemies = []; this.projectiles = []; this.customers = []; this.walkers = [];
-    this.fires = []; this.bombs = []; this.ice = []; this.swirls = []; this.skills = [];   // sauce puddles, enemy bombs waiting to blow, scattered ice cubes, ATM receipt whirlwinds
+    this.fires = []; this.bombs = []; this.ice = []; this.swirls = []; this.skills = []; this.fruits = []; this.donuts = []; this.rolls = [];   // sauce puddles, enemy bombs waiting to blow, scattered ice cubes, ATM receipt whirlwinds
     this.shelves = []; this.obstacles = [];
     this.spawnQueue = []; this.waveTime = 0; this.waveTotal = 0; this.subWave = 1; this.subWaves = 1; this.gapT = 0;
     this.dayQueue = []; this.dayTime = 0; this.walkT = 0.5; this.dayWalk = 0;
@@ -237,8 +291,30 @@ export class Game {
 
   // ---------- renovation: grow the store from the build menu (before opening, cash only) ----------
   renovateCost() { return this.room >= MAX_ROOM ? Infinity : Math.round(RENO_COST[this.room] * this.mods.cost); }
+  // ---------- store permit (STATUS tab): a higher permit is needed before the store may be renovated ----------
+  permitCost() { return this.permit >= MAX_PERMIT ? Infinity : Math.round((40 + 35 * this.permit) * this.mods.cost); }
+  canUpgradePermit() {
+    if (this.permit >= MAX_PERMIT) return { ok: false, reason: 'Permit is maxed' };
+    if (this.phase === 'lost') return { ok: false, reason: 'Game over' };
+    if (this.permitCost() > this.cash) return { ok: false, reason: 'Not enough cash' };
+    return { ok: true };
+  }
+  upgradePermit() {
+    if (!this.canUpgradePermit().ok) return false;
+    this.cash -= this.permitCost(); this.permit++;
+    this.emit('permit', { level: this.permit }); return true;
+  }
+  // ---------- how many of an item you may have placed (grows with every renovation) ----------
+  countOf(type) {
+    const def = ITEMS[type]; if (!def) return 0;
+    if (def.kind === 'shelf') return this.shelves.filter(s => (s.type || 'shelf') === type).length;
+    if (def.kind === 'trap') return this.traps.filter(t => t.type === type).length;
+    return this.towers.filter(t => t.type === type).length;
+  }
+  limitOf(type) { const b = ITEM_LIMITS[type]; return b === undefined ? Infinity : b + this.room * limitGrow(b); }
   canRenovate() {
     if (this.room >= MAX_ROOM) return { ok: false, reason: 'Fully renovated' };
+    if (this.permit < PERMIT_FOR_RENO[this.room]) return { ok: false, reason: `Needs Permit Lv ${PERMIT_FOR_RENO[this.room]}` };
     if (this.phase !== 'prep') return { ok: false, reason: 'Renovate before opening the store' };
     if (this.renovateCost() > this.cash) return { ok: false, reason: 'Not enough cash' };
     return { ok: true };
@@ -311,10 +387,10 @@ export class Game {
   }
 
   // weighted flow field to the counter cells. walls/towers are solid, shelves cost SHELF_COST.
-  flow(extra = -1, noise = null) {   // noise: per-cell extra step cost (0..5) -> a different, equally valid way to the register
-    const N = COLS * ROWS, B = this.blocked;
+  flow(extraIn = -1, noise = null) {   // extraIn: one cell index (or a list of them) to treat as solid, for "what if I built here" checks. noise: per-cell extra step cost (0..5) -> a different, equally valid way to the register
+    const N = COLS * ROWS, B = this.blocked, ex = new Set(Array.isArray(extraIn) ? extraIn : [extraIn]);
     const d = new Int32Array(N).fill(-1), done = new Uint8Array(N);
-    for (const t of this.tills) { const i = idx(t.x, t.y); if (!B[i] && i !== extra) d[i] = 0; }
+    for (const t of this.tills) { const i = idx(t.x, t.y); if (!B[i] && !ex.has(i)) d[i] = 0; }
     for (;;) {
       let i = -1, bd = 1e9;
       for (let k = 0; k < N; k++) if (!done[k] && d[k] >= 0 && d[k] < bd) { bd = d[k]; i = k; }
@@ -325,7 +401,7 @@ export class Game {
         const nx = cx + dx, ny = cy + dy;
         if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
         const j = idx(nx, ny);
-        if (done[j] || j === extra || B[j] === 1 || B[j] === 2) continue;
+        if (done[j] || ex.has(j) || B[j] === 1 || B[j] === 2) continue;
         const nd = bd + (noise ? (B[j] === 3 ? SHELF_COST * 4 : 4 + noise[j]) : (B[j] === 3 ? SHELF_COST : 1));
         if (d[j] < 0 || nd < d[j]) d[j] = nd;
       }
@@ -362,7 +438,24 @@ export class Game {
   sellValue(t) { if (t.kind === 'trap') return Math.floor(this.costOf(t.type) * 0.5 * Math.min(1, t.uses / ITEMS[t.type].uses)); return t.kind === 'shelf' ? Math.floor((t.cost || 0) * 0.5) : Math.floor(t.invested * (t.broken ? 0.3 : 0.7)); }
   towerAt(x, y) { return this.towers.find(t => t.x === x && t.y === y) || null; }
   trapAt(x, y) { return this.traps.find(t => t.x === x && t.y === y) || null; }
-  shelfAt(x, y) { return this.shelves.find(s => s.x === x && s.y === y) || null; }
+  // big shelves (steel shelf, soda statue) cover several cells; s.x / s.y is their middle cell
+  cellsOf(s) { return s.cells || [[s.x, s.y]]; }
+  shelfAt(x, y) { return this.shelves.find(s => s.cells ? s.cells.some(c => c[0] === x && c[1] === y) : (s.x === x && s.y === y)) || null; }
+  shelfNear(s, x, y) { let m = 1e9; for (const [cx, cy] of this.cellsOf(s)) m = Math.min(m, Math.hypot(cx - x, cy - y)); return m; }
+  capOf(s) { const c = ITEMS[s.type || 'shelf'].cap; return c === undefined ? MAX_STOCK : c; }          // how many goods it holds
+  unitCostOf(s) { return Math.max(1, Math.round(this.unitCost() * (ITEMS[s.type || 'shelf'].unitMul || 1))); }
+  isStation(s) { return s.type !== 'statue' && s.type !== 'fence' && s.type !== 'cerealbox'; }                                       // customers shop here
+  // an existing plain shelf row of 3 that contains (x, y), for upgrading to a steel shelf (middle of the row preferred)
+  steelWindow(x, y) {
+    const plain = (cx, cy) => { const s = this.shelfAt(cx, cy); return s && !s.type && s.placed !== false; };
+    for (const [dx, dy, dir] of [[1, 0, 'x'], [0, 1, 'y']]) {
+      for (const k of [1, 0, 2]) {
+        const cells = [0, 1, 2].map(i => [x + (i - k) * dx, y + (i - k) * dy]);
+        if (cells.every(([cx, cy]) => plain(cx, cy))) return { cells, dir };
+      }
+    }
+    return null;
+  }
   stat(t, key) {
     const def = ITEMS[t.type], L = t.level - 1, m = this.mods;
     switch (key) {
@@ -372,9 +465,34 @@ export class Game {
     }
   }
 
+  // the steel shelf is built ON TOP of 3 shelves in a row; the soda statue is a 3x3 block (x, y = its middle)
+  canPlaceBig(type, x, y) {
+    const def = ITEMS[type];
+    if (this.costOf(type) > this.cash) return { ok: false, reason: 'Not enough cash' };
+    if (def.onShelves) return this.steelWindow(x, y) ? { ok: true } : { ok: false, reason: 'Needs 3 shelves in a row' };
+    const cells = [];
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) cells.push([x + dx, y + dy]);
+    for (const [cx, cy] of cells) {
+      if (cx < 0 || cy < 0 || cx >= COLS || cy >= ROWS || this.reserved(cx, cy)) return { ok: false, reason: 'Needs a free 3x3 spot' };
+      if (this.spawns.some(s => s.x === cx && s.y === cy)) return { ok: false, reason: 'Door — keep clear' };
+      if (this.blocked[idx(cx, cy)] || this.trapAt(cx, cy)) return { ok: false, reason: 'Needs a free 3x3 spot' };
+    }
+    for (const e of this.enemies) if (cells.some(([cx, cy]) => Math.hypot(e.x - cx, e.y - cy) < 0.75 || (e.tx === cx && e.ty === cy))) return { ok: false, reason: 'Burglar in the way' };
+    for (const c of this.customers) if (cells.some(([cx, cy]) => Math.hypot(c.x - cx, c.y - cy) < 0.75 || (c.tx === cx && c.ty === cy))) return { ok: false, reason: 'Customer in the way' };
+    const d = this.flow(cells.map(([cx, cy]) => idx(cx, cy)));
+    if (this.spawns.some(s => d[idx(s.x, s.y)] < 0 || d[idx(s.x, s.y)] >= SHELF_COST)) return { ok: false, reason: 'Keep an aisle open for customers' };
+    for (const e of this.enemies) {
+      const cx = Math.min(COLS - 1, Math.max(0, Math.round(e.x))), cy = Math.min(ROWS - 1, Math.max(0, Math.round(e.y)));
+      if (d[idx(cx, cy)] < 0) return { ok: false, reason: 'Would trap a burglar' };
+    }
+    return { ok: true };
+  }
+
   canPlace(type, x, y) {
     const def = ITEMS[type];
     if (!this.isUnlocked(type)) return { ok: false, reason: 'Locked: buy it in the shop' };
+    if (this.countOf(type) >= this.limitOf(type)) return { ok: false, reason: `Limit reached (${this.limitOf(type)}): renovate for more` };
+    if (def.foot > 1) return this.canPlaceBig(type, x, y);
     if (x < 0 || y < 0 || x >= COLS || y >= ROWS || this.reserved(x, y)) return { ok: false, reason: 'Not buildable here' };
     if (this.spawns.some(s => s.x === x && s.y === y)) return { ok: false, reason: 'Door — keep clear' };
     if (this.blocked[idx(x, y)]) return { ok: false, reason: 'Occupied' };
@@ -415,9 +533,20 @@ export class Game {
       this.traps.push(t); this.emit('place', { tower: t }); return true;
     }
     if (def.kind === 'shelf') {
-      const hp = SHELF_HP * this.mods.shelfHp;
+      const hp = (def.hp || SHELF_HP) * this.mods.shelfHp;
       const s = { id: this.nextId++, kind: 'shelf', x, y, v: this.rint(0, 2), units: MAX_STOCK, hp, maxhp: hp, hit: 0, placed: true, cost };
-      this.shelves.push(s); this.blocked[idx(x, y)] = 3;
+      if (type !== 'shelf') { s.type = type; s.units = def.cap; }
+      if (type === 'steel') {   // swallow the 3 shelves underneath: their goods move into the steel shelf
+        const w = this.steelWindow(x, y), olds = w.cells.map(([cx, cy]) => this.shelfAt(cx, cy));
+        s.units = Math.min(def.cap, olds.reduce((a, o) => a + o.units, 0));
+        s.cells = w.cells; s.dir = w.dir; s.x = w.cells[1][0]; s.y = w.cells[1][1];
+        this.shelves = this.shelves.filter(o => !olds.includes(o));
+      } else if (type === 'statue') {
+        s.cells = []; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) s.cells.push([x + dx, y + dy]);
+        s.pool = 0; s.tick = 0;
+      }
+      this.shelves.push(s);
+      for (const [cx, cy] of this.cellsOf(s)) this.blocked[idx(cx, cy)] = 3;
       this.refreshPaths(); this.emit('place', { tower: s }); return true;
     }
     const hp = TOWER_HP * this.mods.towerHp;
@@ -439,7 +568,7 @@ export class Game {
     if (t.kind === 'trap') { this.traps = this.traps.filter(x => x !== t); this.emit('trapGone', { trap: t }); return; }
     if (t.kind === 'shelf') {
       if (!t.placed) return;
-      this.shelves = this.shelves.filter(x => x !== t); this.blocked[idx(t.x, t.y)] = 0;
+      this.shelves = this.shelves.filter(x => x !== t); for (const [cx, cy] of this.cellsOf(t)) this.blocked[idx(cx, cy)] = 0;
     } else {
       this.towers = this.towers.filter(x => x !== t); this.blocked[idx(t.x, t.y)] = 0;
     }
@@ -464,6 +593,7 @@ export class Game {
   breakTower(t, why) {
     if (t.broken) return;
     t.broken = why;
+    if (why !== 'destroyed') { t.fuse = TOWER_FUSE; t.fuseSec = TOWER_FUSE; }   // worn out: fix it before the fuse runs out!
     this.emit('towerBreak', { tower: t, why });
     if (why === 'destroyed') {
       this.towers = this.towers.filter(x => x !== t);
@@ -471,6 +601,22 @@ export class Game {
       this.refreshPaths();
       this.emit('sell', { tower: t });   // same event as selling: the view removes the model
     }
+  }
+  // a machine nobody fixed goes off: hurts burglars AND every machine / shelf close to it, then it is gone
+  blastTower(t) {
+    t.fuse = null;
+    this.towers = this.towers.filter(x => x !== t); this.blocked[idx(t.x, t.y)] = 0;
+    for (const e of [...this.enemies]) if (!e.dead && Math.hypot(e.x - t.x, e.y - t.y) <= BLAST_RADIUS) this.damage(e, BLAST_DMG * this.mods.globalDmg, true);
+    for (const o of [...this.towers]) if (o.kind === 'tower' && Math.hypot(o.x - t.x, o.y - t.y) <= BLAST_RADIUS + 0.3) this.hurtTower(o, BLAST_ITEM_DMG);
+    for (const s of [...this.shelves]) {
+      if (this.shelfNear(s, t.x, t.y) > BLAST_RADIUS + 0.3) continue;
+      s.hp -= BLAST_ITEM_DMG; s.hit = 0.3;
+      if (s.hp <= 0) this.breakShelf(s);
+    }
+    this.refreshPaths();
+    this.emit('explode', { x: t.x, y: t.y, r: BLAST_RADIUS });
+    this.emit('towerBlast', { tower: t });
+    this.emit('sell', { tower: t });   // the view removes the model
   }
   serviceCost(t) {
     const need = Math.max(t.wear, 1 - t.hp / t.maxhp);
@@ -487,25 +633,25 @@ export class Game {
   replace(t) {
     if (t.kind !== 'tower' || !t.broken) return false;
     const c = this.replaceCost(t); if (c > this.cash) return false;
-    this.cash -= c; t.broken = null; t.wear = 0; t.hp = t.maxhp; t.warned = false; t.cd = 0.5;
+    this.cash -= c; t.broken = null; t.fuse = null; t.wear = 0; t.hp = t.maxhp; t.warned = false; t.cd = 0.5;
     this.emit('replace', { tower: t }); return true;
   }
 
   // ---------- restocking ----------
   restock(sh) {
-    const uc = this.unitCost(), n = Math.min(MAX_STOCK - sh.units, Math.floor(this.cash / uc));
+    const uc = this.unitCostOf(sh), n = Math.min(this.capOf(sh) - sh.units, Math.floor(this.cash / uc));
     if (n <= 0) return false;
     this.cash -= n * uc; sh.units += n;
     this.emit('stock', { shelf: sh, shelves: [sh] }); return true;
   }
-  restockCost() { return this.shelves.reduce((a, s) => a + (MAX_STOCK - s.units), 0) * this.unitCost(); }
+  restockCost() { return this.shelves.reduce((a, s) => a + (this.capOf(s) - s.units) * this.unitCostOf(s), 0); }
   // all-or-nothing: it only works when you can afford to refill every shelf (use a single shelf for a partial refill)
   restockAll() {
-    const uc = this.unitCost(), done = [];
+    const done = [];
     const need = this.restockCost();
     if (need <= 0 || this.cash < need) return false;
-    for (const s of [...this.shelves].filter(s => s.units < MAX_STOCK).sort((a, b) => a.units - b.units)) {
-      const n = Math.min(MAX_STOCK - s.units, Math.floor(this.cash / uc));
+    for (const s of [...this.shelves].filter(s => s.units < this.capOf(s)).sort((a, b) => a.units - b.units)) {
+      const uc = this.unitCostOf(s), n = Math.min(this.capOf(s) - s.units, Math.floor(this.cash / uc));
       if (n <= 0) break;
       this.cash -= n * uc; s.units += n; done.push(s);
     }
@@ -515,9 +661,57 @@ export class Game {
 
   breakShelf(s) {
     this.shelves = this.shelves.filter(x => x !== s);
-    this.blocked[idx(s.x, s.y)] = 0;
+    for (const [cx, cy] of this.cellsOf(s)) this.blocked[idx(cx, cy)] = 0;
     this.refreshPaths();
     this.emit('shelfBreak', { shelf: s });
+    if (s.type === 'steel') {   // the steel pays you back when it goes down
+      const amount = Math.round(s.cost * STEEL_REFUND); this.cash += amount;
+      this.emit('refund', { x: s.x, y: s.y, amount });
+    } else if (s.type === 'fruit') this.scatterFruit(s);
+  }
+
+  // ---------- Fruit basket shelf: the fruit rolls out and goes off one by one ----------
+  scatterFruit(s) {
+    const n = 3 + Math.ceil(s.units / 2);
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + this.rng() * 0.8, r = 0.8 + this.rng() * 1.1;
+      let tx = s.x + Math.cos(a) * r, ty = s.y + Math.sin(a) * r;
+      tx = Math.max(0, Math.min(COLS - 1, tx)); ty = Math.max(0, Math.min(ROWS - 1, ty));
+      this.fruits.push({ id: this.nextId++, x: s.x, y: s.y, sx: s.x, sy: s.y, tx, ty, age: 0, land: 0.45, fuse: 0.95 + i * 0.5 + this.rng() * 0.15, kind: i % 4, r: FRUIT_RADIUS,
+        dmg: FRUIT_DMG * this.mods.fruitDmg * this.mods.globalDmg, h: 0 });
+    }
+    this.emit('fruitScatter', { x: s.x, y: s.y, n });
+  }
+  stepFruits(dt) {
+    for (const f of this.fruits) {
+      f.age += dt;
+      const k = Math.min(1, f.age / f.land);
+      f.x = f.sx + (f.tx - f.sx) * k; f.y = f.sy + (f.ty - f.sy) * k;
+      f.h = k < 1 ? Math.sin(k * Math.PI) * 0.9 : 0;
+      if (f.age >= f.fuse) {
+        f.done = true;
+        for (const e of [...this.enemies]) { if (!e.dead && Math.hypot(e.x - f.x, e.y - f.y) <= f.r) this.damage(e, f.dmg); }
+        this.emit('fruitBoom', { x: f.x, y: f.y, r: f.r, kind: f.kind });
+      }
+    }
+    this.fruits = this.fruits.filter(f => !f.done);
+  }
+
+  // ---------- Soda statue: while it has stock it heals everything damaged in its area ----------
+  stepStatues(dt) {
+    for (const st of this.shelves) {
+      if (st.type !== 'statue' || st.units <= 0) continue;
+      st.tick = (st.tick || 0) - dt; if (st.tick > 0) continue;
+      st.tick = 0.5;
+      const items = [...this.shelves, ...this.towers.filter(t => t.kind === 'tower' && !t.broken)], healed = [];
+      for (const o of items) {
+        if (o.hp >= o.maxhp - 0.01 || Math.abs(o.x - st.x) > STATUE_RANGE || Math.abs(o.y - st.y) > STATUE_RANGE) continue;
+        const add = Math.min(o.maxhp - o.hp, o.maxhp * STATUE_HEAL * 0.5 * this.mods.statueRate);
+        o.hp += add; st.pool = (st.pool || 0) + add / this.mods.statueRate; healed.push({ x: o.x, y: o.y });
+        if (st.pool >= STATUE_UNIT_HP) { st.pool -= STATUE_UNIT_HP; st.units--; if (st.units <= 0) { this.emit('statueDry', { x: st.x, y: st.y }); break; } }
+      }
+      if (healed.length) this.emit('repair', { statue: st, items: healed });
+    }
   }
 
   refreshPaths() {
@@ -557,7 +751,7 @@ export class Game {
   // you can't open an empty store: customers need something to buy (a stocked shelf or a working machine)
   canOpen() {
     if (this.phase !== 'prep') return { ok: false, reason: 'The store is already open' };
-    if (this.shelves.some(s => s.units > 0) || this.towers.some(t => t.kind === 'tower' && !t.broken)) return { ok: true };
+    if (this.shelves.some(s => s.units > 0 && this.isStation(s)) || this.towers.some(t => t.kind === 'tower' && !t.broken)) return { ok: true };
     return { ok: false, reason: this.shelves.length ? 'Restock a shelf before opening' : 'Build a shelf or a machine before opening' };
   }
   startDay() {
@@ -573,7 +767,7 @@ export class Game {
   pickStops() {
     const groups = new Map();
     const add = (k, e) => { if (!groups.has(k)) groups.set(k, []); groups.get(k).push(e); };
-    for (const s of this.shelves) if (s.units > 0) add('shelf', s);
+    for (const s of this.shelves) if (s.units > 0 && this.isStation(s)) add('shelf', s);
     for (const t of this.towers) if (t.kind === 'tower' && !t.broken) add(t.type, t);
     const keys = [...groups.keys()], wt = k => (k === 'shelf' ? 2 : 1);
     if (!keys.length) return [];
@@ -612,7 +806,8 @@ export class Game {
     for (let guard = 0; guard < 12; guard++) {
       if (c.si < c.stops.length) {
         const st = c.stops[c.si];
-        const path = this.stationAlive(st) ? this.bfs(cx, cy, (x, y) => Math.abs(x - st.x) + Math.abs(y - st.y) === 1) : null;
+        const cells = st.kind === 'shelf' ? this.cellsOf(st) : [[st.x, st.y]];
+        const path = this.stationAlive(st) ? this.bfs(cx, cy, (x, y) => cells.some(([sx, sy]) => Math.abs(x - sx) + Math.abs(y - sy) === 1)) : null;
         if (!path) { c.si++; continue; }
         c.path = path; c.next = 'browse'; c.state = 'walk'; return;
       }
@@ -632,21 +827,23 @@ export class Game {
   arriveCustomer(c) {
     if (c.next === 'browse') {
       const st = c.stops[c.si];
-      c.state = 'browse'; c.timer = 0.8 + this.rng() * 0.8; c.angle = Math.atan2(st.x - c.x, st.y - c.y);
+      let fx = st.x, fy = st.y;   // face the nearest cell of a big shelf
+      if (st.kind === 'shelf' && st.cells) { let bd = 1e9; for (const [sx, sy] of st.cells) { const d = Math.hypot(sx - c.x, sy - c.y); if (d < bd) { bd = d; fx = sx; fy = sy; } } }
+      c.state = 'browse'; c.timer = 0.8 + this.rng() * 0.8; c.angle = Math.atan2(fx - c.x, fy - c.y);
     } else if (c.next === 'pay') { c.state = 'pay'; c.timer = 0.7 + this.rng() * 0.5; c.angle = Math.PI / 2; }
     else c.state = 'exit';
   }
 
   buy(c, st) {
     if (!this.stationAlive(st)) return;
-    const type = st.kind === 'shelf' ? 'shelf' : st.type, def = ITEMS[type];
+    const type = st.kind === 'shelf' ? (st.type || 'shelf') : st.type, def = ITEMS[type];
     if (st.kind === 'shelf') {
       if (st.units <= 0) { this.emit('soldout', { x: st.x, y: st.y }); return; }
       st.units--;
     }
     const price = Math.max(1, Math.round((def.sale[0] + this.rng() * (def.sale[1] - def.sale[0])) * this.mods.shelfPay));
     c.cart += price; c.bags.push(st.kind === 'shelf' ? CAN_COLORS[(st.id + c.bags.length) % CAN_COLORS.length] : ITEMS[type].color);
-    this.emit('buy', { c, id: st.id, x: st.x, y: st.y, kind: type, price });
+    this.emit('buy', { c, id: st.id, x: st.x, y: st.y, kind: st.kind === 'shelf' ? 'shelf' : type, price });
     if (st.kind === 'tower') this.wearTower(st, CUSTOMER_WEAR);   // customers wear machines out too: overuse can break them
   }
 
@@ -693,6 +890,7 @@ export class Game {
   nightWaves(n) { return 1 + Math.floor((n - 1) / 5); }
   makeWave(n, scale = 1, boss = true) {
     const pool = ['sneak']; if (n >= 3) pool.push('runner'); if (n >= 5) pool.push('vest'); if (n >= 7) pool.push('bruiser');
+    if (n >= 4) pool.push('jacket'); if (n >= 6) pool.push('molotov'); if (n >= 8) pool.push('moto'); if (n >= 9) pool.push('bat');
     // endless: grows fast early, then settles into steady growth (enemy HP keeps scaling per night)
     let budget = (3 + n * 2.2 + Math.min(n, 12) ** 2 * 0.35 + Math.max(0, n - 12) * 4) * scale;
     const list = [];
@@ -724,17 +922,21 @@ export class Game {
   // with several waves in a night each one is smaller than a full night; the last one is the biggest (and brings the boss)
   subScale(k) { return this.subWaves === 1 ? 1 : 0.5 + 0.15 * (k - 1); }
 
-  spawnEnemy(type, s) {
-    const def = ENEMIES[type], n = this.wave + 1;
+  // at = optional exact start (motor riders jumping off the bike): { x, y, tx, ty, hop }
+  spawnEnemy(type, s, at) {
+    const def = ENEMIES[type], n = this.wave + 1, out = type === 'moto' ? 5.5 : 0.9;
     const hpMul = type === 'boss' ? 1 + 0.18 * (n - 1) : 1 + 0.15 * (n - 1);
     const e = {
-      id: this.nextId++, type, x: s.x + s.ox * 0.9, y: s.y + s.oy * 0.9, hp: def.hp * hpMul, maxhp: def.hp * hpMul,
+      id: this.nextId++, type, x: at ? at.x : s.x + s.ox * out, y: at ? at.y : s.y + s.oy * out, hp: def.hp * hpMul, maxhp: def.hp * hpMul,
       speed: def.speed * 0.88, push: def.push, pushT: 0, armor: def.armor, steal: def.steal, bounty: def.bounty,
-      tx: s.x, ty: s.y, burn: 0, burnDps: 0, soak: 0, soakDps: 0, kvx: 0, kvy: 0, slow: 0, slowF: 0, stun: 0, slipped: new Set(), iced: new Set(), angle: 0,
+      tx: at ? at.tx : s.x, ty: at ? at.ty : s.y, noSlow: !!def.noSlow, burn: 0, burnDps: 0, soak: 0, soakDps: 0, kvx: 0, kvy: 0, slow: 0, slowF: 0, stun: 0, slipped: new Set(), iced: new Set(), angle: 0,
       jitter: (this.rng() - 0.5) * 0.0, route: Math.floor(Math.random() * ROUTES),
       flee: 0, wind: 0, pending: null, dash: null, abCd: def.cd * (0.5 + this.rng() * 0.8) * (1.15 - 0.03 * n), dashMul: def.dashMul || 1,
     };
+    if (type === 'moto') { e.moto = 'ride'; e.mdx = -s.ox; e.mdy = -s.oy; e.angle = Math.atan2(e.mdx, e.mdy); e.door = s; e.crossed = false; }
+    if (at && at.hop) { e.hop = { t: 0.5, max: 0.5, sx: at.x, sy: at.y }; e.angle = Math.atan2(at.tx - at.x, at.ty - at.y); e.air = 0; }
     this.enemies.push(e);
+    return e;
   }
 
   // ---------- Combat ----------
@@ -754,6 +956,8 @@ export class Game {
     const c = Math.round(e.bounty * this.mods.cash);
     this.cash += c;
     this.emit('kill', { enemy: e, cash: c });
+    if (e.type === 'molotov') this.molotovFire(e.x, e.y, 3);   // the Molotov robber bursts into a 3x3 fire
+    else if (e.type === 'moto') this.motoRiders(e);             // shot off the bike: the two riders still bail out
   }
 
   progress(e) {
@@ -764,9 +968,11 @@ export class Game {
 
   towerFire(t) {
     const range = this.stat(t, 'range'), dmg = this.stat(t, 'dmg');
+    if (t.type === 'water') { const hot = this.fireTarget(t, range); if (hot) return this.waterDouse(t, hot, dmg); }   // fires come first
     const inRange = [];
     for (const e of this.enemies) if (!e.dead && e.x > -0.5 && e.y > -0.5 && e.x < COLS - 0.5 && e.y < ROWS - 0.5 && Math.hypot(e.x - t.x, e.y - t.y) <= range) inRange.push(e);
     if (!inRange.length) { if (t.facing !== undefined) t.angle = t.facing; return false; }   // idle: face an open side
+    if (t.type === 'tissue') return this.tissueFire(t, inRange, dmg);   // only along its own row / column
     if (t.type === 'micro') {
       for (const e of inRange) this.damage(e, dmg);
       this.emit('pulse', { tower: t, r: range });
@@ -797,9 +1003,12 @@ export class Game {
       return true;
     }
     const f = t.facing || 0;
-    const front = vend || ['hotdog', 'fridge', 'gum', 'cola', 'atm'].includes(t.type);   // these dispense from a chute on their front side
+    const front = vend || ['hotdog', 'fridge', 'gum', 'cola', 'atm', 'water', 'donut', 'cereal'].includes(t.type);   // these dispense from a chute on their front side
     const sx = t.x + (front ? Math.sin(f) * 0.32 : 0), sy = t.y + (front ? Math.cos(f) * 0.32 : 0);
     if (t.type === 'fridge') return this.fridgeFire(t, best, dmg, sx, sy);
+    if (t.type === 'water') return this.waterFire(t, inRange, dmg, sx, sy);
+    if (t.type === 'donut') return this.donutFire(t, inRange, dmg, sx, sy);
+    if (t.type === 'cereal') return this.cerealFire(t, inRange, dmg, sx, sy);
     const speed = { cans: 10, gum: 8.5, cola: 11, atm: 8 }[t.type] || 9;
     const H0 = { cans: 0.32, gum: 0.4, cola: 0.5, atm: 0.62 }[t.type] ?? 0.8;   // height of the chute / nozzle / slot the shot comes out of
     const d0 = Math.hypot(best.x - sx, best.y - sy);
@@ -833,10 +1042,11 @@ export class Game {
     return true;
   }
 
-  chill(e, f, time) { e.slow = Math.max(e.slow, time); e.slowF = Math.max(e.slowF, Math.min(0.85, f)); }
+  chill(e, f, time) { if (e.noSlow) return; e.slow = Math.max(e.slow, time); e.slowF = Math.max(e.slowF, Math.min(0.85, f)); }
   freeze(e, patch) {
     if (e.dead) return;
     if (patch) { if (e.iced.has(patch.id)) return; e.iced.add(patch.id); }
+    if (e.noSlow) { this.emit('immune', { enemy: e }); return; }   // the puffer jacket shrugs off the cold
     e.stun = Math.max(e.stun, e.type === 'boss' ? 0.5 : 1.2);
     e.dash = null; e.wind = 0; e.pending = null;
     this.chill(e, 0.5, 2.2);
@@ -888,7 +1098,7 @@ export class Game {
       if (e.dead) continue;
       if (Math.hypot(e.x - x, e.y - y) <= r) {
         this.damage(e, p.dmg);
-        e.slow = def.slowTime; e.slowF = Math.min(0.85, def.slow + this.mods.slow);
+        if (!e.noSlow) { e.slow = def.slowTime; e.slowF = Math.min(0.85, def.slow + this.mods.slow); }
       }
     }
     this.emit('splash', { x, y, r });
@@ -989,6 +1199,220 @@ export class Game {
     this.emit('swirl', { swirl: s });
   }
 
+  // ---------- Water Dispenser: 3 slow lobbed drops, each one an AoE splash ----------
+  waterFire(t, inRange, dmg, sx, sy) {
+    const def = ITEMS.water, n = def.count + this.mods.waterExtra, sp = 4.4;
+    const sorted = [...inRange].sort((a, b) => this.progress(a) - this.progress(b));
+    for (let i = 0; i < n; i++) {
+      const e = sorted[i % sorted.length], delay = i * 0.3, fl = Math.hypot(e.x - sx, e.y - sy) / sp + delay;
+      let lx = e.x, ly = e.y;
+      const mdx = e.tx - e.x, mdy = e.ty - e.y, md = Math.hypot(mdx, mdy);
+      if (md > 0.01 && e.stun <= 0) { const mv = Math.min(md, e.speed * (e.slow > 0 ? 1 - e.slowF : 1) * fl); lx += mdx / md * mv; ly += mdy / md * mv; }
+      if (i >= sorted.length) { lx += (this.rng() - 0.5) * 1.1; ly += (this.rng() - 0.5) * 1.1; }   // more drops than burglars: spread them around
+      lx = Math.max(0, Math.min(COLS - 1, lx)); ly = Math.max(0, Math.min(ROWS - 1, ly));
+      this.projectiles.push({ id: this.nextId++, kind: 'water', lob: true, arc: 1.5, x: sx, y: sy, h: 1.0, h0: 1.0, sx, sy, d0: Math.max(0.3, Math.hypot(lx - sx, ly - sy)),
+        target: null, tx: lx, ty: ly, speed: sp, dmg, level: t.level, dx: 0, dy: 0, delay });
+    }
+    this.emit('shoot', { tower: t });
+    return true;
+  }
+  // the Water Dispenser puts out enemy fire before it does anything else: burning patches first, then burning items
+  fireTarget(t, range) {
+    let best = null, bs = -1;
+    for (const f of this.fires) {
+      if (!f.foe || f.t <= 0) continue;
+      const d = Math.hypot(f.x - t.x, f.y - t.y); if (d > range) continue;
+      const sc = 100 + this.fireItems(f.x, f.y, f.half).length * 10 - d; if (sc > bs) { bs = sc; best = { x: f.x, y: f.y }; }
+    }
+    if (best) return best;
+    for (const it of [...this.towers.filter(x => x.kind === 'tower'), ...this.shelves]) {
+      if (!(it.burning > 0)) continue;
+      const d = Math.hypot(it.x - t.x, it.y - t.y); if (d > range) continue;
+      if (bs < 0 || d < bs) { bs = d; best = { x: it.x, y: it.y }; }
+    }
+    return best;
+  }
+  waterDouse(t, hot, dmg) {
+    const def = ITEMS.water, n = def.count + this.mods.waterExtra, sp = 4.4, f = t.facing || 0;
+    const sx = t.x + Math.sin(f) * 0.32, sy = t.y + Math.cos(f) * 0.32;
+    t.angle = Math.atan2(hot.x - t.x, hot.y - t.y);
+    for (let i = 0; i < n; i++) {
+      const lx = hot.x + (i ? (this.rng() - 0.5) * 0.9 : 0), ly = hot.y + (i ? (this.rng() - 0.5) * 0.9 : 0), delay = i * 0.25;
+      this.projectiles.push({ id: this.nextId++, kind: 'water', lob: true, arc: 1.5, x: sx, y: sy, h: 1.0, h0: 1.0, sx, sy, d0: Math.max(0.3, Math.hypot(lx - sx, ly - sy)),
+        target: null, tx: lx, ty: ly, speed: sp, dmg, level: t.level, dx: 0, dy: 0, delay });
+    }
+    this.emit('shoot', { tower: t });
+    return true;
+  }
+  waterSplash(p) {
+    const def = ITEMS.water, r = def.splash * this.mods.waterR;
+    for (const f of this.fires) if (f.foe && Math.hypot(f.x - p.tx, f.y - p.ty) <= r + f.half) f.t -= 1.4;   // every drop soaks the patch
+    for (const it of [...this.towers.filter(x => x.kind === 'tower'), ...this.shelves]) if (it.burning > 0 && Math.hypot(it.x - p.tx, it.y - p.ty) <= r + 0.6) { it.burning = 0; it.burnMul = 1; }
+    for (const e of this.enemies) {
+      if (e.dead || Math.hypot(e.x - p.tx, e.y - p.ty) > r) continue;
+      this.damage(e, p.dmg);
+      if (!e.dead) this.chill(e, def.slow, def.slowTime);
+    }
+    this.emit('waterSplash', { x: p.tx, y: p.ty, r });
+  }
+
+  // ---------- Donut Tray: 2 boomerang donuts ----------
+  donutFire(t, inRange, dmg, sx, sy) {
+    const def = ITEMS.donut, n = def.count + this.mods.donutExtra;
+    const sorted = [...inRange].sort((a, b) => this.progress(a) - this.progress(b));
+    for (let i = 0; i < n; i++) {
+      const e = sorted[Math.min(i, sorted.length - 1)];
+      this.donuts.push({ id: this.nextId++, kind: 'donut', tower: t, x: sx, y: sy, sx, sy, h: 0.62, target: e, tx: e.x, ty: e.y, speed: def.speed, dmg, back: def.back,
+        phase: 'out', delay: i * 0.3, age: 0, hit: new Set(), dx: 0, dy: 1, side: i % 2 ? -1 : 1, k: 0, len: 1, bx: 0, by: 0 });
+    }
+    this.emit('shoot', { tower: t });
+    return true;
+  }
+  stepDonuts(dt) {
+    for (const d of this.donuts) {
+      const tw = d.tower;
+      if (!this.towers.includes(tw) || tw.broken) { d.done = true; continue; }
+      const f = tw.facing || 0, hx = tw.x + Math.sin(f) * 0.32, hy = tw.y + Math.cos(f) * 0.32;   // the tray's chute
+      if (d.delay > 0) { d.delay -= dt; d.x = hx; d.y = hy; d.h = 0.62; continue; }   // waiting inside the tray
+      d.age += dt; d.h = 0.62 + Math.sin(d.age * 6) * 0.04;
+      if (d.age > 5) { d.done = true; continue; }
+      const strike = (r, mul) => {
+        for (const e of this.enemies) {
+          if (e.dead || d.hit.has(e.id) || e.x < -0.5 || e.y < -0.5 || e.x > COLS - 0.5 || e.y > ROWS - 0.5) continue;
+          if (Math.hypot(e.x - d.x, e.y - d.y) <= r) { d.hit.add(e.id); this.damage(e, d.dmg * mul); this.emit('donutHit', { x: d.x, y: d.y, h: d.h }); return true; }
+        }
+        return false;
+      };
+      if (d.phase === 'out') {
+        const tg = d.target && !d.target.dead ? d.target : null;
+        if (tg) { d.tx = tg.x; d.ty = tg.y; }
+        const dx = d.tx - d.x, dy = d.ty - d.y, dist = Math.hypot(dx, dy), mv = d.speed * dt;
+        if (dist > 0.001) { d.dx = dx / dist; d.dy = dy / dist; }
+        let turn = false;
+        if (dist <= mv + 0.05) { d.x = d.tx; d.y = d.ty; strike(0.6, 1); turn = true; }   // reached the target (or where it died)
+        else { d.x += dx / dist * mv; d.y += dy / dist * mv; if (strike(0.4, 1)) turn = true; }   // anything in the way stops it too
+        if (turn) { d.phase = 'back'; d.bx = d.x; d.by = d.y; d.k = 0; d.len = Math.max(0.5, Math.hypot(hx - d.x, hy - d.y)); d.hit = new Set(); }
+      } else {   // boomerang: curve back to the tray, hitting whatever is on the way
+        d.k = Math.min(1, d.k + d.speed * 1.05 * dt / d.len);
+        const px = -(hy - d.by), py = hx - d.bx, pl = Math.hypot(px, py) || 1, bulge = Math.sin(d.k * Math.PI) * 0.7 * d.side;
+        const nx = d.bx + (hx - d.bx) * d.k + px / pl * bulge, ny = d.by + (hy - d.by) * d.k + py / pl * bulge;
+        if (Math.hypot(nx - d.x, ny - d.y) > 0.001) { d.dx = nx - d.x; d.dy = ny - d.y; }
+        d.x = nx; d.y = ny;
+        strike(0.4, d.back);
+        if (d.k >= 1) { d.done = true; this.emit('donutCatch', { tower: tw }); }
+      }
+    }
+    this.donuts = this.donuts.filter(d => !d.done);
+  }
+
+  // ---------- Cereal Shelf: lobs a box that lands as a temporary wall ----------
+  boxCellOk(x, y, pending) {
+    return x >= 0 && y >= 0 && x < COLS && y < ROWS && !this.reserved(x, y) && this.blocked[idx(x, y)] === 0 && !this.isTill(x, y)
+      && !this.spawns.some(s => s.x === x && s.y === y) && !(pending && pending.has(x + ',' + y));
+  }
+  // a free cell on the burglar's way, a little ahead of where it is walking
+  cerealCell(e, pending) {
+    const fld = (this.flows && this.flows[e.route]) || this.dist, cand = [];
+    let cx = e.tx, cy = e.ty;
+    for (let k = 0; k < 4; k++) {
+      let best = null, bd = fld[idx(cx, cy)];
+      for (const [ox, oy] of NB) {
+        const nx = cx + ox, ny = cy + oy;
+        if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
+        const j = idx(nx, ny), dd = fld[j];
+        if (dd < 0 || this.blocked[j] === 1 || this.blocked[j] === 2) continue;
+        if (dd < bd) { bd = dd; best = [nx, ny]; }
+      }
+      if (!best) break;
+      cx = best[0]; cy = best[1]; cand.push([cx, cy]);
+    }
+    for (const [x, y] of cand) if (this.boxCellOk(x, y, pending)) return { x, y };
+    if (this.boxCellOk(e.tx, e.ty, pending) && Math.hypot(e.x - e.tx, e.y - e.ty) > 0.5) return { x: e.tx, y: e.ty };
+    return null;
+  }
+  cerealFire(t, inRange, dmg, sx, sy) {
+    const pending = new Set(this.projectiles.filter(p => p.kind === 'cereal').map(p => Math.round(p.tx) + ',' + Math.round(p.ty)));
+    const sorted = [...inRange].sort((a, b) => this.progress(a) - this.progress(b));
+    for (const e of sorted) {
+      const c = this.cerealCell(e, pending); if (!c) continue;
+      this.projectiles.push({ id: this.nextId++, kind: 'cereal', lob: true, arc: 1.6, x: sx, y: sy, h: 1.2, h0: 1.2, sx, sy, d0: Math.max(0.3, Math.hypot(c.x - sx, c.y - sy)),
+        target: null, tx: c.x, ty: c.y, speed: 5, dmg, level: t.level, dx: 0, dy: 0, variant: Math.floor(this.rng() * 4) });
+      this.emit('shoot', { tower: t });
+      return true;
+    }
+    return false;   // nowhere useful to drop a box right now
+  }
+  cerealLand(p) {
+    const def = ITEMS.cereal, cx = Math.round(p.tx), cy = Math.round(p.ty);
+    for (const e of [...this.enemies]) {   // the falling box bonks anyone under it (full damage + stun) and shakes those near it (half)
+      if (e.dead) continue;
+      const d = Math.hypot(e.x - p.tx, e.y - p.ty);
+      if (d <= 0.75) { this.damage(e, p.dmg); if (!e.dead) e.stun = Math.max(e.stun, 0.45); }
+      else if (d <= 1.3) this.damage(e, p.dmg * 0.5);
+    }
+    if (!this.boxCellOk(cx, cy)) { this.emit('cerealPoof', { x: p.tx, y: p.ty }); return; }
+    const life = def.boxLife + this.mods.boxLife, hp = def.boxHp * this.mods.boxHp;
+    const s = { id: this.nextId++, kind: 'shelf', type: 'cerealbox', x: cx, y: cy, v: p.variant || 0, units: 0, hp, maxhp: hp, hit: 0, placed: false, cost: 0, ttl: life, ttlMax: life, age: 0 };
+    this.shelves.push(s); this.blocked[idx(cx, cy)] = 3;
+    for (const e of this.enemies) {   // burglars that were walking INTO this cell turn back to the cell they are in
+      if (e.dead || e.tx !== cx || e.ty !== cy || Math.hypot(e.x - cx, e.y - cy) <= 0.45) continue;
+      e.tx = Math.max(0, Math.min(COLS - 1, Math.round(e.x))); e.ty = Math.max(0, Math.min(ROWS - 1, Math.round(e.y)));
+    }
+    this.refreshPaths();
+    this.emit('cerealLand', { shelf: s });
+  }
+  stepBoxes(dt) {
+    for (const s of [...this.shelves]) {
+      if (s.ttl === undefined) continue;
+      s.ttl -= dt; s.age = (s.age || 0) + dt;
+      if (s.ttl <= 0) this.expireBox(s);
+    }
+  }
+  expireBox(s) {
+    this.shelves = this.shelves.filter(x => x !== s);
+    this.blocked[idx(s.x, s.y)] = 0;
+    this.refreshPaths();
+    this.emit('boxGone', { shelf: s });
+  }
+
+  // ---------- Tissue Dispenser: only shoots along its own row / column, the roll pierces everyone ----------
+  tissueFire(t, inRange, dmg) {
+    const LANE = 0.55, dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]], score = [0, 0, 0, 0];
+    for (const e of inRange) {
+      const dx = e.x - t.x, dy = e.y - t.y;
+      for (let i = 0; i < 4; i++) {
+        const [ox, oy] = dirs[i], along = dx * ox + dy * oy, side = Math.abs(dx * oy - dy * ox);
+        if (along > 0.3 && side <= LANE) score[i] += 1 + 0.001 / (1 + this.progress(e));
+      }
+    }
+    let bi = -1, bs = 0; for (let i = 0; i < 4; i++) if (score[i] > bs) { bs = score[i]; bi = i; }
+    if (bi < 0) { if (t.facing !== undefined) t.angle = t.facing; return false; }   // nobody on its lane: stay quiet
+    const [ox, oy] = dirs[bi], def = ITEMS.tissue, range = this.stat(t, 'range');
+    t.angle = Math.atan2(ox, oy);
+    this.rolls.push({ id: this.nextId++, kind: 'tissue', x: t.x + ox * 0.35, y: t.y + oy * 0.35, dx: ox, dy: oy, sx: t.x + ox * 0.35, sy: t.y + oy * 0.35, dist: 0, max: range, speed: def.speed, dmg, hit: new Set(), n: 0 });
+    this.emit('shoot', { tower: t });
+    return true;
+  }
+  stepRolls(dt) {
+    const def = ITEMS.tissue;
+    for (const r of this.rolls) {
+      const mv = r.speed * dt; r.x += r.dx * mv; r.y += r.dy * mv; r.dist += mv;
+      for (const e of this.enemies) {
+        if (e.dead || r.hit.has(e.id)) continue;
+        const rx = e.x - r.x, ry = e.y - r.y, along = rx * r.dx + ry * r.dy, side = Math.abs(rx * r.dy - ry * r.dx);
+        if (side > 0.5 || Math.abs(along) > 0.5) continue;
+        r.hit.add(e.id); this.damage(e, r.dmg * Math.pow(0.97, r.n)); r.n++;
+        if (!e.dead) this.chill(e, def.chill, def.chillTime);
+        this.emit('tissueHit', { x: e.x, y: e.y });
+      }
+      if (r.dist >= r.max || r.x < -0.8 || r.y < -0.8 || r.x > COLS - 0.2 || r.y > ROWS - 0.2) {
+        r.done = true;   // end of the lane / end of the room: the paper scatters and leaves a trail
+        this.emit('tissueEnd', { sx: r.sx, sy: r.sy, x: Math.max(0, Math.min(COLS - 1, r.x)), y: Math.max(0, Math.min(ROWS - 1, r.y)), dx: r.dx, dy: r.dy });
+      }
+    }
+    this.rolls = this.rolls.filter(r => !r.done);
+  }
+
   hitProjectile(p) {
     if (p.kind === 'gum') {
       this.emit('gumHit', { x: p.x, y: p.y, dx: p.dx, dy: p.dy, color: p.color });   // the gumball bounces off and scatters on the floor
@@ -998,8 +1422,11 @@ export class Game {
     if (p.kind === 'cig') { this.cigBoom(p); return; }
     if (p.kind === 'cola') { this.colaHit(p); return; }
     if (p.kind === 'atm') { this.receiptHit(p); return; }
+    if (p.kind === 'water') { this.waterSplash(p); return; }
+    if (p.kind === 'cereal') { this.cerealLand(p); return; }
     if (p.kind === 'sauce') { this.sauceSplash(p.tx, p.ty, p); return; }
     if (p.kind === 'bomb') { this.plantBomb(p.tx, p.ty); return; }
+    if (p.kind === 'molo') { this.molotovFire(p.tx, p.ty, 2); return; }
     if (p.kind === 'ice') { this.iceBurst(p.tx, p.ty, p); return; }
     if (p.kind === 'hotdog') { this.hotdogHit(p); return; }
     const e = p.target;
@@ -1044,7 +1471,7 @@ export class Game {
   explode(b) {
     for (const t of [...this.towers]) if (t.kind === 'tower' && Math.hypot(t.x - b.x, t.y - b.y) <= b.r + 0.3) this.hurtTower(t, BOMB_DMG);
     for (const s of [...this.shelves]) {
-      if (Math.hypot(s.x - b.x, s.y - b.y) > b.r + 0.3) continue;
+      if (this.shelfNear(s, b.x, b.y) > b.r + 0.3) continue;
       s.hp -= BOMB_DMG; s.hit = 0.3;
       if (s.hp <= 0) this.breakShelf(s);
     }
@@ -1061,6 +1488,126 @@ export class Game {
     const ts = this.towers.filter(t => t.kind === 'tower' && ok(t)), sh = this.shelves.filter(ok);
     const pool = (ts.length && (!sh.length || this.rng() < 0.6) ? ts : sh).sort((a, b) => near(a) - near(b)).slice(0, 3);
     return pool.length ? pool[Math.floor(this.rng() * pool.length)] : null;
+  }
+  // ---------- Molotov: fire patches that burn shelves and machines (not burglars) ----------
+  throwMolotov(e, tx, ty) {
+    const d0 = Math.max(0.5, Math.hypot(tx - e.x, ty - e.y));
+    this.projectiles.push({ id: this.nextId++, kind: 'molo', lob: true, arc: 1.4, x: e.x, y: e.y, h: 0.9, h0: 0.9, sx: e.x, sy: e.y, d0, target: null, tx, ty, speed: 4.2, dmg: 0, level: 1, dx: 0, dy: 0 });
+    this.emit('throw', { enemy: e, kind: 'molo' });
+  }
+  // shelves / machines whose cells sit inside a square patch centred on (cx, cy)
+  fireItems(cx, cy, half) {
+    const out = [];
+    for (const t of this.towers) if (t.kind === 'tower' && !t.broken && Math.abs(t.x - cx) < half && Math.abs(t.y - cy) < half) out.push(t);
+    for (const s of this.shelves) if (this.cellsOf(s).some(([x, y]) => Math.abs(x - cx) < half && Math.abs(y - cy) < half)) out.push(s);
+    return out;
+  }
+  // size = patch width in cells (2 = 2x2, 3 = 3x3). If it lands on an item it feeds on it: one size bigger, hotter and longer.
+  molotovFire(x, y, size) {
+    const snap = sz => sz % 2 === 1 ? [Math.round(x), Math.round(y)] : [Math.floor(x) + 0.5, Math.floor(y) + 0.5];
+    let [cx, cy] = snap(size), items = this.fireItems(cx, cy, size / 2);
+    const fueled = items.length > 0;
+    if (fueled && size < 3) { size += 1; [cx, cy] = snap(size); items = this.fireItems(cx, cy, size / 2); }
+    if (this.fires.filter(f => f.foe).length < FIRE_MAX) {
+      this.fires.push({ id: this.nextId++, x: cx, y: cy, r: size / 2, half: size / 2, size, foe: true, fueled, t: MOLO_TIME * (fueled ? 1.2 : 1), max: MOLO_TIME * (fueled ? 1.2 : 1), dps: 0, tick: 0 });
+    }
+    for (const it of items) this.igniteItem(it, fueled ? 1.3 : 1);
+    this.emit('molotovSplash', { x: cx, y: cy, r: size / 2, size, fueled });
+  }
+  igniteItem(it, mul) { it.burning = 1.5; it.burnMul = Math.max(it.burnMul || 1, mul); }
+  burnItem(it) {
+    const dmg = FIRE_ITEM_DPS * 0.5 * (it.burnMul || 1);
+    if (it.kind === 'tower') {
+      if (it.broken) return;
+      it.hp -= dmg; it.hit = 0.25;
+      if (it.hp <= 0) { it.hp = 0; this.breakTower(it, 'destroyed'); }
+    } else { it.hp -= dmg; it.hit = 0.2; if (it.hp <= 0) this.breakShelf(it); }
+  }
+  stepFoeFires(dt) {
+    for (const f of this.fires) {   // a patch keeps lighting whatever stands in it
+      if (!f.foe) continue;
+      f.tick += dt;
+      if (f.tick >= 0.5) { f.tick -= 0.5; for (const it of this.fireItems(f.x, f.y, f.half)) this.igniteItem(it, f.fueled ? 1.3 : 1); }
+    }
+    for (const it of [...this.towers.filter(t => t.kind === 'tower'), ...this.shelves]) {   // burning items take damage and the flames creep to a neighbour
+      if (!(it.burning > 0)) continue;
+      it.burning -= dt; it.bt = (it.bt || 0) + dt;
+      if (it.burning <= 0) { it.burnMul = 1; continue; }
+      if (it.bt < 0.5) continue;
+      it.bt -= 0.5; this.burnItem(it);
+      if (this.rng() < 0.07 * (it.burnMul || 1)) {
+        const [ox, oy] = NB[Math.floor(this.rng() * 4)], nx = it.x + ox, ny = it.y + oy;
+        if (nx >= 0 && ny >= 0 && nx < COLS && ny < ROWS && !this.reserved(nx, ny)) this.molotovFire(nx, ny, 2);
+      }
+    }
+  }
+
+  // ---------- Bat: swats away shots that are about to hit it, smashes the closest item ----------
+  tryDeflect(p) {
+    const e = p.target;
+    if (!e || e.dead || e.type !== 'bat' || p.lob || p.kind === 'bomb' || p.kind === 'molo') return false;
+    if (e.stun > 0 || e.wind > 0 || e.dash || this.rng() > DEFLECT_CHANCE) return false;
+    e.swing = 0.3; e.angle = Math.atan2(-(p.dx || 0), -(p.dy || 0)) + Math.PI;
+    this.emit('deflect', { enemy: e, x: e.x, y: e.y, dx: -(p.dx || 0), dy: -(p.dy || 0), kind: p.kind });
+    return true;
+  }
+  smashTarget(e) {
+    let best = null, bd = 1.7;
+    for (const t of this.towers) if (t.kind === 'tower' && !t.broken) { const d = Math.hypot(t.x - e.x, t.y - e.y); if (d < bd) { bd = d; best = t; } }
+    for (const s of this.shelves) { const d = this.shelfNear(s, e.x, e.y); if (d < bd) { bd = d; best = s; } }
+    return best;
+  }
+  smash(e, tgt) {
+    e.swing = 0.3;
+    const alive = tgt.kind === 'tower' ? this.towers.includes(tgt) && !tgt.broken : this.shelves.includes(tgt);
+    if (!alive) return;
+    const dmg = SMASH_DMG * (e.dashMul || 1);
+    if (tgt.kind === 'tower') this.hurtTower(tgt, dmg); else { tgt.hp -= dmg; tgt.hit = 0.25; if (tgt.hp <= 0) this.breakShelf(tgt); }
+    this.emit('smash', { enemy: e, x: tgt.x, y: tgt.y, kind: tgt.kind === 'tower' ? 2 : 3 });
+    e.stun = Math.max(e.stun, 0.25);
+  }
+
+  // ---------- Motor bandit: rides in from outside, smashes through the door, crashes into the first item, riders jump off ----------
+  onDoorWall(x, y) { const s = this.doorSide; return (s === 'left' && x === 0) || (s === 'right' && x === COLS - 1) || (s === 'top' && y === 0) || (s === 'bottom' && y === ROWS - 1); }
+  motoStep(e, dt) {
+    if (e.moto === 'crash') { e.crashT -= dt; if (e.crashT <= 0) { this.motoRiders(e); e.dead = true; } return; }
+    let move = 11 * dt;
+    while (move > 0 && e.moto === 'ride') {
+      const st = Math.min(0.25, move); move -= st;
+      const nx = e.x + e.mdx * st, ny = e.y + e.mdy * st, cx = Math.round(nx), cy = Math.round(ny);
+      if (!e.crossed && (nx - e.door.x) * e.mdx + (ny - e.door.y) * e.mdy >= 0) { e.crossed = true; this.emit('doorCrash', { x: e.door.x, y: e.door.y, side: e.door.side }); }
+      const inside = cx >= 0 && cy >= 0 && cx < COLS && cy < ROWS;
+      const wall = inside && this.reserved(cx, cy) && !this.onDoorWall(cx, cy);
+      const item = inside && !this.reserved(cx, cy) && this.blocked[idx(cx, cy)] !== 0;
+      const out = !inside && e.crossed;
+      if (wall || item || out) {
+        const px = Math.min(COLS - 1, Math.max(0, Math.round(e.x))), py = Math.min(ROWS - 1, Math.max(0, Math.round(e.y)));
+        e.x = e.tx = px; e.y = e.ty = py;
+        let kind = 0;
+        if (item) {
+          const t = this.towerAt(cx, cy), sh = this.shelfAt(cx, cy);
+          if (t && t.kind === 'tower') { this.hurtTower(t, MOTO_DMG); kind = 2; }
+          else if (sh) { sh.hp -= MOTO_DMG; sh.hit = 0.3; kind = 3; if (sh.hp <= 0) this.breakShelf(sh); }
+        }
+        e.moto = 'crash'; e.crashT = 0.9;
+        this.emit('motoCrash', { x: item || wall ? cx : px, y: item || wall ? cy : py, ex: px, ey: py, kind });
+        return;
+      }
+      e.x = nx; e.y = ny;
+    }
+  }
+  motoRiders(e) {
+    if (e.ridersOut) return; e.ridersOut = true;
+    const cx = Math.min(COLS - 1, Math.max(0, Math.round(e.x))), cy = Math.min(ROWS - 1, Math.max(0, Math.round(e.y)));
+    const ok = (x, y) => x >= 0 && y >= 0 && x < COLS && y < ROWS && !this.reserved(x, y) && this.blocked[idx(x, y)] === 0 && !this.isTill(x, y);
+    const cand = [];
+    for (const [dx, dy] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]]) if (ok(cx + dx, cy + dy)) cand.push([cx + dx, cy + dy]);
+    for (let i = cand.length - 1; i > 0; i--) { const j = Math.floor(this.rng() * (i + 1)); [cand[i], cand[j]] = [cand[j], cand[i]]; }
+    for (let i = 0; i < 2; i++) {
+      const c = cand.length ? cand[i % cand.length] : [e.door.x, e.door.y];
+      this.spawnEnemy(this.rng() < 0.6 ? 'sneak' : 'runner', e.door, { x: cx, y: cy, tx: c[0], ty: c[1], hop: true });
+    }
+    this.emit('riders', { x: cx, y: cy });
   }
   dashDir(e) {
     const hits = [];
@@ -1081,14 +1628,25 @@ export class Game {
     const n = this.wave + 1, def = ENEMIES[e.type];
     // bombers are rare early on and get more common every night (none before night 4)
     const bombMul = n < 4 ? 0 : Math.min(2.2, 0.2 + (n - 4) * 0.22);
-    const wb = def.abil.bomb * bombMul, wd = def.abil.dash, tot = wb + wd;
+    const wb = (def.abil.bomb || 0) * bombMul, wd = def.abil.dash || 0, wm = def.abil.molo || 0, ws = def.abil.smash || 0, tot = wb + wd + wm + ws;
     e.abCd = def.cd * (1.15 - 0.03 * n) * (0.7 + this.rng() * 0.7);
     if (tot <= 0 || this.rng() > 0.75) return false;
-    if (this.rng() * tot < wb) {
+    let r = this.rng() * tot;
+    if (r < wb) {
       const tgt = this.bombTarget(e);
       if (!tgt) { e.abCd = 1.5; return false; }
       e.pending = { kind: 'bomb', tx: tgt.x + (this.rng() - 0.5) * 0.7, ty: tgt.y + (this.rng() - 0.5) * 0.7 };
       e.angle = Math.atan2(tgt.x - e.x, tgt.y - e.y); e.wind = 0.55;
+    } else if ((r -= wb) < wm) {                       // molotov
+      const tgt = this.bombTarget(e);
+      if (!tgt) { e.abCd = 1.5; return false; }
+      e.pending = { kind: 'molo', tx: tgt.x + (this.rng() - 0.5) * 0.7, ty: tgt.y + (this.rng() - 0.5) * 0.7 };
+      e.angle = Math.atan2(tgt.x - e.x, tgt.y - e.y); e.wind = 0.6;
+    } else if ((r -= wm) < ws) {                       // bat swing at the closest item
+      const tgt = this.smashTarget(e);
+      if (!tgt) { e.abCd = 0.8; return false; }
+      e.pending = { kind: 'smash', tgt };
+      e.angle = Math.atan2(tgt.x - e.x, tgt.y - e.y); e.wind = 0.5;
     } else {
       const [dx, dy] = this.dashDir(e);
       e.pending = { kind: 'dash', dx, dy, n: 2 + Math.floor(this.rng() * 3) };
@@ -1100,6 +1658,8 @@ export class Game {
   doTrick(e) {
     const p = e.pending; e.pending = null; if (!p) return;
     if (p.kind === 'bomb') this.throwBomb(e, p.tx, p.ty);
+    else if (p.kind === 'molo') this.throwMolotov(e, p.tx, p.ty);
+    else if (p.kind === 'smash') this.smash(e, p.tgt);
     else { e.dash = { dx: p.dx, dy: p.dy, left: p.n, speed: 8.5 }; this.emit('dash', { enemy: e }); }
   }
   endDash(e, stun = 0.35) { e.dash = null; e.stun = Math.max(e.stun, stun); }
@@ -1197,11 +1757,20 @@ export class Game {
       }
     }
     for (const sh of this.shelves) if (sh.hit > 0) sh.hit -= dt;
+    if (this.fruits.length) this.stepFruits(dt);
+    if (this.phase !== 'lost') this.stepStatues(dt);
     // towers (they only shoot when burglars are around)
     for (const t of this.towers) {
       if (t.kind !== 'tower') continue;
       if (t.hit > 0) t.hit -= dt;
-      if (t.broken) continue;                                  // broken turrets do nothing until replaced
+      if (t.broken) {                                          // broken turrets do nothing until replaced... and blow up if left alone
+        if (t.fuse != null) {
+          t.fuse -= dt;
+          if (Math.ceil(t.fuse) < t.fuseSec && t.fuse > 0) { t.fuseSec = Math.ceil(t.fuse); this.emit('towerFuse', { tower: t, left: t.fuseSec }); }
+          if (t.fuse <= 0) this.blastTower(t);
+        }
+        continue;
+      }
       t.cd -= dt;
       if (t.cd <= 0) { if (this.towerFire(t)) { t.cd = 1 / this.stat(t, 'rate'); this.wearTower(t); } else t.cd = 0.1; }
     }
@@ -1212,10 +1781,11 @@ export class Game {
       if (p.delay > 0) { p.delay -= dt; p.x = p.sx; p.y = p.sy; p.h = p.h0; continue; }   // queued gumballs wait inside the machine
       const dx = p.tx - p.x, dy = p.ty - p.y, d = Math.hypot(dx, dy), mv = p.speed * dt;
       if (d > 0.001) { p.dx = dx / d; p.dy = dy / d; }
-      if (d <= mv + 0.05) { p.done = true; this.hitProjectile(p); continue; }
+      if (d <= mv + 0.05) { p.done = true; if (!this.tryDeflect(p)) this.hitProjectile(p); continue; }
       p.x += dx / d * mv; p.y += dy / d * mv;
       const prog = 1 - Math.min(1, d / p.d0);
-      if (p.lob) p.h = p.h0 + Math.sin(prog * Math.PI) * p.arc;                      // lobbed: high arc, lands on the floor
+      if (p.kind === 'cereal' || p.kind === 'water') p.h = p.h0 + ((p.kind === 'cereal' ? 0.5 : 0.1) - p.h0) * prog + Math.sin(prog * Math.PI) * p.arc;   // lands on the floor
+      else if (p.lob) p.h = p.h0 + Math.sin(prog * Math.PI) * p.arc;                      // lobbed: high arc, lands on the floor
       else if (p.kind === 'cans') p.h = p.h0 + (0.5 - p.h0) * prog + Math.sin(prog * Math.PI) * 0.55;
       else if (p.kind === 'gum') p.h = p.h0 + (0.45 - p.h0) * prog + Math.sin(prog * Math.PI) * 0.4;
       else if (p.kind === 'cola') p.h = p.h0 + (0.5 - p.h0) * prog + Math.sin(prog * Math.PI) * 0.1;
@@ -1223,9 +1793,12 @@ export class Game {
       else p.h = 0.8 + Math.sin(prog * Math.PI) * (p.kind === 'soda' ? 0.18 : 0.6);
     }
     this.projectiles = this.projectiles.filter(p => !p.done);
+    this.stepDonuts(dt); this.stepRolls(dt); this.stepBoxes(dt);
     // sauce puddles keep burglars burning; bombs on the floor count down
+    this.stepFoeFires(dt);
     for (const f of this.fires) {
       f.t -= dt;
+      if (f.foe) continue;   // molotov fire hurts the store, not the burglars
       for (const e of this.enemies) if (!e.dead && Math.hypot(e.x - f.x, e.y - f.y) <= f.r && e.burn < 1.2) this.ignite(e, f.dps, 1.2);
     }
     this.fires = this.fires.filter(f => f.t > 0);
@@ -1288,6 +1861,14 @@ export class Game {
     if (e.slow > 0) e.slow -= dt;
     if (e.flee > 0) e.flee -= dt;
     if (e.abCd > 0) e.abCd -= dt;
+    if (e.swing > 0) e.swing -= dt;
+    if (e.hop) {   // a rider jumping off the motorbike
+      const H = e.hop; H.t -= dt; const k = 1 - Math.max(0, H.t) / H.max;
+      e.x = H.sx + (e.tx - H.sx) * k; e.y = H.sy + (e.ty - H.sy) * k; e.air = Math.sin(k * Math.PI);
+      if (H.t <= 0) { e.hop = null; e.air = 0; e.x = e.tx; e.y = e.ty; }
+      return;
+    }
+    if (e.moto) { this.motoStep(e, dt); return; }
     if (e.stun > 0) { e.stun -= dt; return; }
     // traps
     for (const tr of this.traps) {
@@ -1362,32 +1943,33 @@ export class Game {
   snapshot() {
     const c = o => JSON.parse(JSON.stringify(o));
     return c({
-      v: 3, seed: this.seed, rng: this.rng.get(), room: this.room, wave: this.wave, cash: this.cash, lives: this.lives, maxLives: this.maxLives,
+      v: 3, seed: this.seed, rng: this.rng.get(), room: this.room, permit: this.permit, wave: this.wave, cash: this.cash, lives: this.lives, maxLives: this.maxLives,
       kills: this.kills, served: this.served, sales: this.sales, paidOut: this.paidOut, rerolls: this.rerolls, unlocked: [...this.unlocked],
       mods: this.mods, nextId: this.nextId, phase: this.phase === 'restock' ? 'restock' : 'prep', choices: this.choices.map(u => u.id),
       counterSide: this.counterSide, doorSide: this.doorSide, counterPos: this.counterPos, tills: this.tills, spawns: this.spawns,
-      shelves: this.shelves, towers: this.towers, traps: this.traps,
+      shelves: this.shelves.filter(s => s.ttl === undefined), towers: this.towers, traps: this.traps,
     });
   }
   restore(s, o = {}) {
     if (s.v !== 3) throw new Error('old save');   // saves from older layouts can't be loaded
     const c = x => JSON.parse(JSON.stringify(x));
     this.room = s.room; setRoom(s.room);
+    this.permit = s.permit ?? (s.room ? PERMIT_FOR_RENO[s.room - 1] : 1);   // older saves: just enough permit for the size they already have
     if (!o.retry) { this.seed = s.seed; this.rng = mulberry32(s.seed); this.rng.set(s.rng); this.paidOut = s.paidOut; }
     this.wave = s.wave; this.cash = s.cash; this.lives = s.lives; this.maxLives = s.maxLives;
     this.kills = s.kills; this.served = s.served; this.sales = s.sales; this.rerolls = s.rerolls;
     this.unlocked = new Set(s.unlocked); this.mods = c(s.mods); this.nextId = Math.max(this.nextId, s.nextId);
     {   // saves made before the Bubblegum / Cola / ATM machines don't have their modifiers yet
-      const m = this.mods, one = { cans: 1, sauce: 1, soda: 1, micro: 1, hotdog: 1, fridge: 1, gum: 1, cola: 1, atm: 1 };
+      const m = this.mods, one = { cans: 1, sauce: 1, soda: 1, micro: 1, hotdog: 1, fridge: 1, gum: 1, cola: 1, atm: 1, water: 1, donut: 1, cereal: 1, tissue: 1 };
       m.dmg = { ...one, ...m.dmg }; m.rate = { ...one, ...m.rate };
-      for (const [k, v] of Object.entries({ gumExtra: 0, push: 1, soak: 1, swirlTime: 1, swirlDmg: 1 })) if (m[k] === undefined) m[k] = v;
+      for (const [k, v] of Object.entries({ gumExtra: 0, push: 1, soak: 1, swirlTime: 1, swirlDmg: 1, fruitDmg: 1, statueRate: 1, waterExtra: 0, waterR: 1, donutExtra: 0, boxLife: 0, boxHp: 1 })) if (m[k] === undefined) m[k] = v;
     }
     this.counterSide = s.counterSide; this.doorSide = s.doorSide; this.counterPos = s.counterPos; this.tills = c(s.tills); this.spawns = c(s.spawns);
     this.shelves = c(s.shelves); this.towers = c(s.towers); this.traps = c(s.traps);
     this.blocked = new Uint8Array(COLS * ROWS);
-    for (const sh of this.shelves) this.blocked[idx(sh.x, sh.y)] = 3;
+    for (const sh of this.shelves) for (const [cx, cy] of this.cellsOf(sh)) this.blocked[idx(cx, cy)] = 3;
     for (const t of this.towers) this.blocked[idx(t.x, t.y)] = 2;
-    this.enemies = []; this.projectiles = []; this.fires = []; this.bombs = []; this.ice = []; this.swirls = []; this.skills = []; this.customers = []; this.walkers = [];
+    this.enemies = []; this.projectiles = []; this.fires = []; this.bombs = []; this.ice = []; this.swirls = []; this.skills = []; this.fruits = []; this.donuts = []; this.rolls = []; this.customers = []; this.walkers = [];
     this.spawnQueue = []; this.gapT = 0; this.subWave = 1; this.subWaves = 1; this.dayQueue = []; this.waveTime = 0; this.dayTime = 0; this.waveTotal = 0; this.nightIn = 0;
     this.phase = s.phase; this.daySnap = null;
     this.choices = (s.choices || []).map(id => UPGRADES.find(u => u.id === id)).filter(Boolean);
@@ -1401,7 +1983,7 @@ export class Game {
     if (this.phase !== 'lost') return false;
     if (this.daySnap) this.restore(this.daySnap, { retry: true });
     else {
-      this.enemies = []; this.projectiles = []; this.fires = []; this.bombs = []; this.ice = []; this.swirls = []; this.skills = []; this.customers = []; this.walkers = [];
+      this.enemies = []; this.projectiles = []; this.fires = []; this.bombs = []; this.ice = []; this.swirls = []; this.skills = []; this.fruits = []; this.donuts = []; this.rolls = []; this.customers = []; this.walkers = [];
       this.spawnQueue = []; this.gapT = 0; this.subWave = 1; this.subWaves = 1; this.dayQueue = []; this.waveTime = 0; this.dayTime = 0; this.phase = 'prep';
     }
     this.lives = this.maxLives;
