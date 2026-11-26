@@ -1,5 +1,5 @@
 // UI, input, save data, audio and the main loop
-import { Game, ITEMS, BUILD_ORDER, SKILLS, META, ROOM_UPGRADE, UNLOCKS, MAX_LEVEL, MAX_STOCK, MAX_ROOM, ROOM_BASE, ROOM_STEP, RENO_COST } from './game.js';
+import { Game, ITEMS, BUILD_ORDER, SKILLS, META, ROOM_UPGRADE, UNLOCKS, MAX_LEVEL, MAX_STOCK, MAX_ROOM, ROOM_BASE, ROOM_STEP, RENO_COST, STATUE_RANGE, MAX_PERMIT, PERMIT_FOR_RENO, ITEM_LIMITS } from './game.js';
 import { View } from './view.js';
 import { pxText, setHTML, pxEmoji, pxifyStatic } from './ui/pixel.js';
 
@@ -87,6 +87,10 @@ const sfx = {
     else if (k === 'gum') { for (let i = 0; i < 5; i++) { tone(620 + i * 70, 0.05, 'triangle', 0.04, 260, i * 0.11); noise(0.02, 0.025, { f: 2400, delay: i * 0.11 }); } }   // pop-pop-pop-pop-pop
     else if (k === 'cola') { noise(0.16, 0.05, { f: 5200, q: 0.6, type: 'highpass', slide: -2400 }); tone(260, 0.1, 'sine', 0.03, 140); }                   // fizzy pshh
     else if (k === 'atm') { for (let i = 0; i < 4; i++) { tone(1050 + (i % 2) * 120, 0.03, 'square', 0.025, 0, i * 0.045); noise(0.025, 0.02, { f: 3200, q: 3, delay: i * 0.045 }); } tone(1760, 0.12, 'sine', 0.025, 0, 0.19, true); }   // printer brrt + ding
+    else if (k === 'water') { for (let i = 0; i < 3; i++) { tone(420 + i * 60, 0.12, 'sine', 0.05, 380, i * 0.3); noise(0.1, 0.03, { f: 1400, q: 1.2, delay: i * 0.3 }); } }   // glug-glug-glug
+    else if (k === 'donut') { tone(300, 0.09, 'triangle', 0.06, 260); tone(300, 0.09, 'triangle', 0.06, 260, 0.3); noise(0.05, 0.03, { f: 1500 }); }                          // fwip fwip
+    else if (k === 'cereal') { noise(0.14, 0.06, { f: 700, q: 0.8 }); tone(180, 0.14, 'triangle', 0.07, -90); tone(90, 0.1, 'sine', 0.06, -40, 0.12); }                       // rattle + thunk
+    else if (k === 'tissue') { noise(0.2, 0.05, { f: 3000, q: 0.5, type: 'highpass', slide: 1500 }); tone(700, 0.1, 'sine', 0.02, 400); }                                       // fwoosh
     else tone(330, 0.05, 'square', 0.025, -200);
   },
   gumHit: () => { if (gate('gumHit', 50)) { tone(900, 0.06, 'sine', 0.035, -350); tone(1350, 0.05, 'triangle', 0.02, -300, 0.04); } },
@@ -94,6 +98,9 @@ const sfx = {
   cigLaunch: () => { if (gate('cigLaunch', 55)) { noise(0.04, 0.03, { f: 2200, q: 1.5 }); tone(700, 0.05, 'triangle', 0.02, 300); } },
   cigPop: () => { if (gate('cigPop', 45)) { noise(0.05, 0.04, { f: 3000, q: 1 }); tone(520, 0.05, 'square', 0.02, -300); } },
   swirl: () => { noise(0.5, 0.05, { f: 800, q: 1.2, slide: 2400 }); tone(400, 0.45, 'triangle', 0.03, 600, 0, true); },
+  fruitScatter: () => { noise(0.2, 0.05, { f: 1500, q: 0.8, slide: 800 }); tone(300, 0.12, 'triangle', 0.05, 300); tone(450, 0.1, 'triangle', 0.04, 300, 0.07); },
+  fruitBoom: () => { if (gate('fruitBoom', 60)) { noise(0.22, 0.07, { f: 900, type: 'lowpass', q: 0.7, slide: -600 }); tone(170, 0.16, 'sine', 0.09, -90); tone(700, 0.08, 'triangle', 0.04, 300, 0.02); } },   // squishy pop
+  repair: () => { if (gate('repair', 450)) arp([784, 988, 1319], 0.05, 0.12, 'sine', 0.025); },
   lob: () => { tone(230, 0.22, 'sine', 0.07, 430); noise(0.14, 0.03, { f: 600, type: 'lowpass', slide: 400 }); tone(120, 0.1, 'sawtooth', 0.025, 60, 0.05); },
   pulse: () => { if (!gate('pulse', 120)) return; tone(95, 0.28, 'sawtooth', 0.055, 140); noise(0.14, 0.05, { f: 3200, q: 4, slide: -1800 }); tone(1760, 0.28, 'sine', 0.04, 0, 0.16, true); },   // bzzt-ding
   hit: () => { if (gate('hit', 55)) noise(0.035, 0.03, { f: 2600, q: 1.5 }); },
@@ -172,7 +179,7 @@ function saveRun() {
   snap.paidOut = game.paidOut;
   save.run = snap; persist();
 }
-const SAVE_EVENTS = new Set(['place', 'sell', 'upgrade', 'stock', 'service', 'replace', 'unlock', 'renovate', 'dayStart', 'newDay', 'restock', 'retry', 'waveClear', 'lost']);
+const SAVE_EVENTS = new Set(['place', 'sell', 'upgrade', 'stock', 'service', 'replace', 'unlock', 'renovate', 'permit', 'dayStart', 'newDay', 'restock', 'retry', 'waveClear', 'lost']);
 
 // every run starts in a freshly generated store (or your saved one), shown behind the title plate
 function newStore(fresh = false) {
@@ -253,6 +260,7 @@ function onEvent(type, d) {
     case 'stock': sfx.restock(); break;
     case 'sell': if (d.tower.broken !== 'destroyed') sfx.sell(); break;
     case 'renovate': sfx.renovate(); break;
+    case 'permit': sfx.unlock(); break;
     case 'hit': sfx.hit(); break;
     case 'splash': sfx.wet(); break;
     case 'iceBurst': sfx.shatter(); break;
@@ -264,6 +272,11 @@ function onEvent(type, d) {
     case 'colaBlast': sfx.colaBlast(); break;
     case 'cigLaunch': sfx.cigLaunch(); break;
     case 'cigBoom': sfx.cigPop(); break;
+    case 'fruitScatter': sfx.fruitScatter(); break;
+    case 'fruitBoom': sfx.fruitBoom(); break;
+    case 'repair': sfx.repair(); break;
+    case 'statueDry': floatText(d.x, d.y, 'Statue empty!', 'bad', 2.4); break;
+    case 'refund': sfx.sell(); floatText(d.x, d.y, '+$' + d.amount + ' refund', 'good', 1.8); break;
     case 'slip': sfx.slip(); break;
     case 'unlock': sfx.unlock(); banner(`🔓 ${ITEMS[d.type].name} unlocked!`); break;
     case 'buy': sfx.buy(); floatText(d.x, d.y, '🛒', 'sale', 1.5); break;
@@ -281,13 +294,22 @@ function onEvent(type, d) {
     case 'sauceSplash': sfx.splat(); break;
     case 'panic': floatText(d.enemy.x, d.enemy.y, 'Aaah!', 'bad', 1.5); break;
     case 'windup': sfx.tick(); break;
-    case 'throw': sfx.whistle(); floatText(d.enemy.x, d.enemy.y, '💣 !', 'bad', 1.4); break;
+    case 'throw': sfx.whistle(); floatText(d.enemy.x, d.enemy.y, d.kind === 'molo' ? '🔥 !' : '💣 !', 'bad', 1.4); break;
+    case 'molotovSplash': sfx.splat(); if (d.fueled) floatText(d.x, d.y, '🔥 Spreading!', 'bad', 1.6); break;
+    case 'doorCrash': sfx.crash(); floatText(d.x, d.y, '🏍️ CRASH!', 'bad', 1.8); break;
+    case 'motoCrash': sfx.crash(); if (d.kind >= 2) sfx.thud(); break;
+    case 'riders': floatText(d.x, d.y, '2 robbers!', 'bad', 1.6); break;
+    case 'smash': sfx.thud(); break;
+    case 'deflect': sfx.bounce(); floatText(d.x, d.y, 'Deflected!', 'bad', 1.4); break;
+    case 'immune': floatText(d.enemy.x, d.enemy.y, 'Immune!', 'bad', 1.2); break;
     case 'dash': sfx.dash(); break;
     case 'dashHit': if (d.kind >= 2) sfx.thud(); break;
     case 'explode': sfx.boom(); break;
     case 'towerHit': sfx.thud(); break;
     case 'towerWarn': sfx.warn(); floatText(d.tower.x, d.tower.y, 'Overheating!', 'bad', 1.8); break;
-    case 'towerBreak': sfx.crash(); floatText(d.tower.x, d.tower.y, d.why === 'destroyed' ? 'Destroyed!' : 'Broke down!', 'bad', 1.8); break;
+    case 'towerBreak': sfx.crash(); floatText(d.tower.x, d.tower.y, d.why === 'destroyed' ? 'Destroyed!' : 'Broke down! Fix it: 5s', 'bad', 2.2); break;
+    case 'towerFuse': sfx.warn(); floatText(d.tower.x, d.tower.y, String(d.left), 'bad', 0.9); break;
+    case 'towerBlast': floatText(d.tower.x, d.tower.y, 'BOOM!', 'bad', 1.8); break;
     case 'service': sfx.fix(); floatText(d.tower.x, d.tower.y, 'Serviced', 'good', 1.6); break;
     case 'replace': sfx.replace(); floatText(d.tower.x, d.tower.y, 'Replaced!', 'good', 1.6); break;
     case 'waveStart': sfx.wave(); banner(d.subs > 1 ? `🌙 Night ${d.n} — wave 1/${d.subs}` : `🌙 Night ${d.n} — burglars!`); break;
@@ -310,52 +332,149 @@ const available = () => BUILD_ORDER.filter(id => game.isUnlocked(id));   // shel
 // ---------- build menu: a fixed-size card. LEFT = detail card of the focused item, RIGHT = tabs + 5x5 item grid ----------
 const trayCss = document.createElement('style');
 trayCss.textContent = `
-#tray{width:min(940px,96vw)!important;height:min(540px,88vh)!important;max-width:96vw!important;max-height:94vh!important;padding:16px!important;overflow:hidden!important}
+/* ===== the build menu is a 3D landscape tablet (old iPad with a home button). #tray = the scene, .tabletBody = the 3D slab ===== */
+#tray{--tw:min(960px,96vw,calc(92vh*1.36));--td:calc(var(--tw)*.026);width:var(--tw)!important;height:calc(var(--tw)/1.36)!important;max-width:none!important;max-height:none!important;padding:0!important;overflow:visible!important;
+  background:none!important;border:0!important;box-shadow:none!important;border-radius:0!important;perspective:2200px}
 #tray,#tray *,#modal,#card{scrollbar-width:none;-ms-overflow-style:none}
 #tray::-webkit-scrollbar,#tray *::-webkit-scrollbar,#modal::-webkit-scrollbar,#card::-webkit-scrollbar{display:none;width:0;height:0}
 #skillSlots.dayHide{display:none!important}
-#tray .tWrap{height:100%;display:flex;flex-direction:column;gap:14px;min-height:0}
-#tray .tWrap>.hd{margin:0;flex:none}
-#tray .tBody{position:relative;flex:1;min-height:0}
+#tray .tShadow{position:absolute;left:5%;right:5%;bottom:-5%;height:9%;background:radial-gradient(ellipse at center,rgba(0,0,0,.6),rgba(0,0,0,0) 70%);filter:blur(10px);pointer-events:none}
+#tray .tabletBody{position:absolute;inset:0;transform-style:preserve-3d;transform:translateY(var(--ty,0)) scale(var(--s,1)) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg));transition:transform .3s cubic-bezier(.2,.85,.3,1)}
+#tray.hide .tabletBody{--ty:60px;--s:.88;transition:transform .3s cubic-bezier(.4,0,.8,.6)}
+#tray .tFace{position:absolute;backface-visibility:hidden}
+#tray .tFront{inset:0;border-radius:calc(var(--tw)*.04);background:linear-gradient(145deg,#2c2c31 0%,#0e0e11 55%,#1d1d22 100%);box-shadow:inset 0 0 0 2px #46464d,inset 0 0 0 calc(var(--tw)*.005) #050506;transform:translateZ(calc(var(--td)/2))}
+#tray .tBack{inset:0;border-radius:calc(var(--tw)*.04);background:linear-gradient(145deg,#e4e7ec,#aab0ba 60%,#c9cdd5);transform:translateZ(calc(var(--td)/-2)) rotateY(180deg)}
+#tray .tEdge{background:linear-gradient(90deg,#8d939d,#dfe2e8 45%,#a6acb6)}
+#tray .tTop,#tray .tBottom{left:calc(var(--tw)*.04);right:calc(var(--tw)*.04);height:var(--td)}
+#tray .tTop{top:0;transform:translateY(calc(var(--td)/-2)) rotateX(90deg)}
+#tray .tBottom{bottom:0;transform:translateY(calc(var(--td)/2)) rotateX(-90deg)}
+#tray .tLeft,#tray .tRight{top:calc(var(--tw)*.04);bottom:calc(var(--tw)*.04);width:var(--td)}
+#tray .tLeft{left:0;transform:translateX(calc(var(--td)/-2)) rotateY(-90deg)}
+#tray .tRight{right:0;transform:translateX(calc(var(--td)/2)) rotateY(90deg)}
+#tray .tCam{position:absolute;left:2.4%;top:50%;width:calc(var(--tw)*.009);height:calc(var(--tw)*.009);margin-top:calc(var(--tw)*-.0045);border-radius:50%;background:radial-gradient(circle at 35% 35%,#3a4a66,#06080c 70%);box-shadow:0 0 0 2px #1b1b20}
+#tray #trayClose.tHome{position:absolute!important;right:calc(5.2% - var(--tw)*.027);top:50%;width:calc(var(--tw)*.054)!important;height:calc(var(--tw)*.054)!important;margin-top:calc(var(--tw)*-.027);padding:0!important;border-radius:50%!important;font-size:0!important;
+  background:radial-gradient(circle at 40% 30%,#2e2e34,#0b0b0d 75%)!important;border:2px solid #4a4a52!important;box-shadow:inset 0 2px 3px rgba(255,255,255,.12),0 1px 0 rgba(255,255,255,.05)!important;cursor:pointer;transition:box-shadow .15s,transform .1s}
+#tray #trayClose.tHome:hover{box-shadow:inset 0 2px 3px rgba(255,255,255,.12),0 0 0 3px rgba(255,210,63,.45)!important}
+#tray #trayClose.tHome:active{transform:scale(.94)}
+#tray .tScreen{position:absolute;left:5%;top:7%;width:84.5%;height:86%;overflow:hidden;border-radius:4px;background:#1c1411;box-shadow:0 0 0 2px #000,0 0 24px rgba(255,214,140,.12)}
+#tray .tGlare{position:absolute;inset:0;pointer-events:none;z-index:9;background:linear-gradient(115deg,rgba(255,255,255,.13) 0%,rgba(255,255,255,.03) 32%,rgba(255,255,255,0) 33%)}
+#tray .tUI{position:absolute;left:0;top:0;width:700px;height:525px;transform-origin:0 0;transform:scale(var(--k,1));display:flex;flex-direction:column;font-family:var(--cf);color:#1c1c1e;background:#f2f2f7}
+#tray .tStat{flex:none;height:24px;display:flex;align-items:center;justify-content:space-between;padding:0 14px;font:700 12px/1 var(--cf);color:#1c1c1e;background:rgba(249,249,252,.97);box-shadow:0 1px 0 rgba(60,60,67,.18)}
+#tray .tApp{flex:1;min-height:0;display:grid;grid-template-columns:132px minmax(0,1fr)}
+#tray .tSide{display:flex;flex-direction:column;gap:4px;padding:14px 10px;background:#fbfbfd;box-shadow:inset -1px 0 0 rgba(60,60,67,.18)}
+#tray .tSide .tSideHd{font:700 11px/1 var(--cf);letter-spacing:1.2px;color:#8e8e93;padding:2px 8px 8px}
+#tray .tSide .tab{display:block;width:100%;text-align:left;border-radius:10px;padding:10px 12px;font:600 14px/1.15 var(--cf);letter-spacing:0;background:transparent;color:#1c1c1e;box-shadow:none!important;opacity:1;backdrop-filter:none;text-shadow:none}
+#tray .tSide .tab:hover:not(.on){background:rgba(0,0,0,.05);filter:none}
+#tray .tSide .tab.on{background:#007aff;color:#fff}
+#tray .tSide #subTabs{display:flex;flex-direction:column;gap:2px;margin:0 0 4px 10px;padding-left:8px;border-left:2px solid rgba(60,60,67,.18)}
+#tray .tSide #subTabs .tab{padding:7px 10px;font-size:12.5px;border-radius:8px;color:#3c3c43}
+#tray .tSide #subTabs .tab.on{background:rgba(0,122,255,.14);color:#007aff}
+#tray .tSide .tSideFoot{margin-top:auto;padding:8px 8px 2px;font:500 11px/1.3 var(--cf);color:#8e8e93}
+#tray .tMain{position:relative;min-width:0;min-height:0}
+#tray .tBody{position:absolute;inset:14px}
 #tray .tPane{position:absolute;inset:0;overflow:auto}
-#tray #renoPane{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:6px}
-#tray #renoPane .grid{justify-content:center}
-#tray #stocksPane{display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.25fr);gap:16px;overflow:hidden;padding:0 4px 8px}
-#tray .dCard{flex:none;min-height:0;overflow:hidden;gap:8px;padding:14px 14px 12px;box-shadow:0 6px 0 #d9b08a}
-#tray .dCard .pic{flex:none;width:clamp(64px,20vh,104px);height:auto;aspect-ratio:1}
-#tray .dCard .pic img{width:84%;height:84%}
-#tray .dCard .nm{flex:none}
-#tray .dCard .ds{min-height:0;overflow:auto}
+#tray #stocksPane{display:grid;grid-template-columns:minmax(0,.82fr) minmax(0,1.3fr);gap:14px;overflow:hidden}
+#tray .lCol{min-height:0;display:flex;flex-direction:column;gap:12px}
+#tray .dCard{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px 14px 14px;border-radius:22px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.12);text-align:center;color:#1c1c1e}
+#tray .dCard .pic{flex:none;width:96px;height:96px;border-radius:26%;display:grid;place-items:center;background:#f2f2f7}
+#tray .dCard .pic img{width:80%;height:80%;object-fit:contain;image-rendering:pixelated}
+#tray .dCard .nm{flex:none;font:700 17px/1.2 var(--cf);color:#1c1c1e;text-align:center}
+#tray .dCard .ds{flex:1;min-height:0;overflow:auto;font:500 13.5px/1.35 var(--cf);color:#636366;text-align:center}
+#tray .dCard.lock .pic img{filter:grayscale(1) opacity(.6)} #tray .dCard.lock .nm{color:#8e8e93}
+#tray .rcBox{flex:none;padding:10px 12px 12px;border-radius:18px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.12)}
+#tray .rcHd{font:700 11px/1 var(--cf);letter-spacing:1.2px;color:#8e8e93;margin-bottom:8px}
+#tray #recentRow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;min-height:46px}
+#tray .rc{width:100%;aspect-ratio:1/1;min-width:0;padding:0;border-radius:26%;border:2px solid transparent;background:#f2f2f7;display:grid;place-items:center;cursor:pointer;box-shadow:none}
+#tray .rc img{width:74%;height:74%;object-fit:contain;image-rendering:pixelated}
+#tray .rc.foc{border-color:#007aff;background:#fff}
+#tray .rcEmpty{grid-column:1/-1;font:500 12px/1.3 var(--cf);color:#8e8e93;align-self:center}
 #tray .gCol{min-height:0;display:flex;flex-direction:column;gap:12px}
-#tray #subTabs{margin:0;flex:none}
-#tray #trayGrid{flex:1;min-height:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));grid-template-rows:repeat(5,minmax(0,1fr));gap:8px;padding:10px;border-radius:22px;background:rgba(0,0,0,.24);overflow:hidden}
-#tray .sc{position:relative;min-width:0;min-height:0;padding:0;border-radius:16px;border:3px solid #fff;background:linear-gradient(180deg,#fffaf0,#ffe9cf);box-shadow:0 3px 0 #d9b08a;display:grid;place-items:center;cursor:pointer;overflow:hidden;font:inherit}
-#tray .sc:active{transform:translateY(2px);box-shadow:0 1px 0 #d9b08a}
-#tray .sc img{width:62%;height:62%;object-fit:contain;image-rendering:pixelated;margin-bottom:10px}
-#tray .sc.empty{background:rgba(255,255,255,.06);border:2px dashed rgba(255,255,255,.12);box-shadow:none;cursor:default}
-#tray .sc.foc{border-color:#ffd23f;box-shadow:0 3px 0 #e0a800,0 0 0 3px rgba(255,210,63,.5)}
-#tray .sc.sel:not(.foc){border-color:#5fe3a1}
-#tray .sc.lock{background:linear-gradient(180deg,#f1ebe3,#ded3c6)}
+#tray #trayGrid{flex:1;min-height:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-auto-rows:auto;align-content:start;gap:10px;padding:12px;border-radius:22px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.12);overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:rgba(60,60,67,.3) transparent}
+#tray .sc{aspect-ratio:1/1;position:relative;min-width:0;min-height:0;padding:0;border-radius:26%;border:3px solid transparent;background:#f2f2f7;display:grid;place-items:center;cursor:pointer;overflow:hidden;font:inherit;box-shadow:none}
+#tray .sc:active{transform:scale(.95)}
+#tray .sc img{width:62%;height:62%;object-fit:contain;image-rendering:pixelated;margin-bottom:8px}
+#tray .sc.empty{background:#f7f7fa;border:2px dashed rgba(60,60,67,.14);cursor:default}
+#tray .sc.foc{border-color:#007aff;background:#fff;box-shadow:0 0 0 3px rgba(0,122,255,.18)}
+#tray .sc.sel:not(.foc){border-color:#34c759}
+#tray .sc.lock{background:#ececf0}
 #tray .sc.lock img{filter:grayscale(1) opacity(.55)}
-#tray .sc-k{position:absolute;left:5px;top:3px;font:700 11px/1 var(--cf);color:#d2631a}
-#tray .sc-lk{position:absolute;right:4px;top:2px;font-size:12px;display:none}
+#tray .sc-k{position:absolute;left:6px;top:4px;font:700 11px/1 var(--cf);color:#8e8e93}
+#tray .sc-lk{position:absolute;right:5px;top:3px;font-size:11px;display:none}
 #tray .sc.lock .sc-lk{display:block}
-#tray .sc-pr{position:absolute;left:0;right:0;bottom:2px;text-align:center;font:700 12px/1 var(--cf);color:#d2631a}
-@media (max-height:480px){
-  #tray{height:94vh!important;padding:10px!important}
-  #tray .tWrap{gap:8px}  #tray .dCard{padding:8px 10px;gap:5px}#tray .dCard .pic{width:48px}  #tray #stocksPane{gap:10px}#tray #trayGrid{gap:5px;padding:6px}
-}`;
+#tray .sc-pr{position:absolute;left:0;right:0;bottom:4px;text-align:center;font:700 11px/1 var(--cf);color:#3c3c43}
+#tray .gBar{flex:none;margin-top:auto;display:flex;align-items:center;justify-content:space-between;gap:10px}
+#tray .gInfo{min-width:0;font:600 12.5px/1.25 var(--cf);color:#636366}
+#tray .gInfo b{display:block;font-size:15px;color:#1c1c1e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#tray #dAct{flex:none;min-width:150px;padding:14px 22px;border-radius:99px;border:0;font:700 15px/1 var(--cf);letter-spacing:0;color:#fff;background:#007aff;box-shadow:0 2px 6px rgba(0,122,255,.35);text-shadow:none}
+#tray #dAct.gold{background:#ff9f0a;color:#fff;box-shadow:0 2px 6px rgba(255,159,10,.35)}
+#tray #dAct.green{background:#34c759;color:#fff;box-shadow:0 2px 6px rgba(52,199,89,.35)}
+#tray #dAct:disabled{background:#c7c7cc;color:#fff;box-shadow:none;opacity:1}
+#tray #renoPane{display:block;padding:0 2px 8px;text-align:left}
+#tray #renoPane .stHd{font:700 11px/1 var(--cf);letter-spacing:1.2px;color:#8e8e93;margin:4px 4px 6px}
+#tray #renoPane .stCard{background:#fff;border-radius:18px;box-shadow:0 1px 4px rgba(0,0,0,.12);padding:12px 14px;margin-bottom:12px}
+#tray #renoPane .stRow{display:flex;align-items:center;justify-content:space-between;gap:12px}
+#tray #renoPane .stRow b{display:block;font:700 18px/1.2 var(--cf);color:#1c1c1e}
+#tray #renoPane .stRow span{font:500 12.5px/1.3 var(--cf);color:#8e8e93}
+#tray #renoPane .dots{display:flex;gap:4px;margin:10px 0 6px}
+#tray #renoPane .dot{flex:1;height:8px;border-radius:99px;background:#d1d1d6} #tray #renoPane .dot.on{background:#34c759}
+#tray #renoPane p{margin:4px 0 0;font:500 12.5px/1.35 var(--cf);color:#636366} #tray #renoPane p.warn{color:#ff3b30} #tray #renoPane p.ok{color:#34a853}
+#tray #renoPane .pxb{flex:none;min-width:136px;padding:12px 16px;border-radius:99px;border:0;font:700 14px/1 var(--cf);letter-spacing:0;color:#fff;background:#007aff;box-shadow:0 2px 6px rgba(0,122,255,.35);text-shadow:none}
+#tray #renoPane .pxb:disabled{background:#c7c7cc;box-shadow:none;opacity:1}
+#tray #renoPane .lim{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px}
+#tray #renoPane .lr{display:flex;align-items:center;gap:8px;min-width:0}
+#tray #renoPane .lr img{width:28px;height:28px;image-rendering:pixelated;flex:none;object-fit:contain}
+#tray #renoPane .lr .t{flex:1;min-width:0}
+#tray #renoPane .lr .n{display:flex;justify-content:space-between;gap:6px;font:600 12.5px/1.2 var(--cf);color:#1c1c1e}
+#tray #renoPane .lr .n i{font-style:normal;font-weight:700;color:#636366}
+#tray #renoPane .lr .bar{height:5px;border-radius:99px;background:#e5e5ea;margin-top:4px;overflow:hidden}
+#tray #renoPane .lr .bar u{display:block;height:100%;background:#007aff;text-decoration:none}
+#tray #renoPane .lr.full .bar u{background:#ff9500} #tray #renoPane .lr.full .n i{color:#ff9500}
+#tray .pxb,#tray .pxb:active:not(:disabled){box-shadow:none!important}
+#tray #renoPane .pxb{width:auto;margin:0;white-space:nowrap}
+#tray .sc.foc{box-shadow:none}
+#tray #trayClose.tHome:hover{box-shadow:inset 0 2px 3px rgba(255,255,255,.12),0 1px 0 rgba(255,255,255,.05)!important;border-color:#6a6a74!important}
+#tray .sc-ct{position:absolute;right:6px;top:4px;font:700 10px/1 var(--cf);color:#8e8e93} #tray .sc-ct.full{color:#ff9500}
+#tray #shopPane{padding:2px 2px 8px}
+#tray #shopPane .sub{color:#636366!important;font:600 13px/1.3 var(--cf)}
+#tray #shopPane .choice{background:#fff;color:#1c1c1e;border:0;border-radius:16px;box-shadow:0 1px 4px rgba(0,0,0,.1);backdrop-filter:none}
+#tray #shopPane .choice .nm{color:#1c1c1e} #tray #shopPane .choice .ds{color:#636366} #tray #shopPane .lvl{color:#8e8e93}
+#tray #shopPane .choice>span:last-child{color:#ff9500!important}
+#tray #shopPane .choice:disabled{opacity:.5}
+`;
 document.head.appendChild(trayCss);
-$('tray').innerHTML = `<div class="tWrap">
-  <div class="hd"><div class="tabs"><button class="pxb tab on" id="tabStocks">STOCKS</button><button class="pxb tab" id="tabReno">RENOVATE</button><button class="pxb tab" id="tabShop">PAYCHECK SHOP</button></div><button class="pxb sq" id="trayClose" aria-label="Close">X</button></div>
-  <div class="tBody">
-    <div class="tPane" id="stocksPane">
-      <div class="card dCard" id="dCard"><div class="pic"><img id="dImg" alt=""></div><div class="nm" id="dNm"></div><div class="ds" id="dDs"></div><button class="pxb" id="dAct"></button></div>
-      <div class="gCol"><div id="subTabs" class="tabs"><button class="pxb tab on" id="subSell">SELLABLES</button><button class="pxb tab" id="subSkill">SKILL ITEMS</button></div><div id="trayGrid"></div></div>
-    </div>
-    <div class="tPane off" id="renoPane"></div>
-    <div class="tPane off" id="shopPane"></div>
-  </div></div>`;
+$('tray').innerHTML = `<div class="tShadow"></div>
+<div class="tabletBody">
+  <div class="tFace tEdge tTop"></div><div class="tFace tEdge tBottom"></div><div class="tFace tEdge tLeft"></div><div class="tFace tEdge tRight"></div>
+  <div class="tFace tBack"></div>
+  <div class="tFace tFront">
+    <div class="tCam"></div>
+    <div class="tScreen"><div class="tUI">
+      <div class="tStat"><span>📶 Tindang Sara</span><span id="tStatTime">9:41 AM</span><span>💰 $<span id="tStatCash">0</span> &nbsp;🔋</span></div>
+      <div class="tApp">
+        <nav class="tSide">
+          <div class="tSideHd">BUILD MENU</div>
+          <button class="pxb tab on" id="tabStocks">STOCKS</button>
+          <div id="subTabs" class="tabs"><button class="pxb tab on" id="subSell">SELLABLES</button><button class="pxb tab" id="subSkill">SKILL ITEMS</button></div>
+          <button class="pxb tab" id="tabReno">STATUS</button>
+          <button class="pxb tab" id="tabShop">PAYCHECK SHOP</button>
+          <div class="tSideFoot">Tap the home button to close.</div>
+        </nav>
+        <div class="tMain"><div class="tBody">
+          <div class="tPane" id="stocksPane">
+            <div class="lCol">
+              <div class="dCard" id="dCard"><div class="pic"><img id="dImg" alt=""></div><div class="nm" id="dNm"></div><div class="ds" id="dDs"></div></div>
+              <div class="rcBox"><div class="rcHd">RECENT</div><div id="recentRow"></div></div>
+            </div>
+            <div class="gCol"><div id="trayGrid"></div><div class="gBar"><div class="gInfo" id="gInfo"></div><button class="pxb" id="dAct"></button></div></div>
+          </div>
+          <div class="tPane off" id="renoPane"></div>
+          <div class="tPane off" id="shopPane"></div>
+        </div></div>
+      </div>
+    </div><div class="tGlare"></div></div>
+    <button class="tHome" id="trayClose" aria-label="Home button: close the build menu"></button>
+  </div>
+</div>`;
 
 const cells = new Map();   // item id -> grid cell button
 let focusId = 'shelf';     // the item shown in the left detail card
@@ -364,7 +483,7 @@ function buildCards() {
   BUILD_ORDER.forEach(id => {
     icons[id] = view.makeIcon(id);
     const c = document.createElement('button'); c.className = 'sc'; c.dataset.id = id; c.title = ITEMS[id].name;
-    c.innerHTML = `<img alt="" src="${icons[id]}"><span class="sc-k" data-k></span><span class="sc-lk">🔒</span><span class="sc-pr" data-pr></span>`;
+    c.innerHTML = `<img alt="" src="${icons[id]}"><span class="sc-k" data-k></span><span class="sc-lk">🔒</span><span class="sc-ct" data-ct></span><span class="sc-pr" data-pr></span>`;
     c.onclick = () => { focusId = id; refresh(); };
     cells.set(id, c);
   });
@@ -379,7 +498,8 @@ function applySub() {
   box.innerHTML = '';
   if (!ids.includes(focusId)) focusId = ids[0];
   ids.forEach(id => box.appendChild(cells.get(id)));
-  for (let i = ids.length; i < 25; i++) { const e = document.createElement('div'); e.className = 'sc empty'; box.appendChild(e); }   // always a full 5x5 grid
+  const total = Math.max(16, Math.ceil(ids.length / 4) * 4);
+  for (let i = ids.length; i < total; i++) { const e = document.createElement('div'); e.className = 'sc empty'; box.appendChild(e); }   // always a full 4x4 grid (more rows if there are more items)
   if (game) refresh();
 }
 // left card: icon, name, description, stats and the build / unlock button
@@ -394,13 +514,34 @@ function renderDetail() {
   $('dCard').classList.toggle('lock', locked); $('dCard').classList.toggle('sel', !locked && selected === id);
   const act = $('dAct');
   act.className = 'pxb ' + (locked ? 'gold' : selected === id ? 'green' : '');
-  act.disabled = locked ? game.cash < uc : cost > game.cash;
-  const txt = locked ? `🔒 Unlock $${uc}` : selected === id ? '✔ Selected' : `🔨 Build $${cost}`;   // plain text: smooth emoji, not pixel sprites
+  const lm = game.limitOf(id), cn = game.countOf(id), full = !locked && lm !== Infinity && cn >= lm;
+  act.disabled = locked ? game.cash < uc : (cost > game.cash || (full && selected !== id));
+  const txt = locked ? `Unlock  $${uc}` : selected === id ? 'Selected ✓' : full ? 'Limit reached' : `Build  $${cost}`;
   if (act.textContent !== txt) act.textContent = txt;
+  const info = locked ? `<b>${def.name}</b>Locked` : `<b>${def.name}</b>${selected === id ? 'Tap the store to place it' : 'Cost $' + cost}${lm === Infinity ? '' : ' · Placed ' + cn + '/' + lm}`;
+  if ($('gInfo').dataset.k !== info) { $('gInfo').dataset.k = info; $('gInfo').innerHTML = info; }
+  renderRecent();
+}
+// RECENT: the last things you built or unlocked (kept between runs), shown under the preview card
+const RECENT_ITEMS_KEY = 'shelfDefenseRecentItems';
+let recentItems = []; try { recentItems = JSON.parse(localStorage.getItem(RECENT_ITEMS_KEY) || '[]').filter(id => ITEMS[id]).slice(0, 8); } catch (e) { /* no storage */ }
+function noteRecent(id) {
+  if (!ITEMS[id]) return;
+  recentItems = [id, ...recentItems.filter(x => x !== id)].slice(0, 8);
+  try { localStorage.setItem(RECENT_ITEMS_KEY, JSON.stringify(recentItems)); } catch (e) { /* no storage */ }
+}
+let recentKey = '';
+function renderRecent() {
+  if (!game) return;
+  const ids = recentItems.filter(id => game.isUnlocked(id)).slice(0, 3), key = ids.join(',') + '|' + focusId;
+  if (key === recentKey) return; recentKey = key;
+  const row = $('recentRow');
+  row.innerHTML = ids.length ? ids.map(id => `<button class="rc ${id === focusId ? 'foc' : ''}" data-id="${id}" title="${ITEMS[id].name}"><img alt="" src="${icons[id] || ''}"></button>`).join('') : '<div class="rcEmpty">Things you build or unlock show up here.</div>';
+  row.querySelectorAll('.rc').forEach(b => b.onclick = () => { focusId = b.dataset.id; subTab = SKILLS.includes(focusId) ? 'skill' : 'sell'; applySub(); });
 }
 $('dAct').onclick = () => {
   const id = focusId;
-  if (!game.isUnlocked(id)) { if (!game.unlock(id)) { sfx.bad(); banner(`Need $${UNLOCKS[id]} to unlock ${ITEMS[id].name}`); } else noteSkill(id, true); return; }   // unlocking costs store profit
+  if (!game.isUnlocked(id)) { if (!game.unlock(id)) { sfx.bad(); banner(`Need $${UNLOCKS[id]} to unlock ${ITEMS[id].name}`); } else { noteSkill(id, true); noteRecent(id); } return; }   // unlocking costs store profit
   selected = selected === id ? null : id; if (selected) noteSkill(id, true); pickedTower = null; preview = null; view.setCursor(null); closeTray(); refresh();
 };
 $('subSell').onclick = () => { subTab = 'sell'; applySub(); };
@@ -440,7 +581,7 @@ function openTray() {
   const t = $('tray'), bk = $('trayBack');
   clearTimeout(openTray.timer);
   t.classList.remove('off'); bk.classList.remove('off'); t.classList.add('hide'); bk.classList.add('hide');
-  void t.offsetWidth;                                   // let the browser register the start state so the pop animates
+  fitTablet(); void t.offsetWidth;                                   // let the browser register the start state so the pop animates
   requestAnimationFrame(() => { t.classList.remove('hide'); bk.classList.remove('hide'); });
   refresh();
 }
@@ -454,21 +595,41 @@ function closeTray() {
 function setTab(tab) {
   trayTab = tab;
   $('tabStocks').classList.toggle('on', tab === 'stocks'); $('tabReno').classList.toggle('on', tab === 'reno'); $('tabShop').classList.toggle('on', tab === 'shop');
-  $('stocksPane').classList.toggle('off', tab !== 'stocks'); $('renoPane').classList.toggle('off', tab !== 'reno'); $('shopPane').classList.toggle('off', tab !== 'shop');
+  $('subTabs').classList.toggle('off', tab !== 'stocks'); $('stocksPane').classList.toggle('off', tab !== 'stocks'); $('renoPane').classList.toggle('off', tab !== 'reno'); $('shopPane').classList.toggle('off', tab !== 'shop');
   renderReno(); renderShopTab();
 }
+// the STATUS tab: store permit, store size (renovation) and how many of every item you may place
+let statusKey = '';
 function renderReno() {
   if (!game || trayTab !== 'reno') return;
-  const lv = game.room, maxed = lv >= MAX_ROOM, size = n => ROOM_BASE + ROOM_STEP * n;
-  const chk = game.canRenovate(), cost = game.renovateCost();
-  let cells = ''; for (let i = 0; i <= MAX_ROOM; i++) cells += `<span class="cell ${i <= lv ? 'on' : ''}"></span>`;
-  $('renoPane').innerHTML = (`<div class="big">🏠 ${size(lv)}x${size(lv)} store</div><div class="grid">${cells}</div>
-    <p>${maxed ? 'The store is as big as it gets.' : `Renovate to <b style="color:#5fe3a1">${size(lv + 1)}x${size(lv + 1)}</b>: +${ROOM_STEP} columns on the right and +${ROOM_STEP} rows at the bottom. Everything you built stays put. More floor, more room for machines and customers, but burglars get more room too.`}</p>
-    <p style="color:var(--dim)">Only before you open the store for the day.</p>
-    <button class="pxb ${maxed ? '' : 'gold'}" id="renoBtn" ${chk.ok ? '' : 'disabled'}>${maxed ? 'MAX SIZE' : chk.ok ? '🔨 RENOVATE $' + cost : (game.phase !== 'prep' ? '🔒 CLOSED: ' : '') + '$' + cost + ' — ' + chk.reason.toUpperCase()}</button>`);
+  const lv = game.room, maxed = lv >= MAX_ROOM, size = n => ROOM_BASE + ROOM_STEP * n, permit = game.permit, need = maxed ? 0 : PERMIT_FOR_RENO[lv];
+  const pMax = permit >= MAX_PERMIT, pChk = game.canUpgradePermit(), pCost = game.permitCost();
+  const rChk = game.canRenovate(), rCost = game.renovateCost();
+  const dots = (n, on) => Array.from({ length: n }, (_, i) => `<span class="dot ${i < on ? 'on' : ''}"></span>`).join('');
+  const lim = BUILD_ORDER.filter(id => ITEM_LIMITS[id] !== undefined && game.isUnlocked(id)).map(id => {
+    const c = game.countOf(id), l = game.limitOf(id);
+    return `<div class="lr ${c >= l ? 'full' : ''}"><img alt="" src="${icons[id] || ''}"><div class="t"><div class="n"><span>${ITEMS[id].name}</span><i>${c}/${l}</i></div><div class="bar"><u style="width:${Math.min(100, c / l * 100)}%"></u></div></div></div>`;
+  }).join('');
+  const permitHint = maxed ? 'The store is fully renovated.' : permit >= need ? `Permit Lv ${need} unlocks the next renovation: you have it.` : `The next renovation needs Permit Lv ${need}.`;
+  const renoHint = maxed ? 'The store is as big as it gets.' : `Next: ${size(lv + 1)}x${size(lv + 1)} (+${ROOM_STEP} columns and rows). Everything you built stays put, and every item limit goes up. Only before you open the store.`;
+  const renoWarn = !maxed && !rChk.ok ? rChk.reason : '';
+  const html = `<div class="stHd">STORE PERMIT</div>
+    <div class="stCard"><div class="stRow"><div><b>Permit Level ${permit}</b><span>of ${MAX_PERMIT}</span></div>
+      <button class="pxb" id="permitBtn" ${pChk.ok ? '' : 'disabled'}>${pMax ? 'MAX PERMIT' : `Upgrade  $${pCost}`}</button></div>
+      <div class="dots">${dots(MAX_PERMIT, permit)}</div><p class="${maxed || permit >= need ? 'ok' : ''}">${permitHint}</p></div>
+    <div class="stHd">STORE SIZE</div>
+    <div class="stCard"><div class="stRow"><div><b>${size(lv)} x ${size(lv)} store</b><span>Renovation ${lv} of ${MAX_ROOM}</span></div>
+      <button class="pxb" id="renoBtn" ${rChk.ok ? '' : 'disabled'}>${maxed ? 'MAX SIZE' : `Renovate  $${rCost}`}</button></div>
+      <div class="dots">${dots(MAX_ROOM + 1, lv + 1)}</div><p>${renoHint}</p>${renoWarn ? `<p class="warn">${renoWarn}</p>` : ''}</div>
+    <div class="stHd">ITEM LIMITS</div>
+    <div class="stCard"><div class="lim">${lim}</div><p>Each renovation raises every limit.</p></div>`;
+  if (html === statusKey) return;
+  const pane = $('renoPane'), top = pane.scrollTop;
+  statusKey = html; pane.innerHTML = html; pane.scrollTop = top;
+  $('permitBtn').onclick = () => { if (game.upgradePermit()) { banner(`📜 Store permit Lv ${game.permit}`); refresh(); } else sfx.bad(); };
   $('renoBtn').onclick = () => {
     if (game.renovate()) { view.setGame(game); banner(`🏠 Renovated: ${size(game.room)}x${size(game.room)} store`); pickedTower = null; preview = null; refresh(); }
-    else sfx.bad();
+    else { sfx.bad(); if (!rChk.ok) banner(rChk.reason); }
   };
 }
 $('tabStocks').onclick = () => setTab('stocks');
@@ -476,6 +637,10 @@ $('tabReno').onclick = () => setTab('reno');
 $('tabShop').onclick = () => setTab('shop');
 $('buildBtn').onclick = () => { trayOpen() ? closeTray() : openTray(); };
 $('trayClose').onclick = closeTray;
+// the tablet's screen is a fixed 700x525 layout scaled to whatever size the 3D slab ends up
+function fitTablet() { const t = $('tray'); if (t.offsetWidth) t.style.setProperty('--k', (t.offsetWidth * 0.845 / 700).toFixed(4)); }
+window.addEventListener('resize', fitTablet);
+function renderTabletStatus() { if (!game) return; $('tStatTime').textContent = game.clock().text; $('tStatCash').textContent = game.cash; }
 $('trayBack').onclick = closeTray;
 
 function refresh() {
@@ -493,6 +658,8 @@ function refresh() {
     c.classList.toggle('lock', locked); c.classList.toggle('sel', !locked && selected === id); c.classList.toggle('foc', focusId === id);
     c.querySelector('[data-k]').textContent = locked ? '' : av.indexOf(id) + 1;
     c.querySelector('[data-pr]').textContent = '$' + (locked ? UNLOCKS[id] : cost);
+    const lm = game.limitOf(id), ct = c.querySelector('[data-ct]'), cn = game.countOf(id);
+    ct.textContent = locked || lm === Infinity ? '' : cn + '/' + lm; ct.classList.toggle('full', cn >= lm);
   }
   renderDetail();
   const bi = $('buildIcon');   // the build icon shows what you're holding
@@ -506,12 +673,14 @@ function refresh() {
   else setGo('', true, '...');
   musicWant = !running ? null : game.phase === 'wave' ? 'night' : game.phase === 'lost' ? null : 'day';
   renderInfo();
-  renderReno(); renderSlots();
+  renderReno(); renderSlots(); renderTabletStatus();
   $('skillSlots').classList.toggle('dayHide', game.phase !== 'wave');   // skill items only work at night
   view.setRange(...rangeFor());
 }
 
+const fpOf = id => (ITEMS[id].foot > 1 && !ITEMS[id].onShelves) ? ITEMS[id].foot : 1;   // size of the placement cursor (the soda statue is 3x3)
 function rangeFor() {
+  if (pickedTower && pickedTower.type === 'statue') return [pickedTower, STATUE_RANGE];
   if (pickedTower && pickedTower.kind === 'tower') return [pickedTower, game.stat(pickedTower, 'range')];
   const c = preview || hover;
   if (selected && c && ITEMS[selected].range) return [c, ITEMS[selected].range * (ITEMS[selected].kind === 'skill' ? 1 : game.mods.range)];
@@ -563,10 +732,10 @@ function renderInfo() {
   if (!game || !running || game.phase === 'lost' || trayOpen()) { hidePop(); return; }
   let html = '', at = null, key = '';
   if (pickedTower && pickedTower.kind === 'shelf' && game.shelves.includes(pickedTower)) {
-    const s = pickedTower, need = MAX_STOCK - s.units, can = Math.min(need, Math.floor(game.cash / game.unitCost()));
-    at = [s.x, s.y, 1.5];
-    html = `<div class="hd">Shelf <small>${s.units}/${MAX_STOCK}</small><div class="bars">${pbar(s.hp / s.maxhp < 0.35 ? 'lo' : '', s.hp / s.maxhp)}</div></div><div class="row">`
-      + pbtn('rst', '📦', need === 0 ? 'FULL' : '$' + can * game.unitCost(), can <= 0, 'green') + (s.placed ? pbtn('sell', '💰', '$' + game.sellValue(s), false, 'red') : '') + '</div>';
+    const s = pickedTower, cap = game.capOf(s), uc = game.unitCostOf(s), need = cap - s.units, can = Math.min(need, Math.floor(game.cash / uc));
+    at = [s.x, s.y, s.type === 'statue' ? 2.6 : s.type === 'steel' ? 1.7 : 1.5];
+    html = `<div class="hd">${ITEMS[s.type || 'shelf'].name} ${cap ? `<small>${s.units}/${cap}</small>` : ''}<div class="bars">${pbar(s.hp / s.maxhp < 0.35 ? 'lo' : '', s.hp / s.maxhp)}</div></div><div class="row">`
+      + (cap ? pbtn('rst', '📦', need === 0 ? 'FULL' : '$' + can * uc, can <= 0, 'green') : '') + (s.placed ? pbtn('sell', '💰', '$' + game.sellValue(s), false, 'red') : '') + '</div>';
   } else if (pickedTower && (game.towers.includes(pickedTower) || game.traps.includes(pickedTower))) {
     const t = pickedTower, def = ITEMS[t.type], isT = t.kind === 'tower', up = isT ? game.upgradeCost(t) : 0;
     at = [t.x, t.y, isT ? 1.9 : 0.8];
@@ -600,7 +769,7 @@ pop.addEventListener('click', e => {
   else if (a === 'svc') { if (!game.service(t)) sfx.bad(); }
   else if (a === 'rot') { if (game.rotate(t)) sfx.place(); }
   else if (a === 'rpl') { if (!game.replace(t)) sfx.bad(); }
-  else if (a === 'place' && selected && preview) { if (game.canPlace(selected, preview.x, preview.y).ok) { game.place(selected, preview.x, preview.y); noteSkill(selected, false); preview = null; view.setCursor(null); } else sfx.bad(); }
+  else if (a === 'place' && selected && preview) { if (game.canPlace(selected, preview.x, preview.y).ok) { game.place(selected, preview.x, preview.y); noteRecent(selected); noteSkill(selected, false); preview = null; view.setCursor(null); } else sfx.bad(); }
   else if (a === 'cancel') { selected = null; preview = null; pickedTower = null; view.setCursor(null); }
   refresh();
 });
@@ -613,7 +782,7 @@ cv.addEventListener('pointermove', e => {
   if (e.pointerType !== 'mouse' || !game || !running) return;
   hover = view.pick(e.clientX, e.clientY);
   view.setHover(hover ? (game.towerAt(hover.x, hover.y) || game.shelfAt(hover.x, hover.y) || game.trapAt(hover.x, hover.y)) : null);
-  if (selected && hover) view.setCursor(hover, game.canPlace(selected, hover.x, hover.y).ok); else view.setCursor(null);
+  if (selected && hover) view.setCursor(hover, game.canPlace(selected, hover.x, hover.y).ok, fpOf(selected)); else view.setCursor(null);
   view.setRange(...rangeFor());
 });
 cv.addEventListener('pointerleave', () => { hover = null; view.setHover(null); if (!preview) view.setCursor(null); });
@@ -623,17 +792,18 @@ cv.addEventListener('pointerdown', e => {
   const c = view.pick(e.clientX, e.clientY);
   if (!c) return;
   const existing = game.towerAt(c.x, c.y) || game.shelfAt(c.x, c.y) || game.trapAt(c.x, c.y);
-  if (existing && !(selected && ITEMS[selected].kind === 'trap' && !game.towerAt(c.x, c.y) && !game.shelfAt(c.x, c.y))) {
+  const overShelf = selected && ITEMS[selected].onShelves && existing && existing.kind === 'shelf' && !existing.type;   // the steel shelf is built ON a plain shelf
+  if (existing && !overShelf && !(selected && ITEMS[selected].kind === 'trap' && !game.towerAt(c.x, c.y) && !game.shelfAt(c.x, c.y))) {
     pickedTower = existing; preview = null; selected = null; view.setCursor(null); refresh(); return;
   }
   if (!selected) { pickedTower = null; refresh(); return; }
   pickedTower = null;
   const touch = e.pointerType !== 'mouse';
   if (touch && !(preview && preview.x === c.x && preview.y === c.y)) {   // first tap previews
-    preview = c; view.setCursor(c, game.canPlace(selected, c.x, c.y).ok); refresh(); return;
+    preview = c; view.setCursor(c, game.canPlace(selected, c.x, c.y).ok, fpOf(selected)); refresh(); return;
   }
   const chk = game.canPlace(selected, c.x, c.y);
-  if (chk.ok) { game.place(selected, c.x, c.y); noteSkill(selected, false); preview = null; view.setCursor(null); }
+  if (chk.ok) { game.place(selected, c.x, c.y); noteRecent(selected); noteSkill(selected, false); preview = null; view.setCursor(null); }
   else { sfx.bad(); floatText(c.x, c.y, chk.reason, 'bad'); }
   refresh();
 });
@@ -716,7 +886,7 @@ function shopHTML() {
   };
   const sec = t => `<div class="sub" style="margin-top:14px">${t}</div>`;
   return `<div class="sub">Banked: 💰 ${save.bank} — permanent upgrades. New machines are unlocked with store profit in the Stocks tab.</div>
-    ${sec('STORE SIZE')}${row(ROOM_UPGRADE)}${sec('UPGRADES')}${META.map(row).join('')}`;
+    ${sec('UPGRADES')}${META.map(row).join('')}`;
 }
 // buy one paycheck upgrade; returns true if it went through
 function buyMeta(id) {
