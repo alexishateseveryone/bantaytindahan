@@ -1,5 +1,5 @@
 // UI, input, save data, audio and the main loop
-import { Game, ITEMS, BUILD_ORDER, META, ROOM_UPGRADE, UNLOCKS, MAX_LEVEL, MAX_STOCK, MAX_ROOM, ROOM_BASE, ROOM_STEP, RENO_COST } from './game.js';
+import { Game, ITEMS, BUILD_ORDER, SKILLS, META, ROOM_UPGRADE, UNLOCKS, MAX_LEVEL, MAX_STOCK, MAX_ROOM, ROOM_BASE, ROOM_STEP, RENO_COST } from './game.js';
 import { View } from './view.js';
 import { pxText, setHTML, pxEmoji, pxifyStatic } from './ui/pixel.js';
 
@@ -9,17 +9,19 @@ const $ = id => document.getElementById(id);
 const KEY = 'shelf-defense-closing-time-v1';
 let save = { bank: 0, levels: {}, best: 0, shifts: 0, run: null };   // run = the current store, saved between days
 try { Object.assign(save, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) { /* storage may be blocked */ }
+save.settings = Object.assign({ music: 0.5, sfx: 0.7 }, save.settings || {});   // volume sliders (0..1)
+const settings = save.settings;
 const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(save)); } catch (e) { /* ignore */ } };
 
 // ---------- audio: synthesized sfx (every machine sounds different) + background music ----------
-let ac = null, master = null, echo = null, noiseBuf = null, muted = false;
+let ac = null, master = null, echo = null, noiseBuf = null, muted = false, outGain = null;
 function audio() {
   if (muted) return null;
   try {
     if (!ac) {
       ac = new (window.AudioContext || window.webkitAudioContext)();
       const comp = ac.createDynamicsCompressor(); comp.threshold.value = -16; comp.ratio.value = 5;
-      const out = ac.createGain(); out.gain.value = 0.95; comp.connect(out); out.connect(ac.destination); master = comp;
+      const out = ac.createGain(); out.gain.value = settings.sfx * 1.36; outGain = out; comp.connect(out); out.connect(ac.destination); master = comp;
       const d = ac.createDelay(1), fb = ac.createGain(), wet = ac.createGain();   // soft echo for chimes
       d.delayTime.value = 0.15; fb.gain.value = 0.33; wet.gain.value = 0.38; d.connect(fb); fb.connect(d); d.connect(wet); wet.connect(master); echo = d;
       noiseBuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
@@ -82,8 +84,16 @@ const sfx = {
     else if (k === 'soda') { noise(0.22, 0.06, { f: 4800, q: 0.6, type: 'highpass', slide: -2200 }); tone(1100, 0.12, 'sawtooth', 0.012, -500); }        // psssht
     else if (k === 'hotdog') { tone(150, 0.13, 'sine', 0.1, -80); tone(520, 0.07, 'triangle', 0.045, 260, 0.03); noise(0.05, 0.03, { f: 900 }); }       // thwump
     else if (k === 'fridge') { tone(950, 0.14, 'sine', 0.04, -420, 0, true); tone(1420, 0.2, 'triangle', 0.022, -500, 0.02, true); noise(0.08, 0.025, { f: 6000, type: 'highpass' }); }  // glassy
+    else if (k === 'gum') { for (let i = 0; i < 5; i++) { tone(620 + i * 70, 0.05, 'triangle', 0.04, 260, i * 0.11); noise(0.02, 0.025, { f: 2400, delay: i * 0.11 }); } }   // pop-pop-pop-pop-pop
+    else if (k === 'cola') { noise(0.16, 0.05, { f: 5200, q: 0.6, type: 'highpass', slide: -2400 }); tone(260, 0.1, 'sine', 0.03, 140); }                   // fizzy pshh
+    else if (k === 'atm') { for (let i = 0; i < 4; i++) { tone(1050 + (i % 2) * 120, 0.03, 'square', 0.025, 0, i * 0.045); noise(0.025, 0.02, { f: 3200, q: 3, delay: i * 0.045 }); } tone(1760, 0.12, 'sine', 0.025, 0, 0.19, true); }   // printer brrt + ding
     else tone(330, 0.05, 'square', 0.025, -200);
   },
+  gumHit: () => { if (gate('gumHit', 50)) { tone(900, 0.06, 'sine', 0.035, -350); tone(1350, 0.05, 'triangle', 0.02, -300, 0.04); } },
+  colaBlast: () => { noise(0.4, 0.12, { f: 2600, q: 0.7, type: 'highpass', slide: -1800 }); tone(130, 0.3, 'sine', 0.09, -70); tone(520, 0.2, 'triangle', 0.04, -300, 0.02); },   // pssshHH-BOOM
+  cigLaunch: () => { if (gate('cigLaunch', 55)) { noise(0.04, 0.03, { f: 2200, q: 1.5 }); tone(700, 0.05, 'triangle', 0.02, 300); } },
+  cigPop: () => { if (gate('cigPop', 45)) { noise(0.05, 0.04, { f: 3000, q: 1 }); tone(520, 0.05, 'square', 0.02, -300); } },
+  swirl: () => { noise(0.5, 0.05, { f: 800, q: 1.2, slide: 2400 }); tone(400, 0.45, 'triangle', 0.03, 600, 0, true); },
   lob: () => { tone(230, 0.22, 'sine', 0.07, 430); noise(0.14, 0.03, { f: 600, type: 'lowpass', slide: 400 }); tone(120, 0.1, 'sawtooth', 0.025, 60, 0.05); },
   pulse: () => { if (!gate('pulse', 120)) return; tone(95, 0.28, 'sawtooth', 0.055, 140); noise(0.14, 0.05, { f: 3200, q: 4, slide: -1800 }); tone(1760, 0.28, 'sine', 0.04, 0, 0.16, true); },   // bzzt-ding
   hit: () => { if (gate('hit', 55)) noise(0.035, 0.03, { f: 2600, q: 1.5 }); },
@@ -123,7 +133,7 @@ let musicWant = null;
 for (const k in music) { music[k].loop = true; music[k].preload = 'auto'; music[k].volume = 0; }
 function musicTick(dt) {
   for (const k in music) {
-    const m = music[k], want = musicOn && !muted && musicWant === k ? MUSIC_VOL : 0, diff = want - m.volume;
+    const m = music[k], want = musicOn && !muted && musicWant === k ? settings.music * 0.8 : 0, diff = want - m.volume;
     m.volume = Math.max(0, Math.min(1, m.volume + Math.sign(diff) * Math.min(Math.abs(diff), dt * 0.7)));
     if (want > 0 && m.paused && !m._busy && performance.now() > (m._retry || 0)) {
       m._busy = true;
@@ -166,23 +176,24 @@ const SAVE_EVENTS = new Set(['place', 'sell', 'upgrade', 'stock', 'service', 're
 
 // every run starts in a freshly generated store (or your saved one), shown behind the title plate
 function newStore(fresh = false) {
-  if (fresh) { save.run = null; persist(); }
+  if (fresh) { save.run = null; if (!save.tutDone) save.tutStep = 0; persist(); }
   game = new Game({ meta: save.levels });
   game.on = onEvent;
   if (save.run) { try { game.restore(save.run); } catch (e) { save.run = null; game = new Game({ meta: save.levels }); game.on = onEvent; } }
   view.setGame(game); view.menu = true; view.tod = 0;
   running = false; selected = null; pickedTower = null; preview = null; speed = 1;
   $('speed').textContent = '1x'; setPaused(false);
-  $('hud').classList.add('off'); $('info').classList.add('off'); $('dock').classList.add('off'); closeTray(); setTab('stocks'); $('title').classList.remove('off', 'pop'); $('stage').classList.add('menu');
-  closeModal(); hideTarot(); buildCards(); refresh();
+  $('hud').classList.add('off'); $('info').classList.add('off'); $('dock').classList.add('off'); $('skillSlots').classList.add('off'); closeTray(); setTab('stocks'); $('title').classList.remove('off', 'pop'); $('stage').classList.add('menu'); $('t-restart').classList.toggle('off', !save.run);
+  closeModal(); hideTarot(); buildCards(); refresh(); tutStop();
 }
 
 function startRun() {
   running = true; view.menu = false; selected = null;
   $('stage').classList.remove('menu'); $('title').classList.add('pop'); setTimeout(() => { if (running) $('title').classList.add('off'); }, 480);
-  $('hud').classList.remove('off'); $('info').classList.remove('off'); $('dock').classList.remove('off');
+  $('hud').classList.remove('off'); $('info').classList.remove('off'); $('dock').classList.remove('off'); $('skillSlots').classList.remove('off');
   banner(game.wave ? `☀ Day ${game.wave + 1} — welcome back` : '☀ Day 1 — stock up, then open the store!'); refresh();
   if (game.phase === 'restock') showRestock();
+  tutStart();
 }
 
 // the paycheck is banked night by night (and on a loss), so closing the game never loses it
@@ -200,6 +211,38 @@ function floatText(cx, cy, text, cls = '', h = 1.1) {
   d.style.left = (p.x - r.left) + 'px'; d.style.top = (p.y - r.top) + 'px';
   $('floats').appendChild(d); setTimeout(() => d.remove(), 950);
 }
+// money bullets: a green pellet with a particle trail flies from the counter to the money counter in the top-left corner
+function moneyShot(x, y, amount) {
+  if (document.hidden) return;
+  const n = amount >= 60 ? 3 : amount >= 25 ? 2 : 1;
+  for (let i = 0; i < n; i++) setTimeout(() => shootOne(x, y), i * 90);
+}
+function trailBit(x, y, spread, life) {
+  const p = document.createElement('div'); p.className = 'mtrail';
+  p.style.left = x + 'px'; p.style.top = y + 'px'; p.style.background = ['#3ddc84', '#8dffb4', '#1f9d55'][Math.floor(Math.random() * 3)];
+  document.body.appendChild(p);
+  p.animate([{ opacity: 1, transform: 'translate(-50%,-50%) scale(1)' },
+    { opacity: 0, transform: `translate(calc(-50% + ${(Math.random() - 0.5) * spread}px), calc(-50% + ${(Math.random() - 0.5) * spread}px)) scale(.2)` }],
+    { duration: life * (0.7 + Math.random() * 0.6), easing: 'ease-out' }).onfinish = () => p.remove();
+}
+function shootOne(x, y) {
+  const a = view.project(x, y, 1.35), cr = $('cash').getBoundingClientRect(), b = { x: cr.left + cr.width / 2, y: cr.top + cr.height / 2 };
+  const c = { x: (a.x + b.x) / 2 + (Math.random() - 0.5) * 120, y: Math.min(a.y, b.y) - 60 - Math.random() * 50 };   // bends the flight into an arc
+  const el = document.createElement('div'); el.className = 'mshot'; document.body.appendChild(el);
+  const T = 600, t0 = performance.now();
+  const step = now => {
+    const k = Math.min(1, (now - t0) / T), e = k * k * 0.75 + k * 0.25, u = 1 - e;   // starts fast, speeds up into the target
+    const px = u * u * a.x + 2 * u * e * c.x + e * e * b.x, py = u * u * a.y + 2 * u * e * c.y + e * e * b.y;
+    const dx = 2 * u * (c.x - a.x) + 2 * e * (b.x - c.x), dy = 2 * u * (c.y - a.y) + 2 * e * (b.y - c.y);
+    el.style.transform = `translate(${px}px,${py}px) translate(-50%,-50%) rotate(${Math.atan2(dy, dx)}rad)`;
+    trailBit(px, py, 26, 460); if (k > 0.1) trailBit(px, py, 16, 360);
+    if (k < 1) { requestAnimationFrame(step); return; }
+    el.remove();
+    for (let i = 0; i < 12; i++) trailBit(b.x, b.y, 70, 480);
+    const cash = $('cash'); cash.classList.remove('pulse'); void cash.offsetWidth; cash.classList.add('pulse');
+  };
+  requestAnimationFrame(step);
+}
 function banner(t) { const b = $('banner'); b.innerHTML = pxText(t); b.classList.remove('show'); void b.offsetWidth; b.classList.add('show'); }
 
 function onEvent(type, d) {
@@ -214,10 +257,17 @@ function onEvent(type, d) {
     case 'splash': sfx.wet(); break;
     case 'iceBurst': sfx.shatter(); break;
     case 'canHit': sfx.can(); break;
+    case 'gumHit': sfx.gumHit(); break;
+    case 'colaSplash': sfx.wet(); break;
+    case 'swirl': sfx.swirl(); break;
+    case 'skillPlace': sfx.place(); break;
+    case 'colaBlast': sfx.colaBlast(); break;
+    case 'cigLaunch': sfx.cigLaunch(); break;
+    case 'cigBoom': sfx.cigPop(); break;
     case 'slip': sfx.slip(); break;
     case 'unlock': sfx.unlock(); banner(`🔓 ${ITEMS[d.type].name} unlocked!`); break;
     case 'buy': sfx.buy(); floatText(d.x, d.y, '🛒', 'sale', 1.5); break;
-    case 'pay': sfx.sale(); floatText(d.x, d.y, '+$' + d.amount, 'sale', 1.5); break;
+    case 'pay': sfx.sale(); floatText(d.x, d.y, '+$' + d.amount, 'sale', 1.5); moneyShot(d.x, d.y, d.amount); break;
     case 'soldout': floatText(d.x, d.y, 'Sold out!', 'bad', 1.5); break;
     case 'empty': floatText(d.x, d.y, '😕 nothing to buy', 'bad', 1.2); break;
     case 'dayStart': sfx.day(); banner(`☀ Day ${d.n}`); break;
@@ -240,7 +290,9 @@ function onEvent(type, d) {
     case 'towerBreak': sfx.crash(); floatText(d.tower.x, d.tower.y, d.why === 'destroyed' ? 'Destroyed!' : 'Broke down!', 'bad', 1.8); break;
     case 'service': sfx.fix(); floatText(d.tower.x, d.tower.y, 'Serviced', 'good', 1.6); break;
     case 'replace': sfx.replace(); floatText(d.tower.x, d.tower.y, 'Replaced!', 'good', 1.6); break;
-    case 'waveStart': sfx.wave(); banner(`🌙 Night ${d.n} — burglars!`); break;
+    case 'waveStart': sfx.wave(); banner(d.subs > 1 ? `🌙 Night ${d.n} — wave 1/${d.subs}` : `🌙 Night ${d.n} — burglars!`); break;
+    case 'subClear': sfx.win(); banner(`Wave ${d.sub}/${d.subs} cleared — next one in ${d.gap}s`); break;
+    case 'subWave': sfx.wave(); banner(d.sub === d.subs ? `🌙 Final wave ${d.sub}/${d.subs}!` : `🌙 Wave ${d.sub}/${d.subs}`); break;
     case 'waveClear': bankProgress(); sfx.win(); banner('Clear! +$' + d.bonus); break;
     case 'freeze': sfx.freeze(); floatText(d.enemy.x, d.enemy.y, '🧊 Frozen!', 'good', 1.5); break;
     case 'bounce': sfx.bounce(); break;
@@ -255,22 +307,132 @@ function onEvent(type, d) {
 // ---------- build tray (opened by the icon in the bottom-right; 3D assets rendered as pixel icons) ----------
 const icons = {};   // pixel-art item icons (build button + cards)
 const available = () => BUILD_ORDER.filter(id => game.isUnlocked(id));   // shelves + vending machine at first, the rest are bought in the shop
+// ---------- build menu: a fixed-size card. LEFT = detail card of the focused item, RIGHT = tabs + 5x5 item grid ----------
+const trayCss = document.createElement('style');
+trayCss.textContent = `
+#tray{width:min(940px,96vw)!important;height:min(540px,88vh)!important;max-width:96vw!important;max-height:94vh!important;padding:16px!important;overflow:hidden!important}
+#tray,#tray *,#modal,#card{scrollbar-width:none;-ms-overflow-style:none}
+#tray::-webkit-scrollbar,#tray *::-webkit-scrollbar,#modal::-webkit-scrollbar,#card::-webkit-scrollbar{display:none;width:0;height:0}
+#skillSlots.dayHide{display:none!important}
+#tray .tWrap{height:100%;display:flex;flex-direction:column;gap:14px;min-height:0}
+#tray .tWrap>.hd{margin:0;flex:none}
+#tray .tBody{position:relative;flex:1;min-height:0}
+#tray .tPane{position:absolute;inset:0;overflow:auto}
+#tray #renoPane{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:6px}
+#tray #renoPane .grid{justify-content:center}
+#tray #stocksPane{display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.25fr);gap:16px;overflow:hidden;padding:0 4px 8px}
+#tray .dCard{flex:none;min-height:0;overflow:hidden;gap:8px;padding:14px 14px 12px;box-shadow:0 6px 0 #d9b08a}
+#tray .dCard .pic{flex:none;width:clamp(64px,20vh,104px);height:auto;aspect-ratio:1}
+#tray .dCard .pic img{width:84%;height:84%}
+#tray .dCard .nm{flex:none}
+#tray .dCard .ds{min-height:0;overflow:auto}
+#tray .gCol{min-height:0;display:flex;flex-direction:column;gap:12px}
+#tray #subTabs{margin:0;flex:none}
+#tray #trayGrid{flex:1;min-height:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));grid-template-rows:repeat(5,minmax(0,1fr));gap:8px;padding:10px;border-radius:22px;background:rgba(0,0,0,.24);overflow:hidden}
+#tray .sc{position:relative;min-width:0;min-height:0;padding:0;border-radius:16px;border:3px solid #fff;background:linear-gradient(180deg,#fffaf0,#ffe9cf);box-shadow:0 3px 0 #d9b08a;display:grid;place-items:center;cursor:pointer;overflow:hidden;font:inherit}
+#tray .sc:active{transform:translateY(2px);box-shadow:0 1px 0 #d9b08a}
+#tray .sc img{width:62%;height:62%;object-fit:contain;image-rendering:pixelated;margin-bottom:10px}
+#tray .sc.empty{background:rgba(255,255,255,.06);border:2px dashed rgba(255,255,255,.12);box-shadow:none;cursor:default}
+#tray .sc.foc{border-color:#ffd23f;box-shadow:0 3px 0 #e0a800,0 0 0 3px rgba(255,210,63,.5)}
+#tray .sc.sel:not(.foc){border-color:#5fe3a1}
+#tray .sc.lock{background:linear-gradient(180deg,#f1ebe3,#ded3c6)}
+#tray .sc.lock img{filter:grayscale(1) opacity(.55)}
+#tray .sc-k{position:absolute;left:5px;top:3px;font:700 11px/1 var(--cf);color:#d2631a}
+#tray .sc-lk{position:absolute;right:4px;top:2px;font-size:12px;display:none}
+#tray .sc.lock .sc-lk{display:block}
+#tray .sc-pr{position:absolute;left:0;right:0;bottom:2px;text-align:center;font:700 12px/1 var(--cf);color:#d2631a}
+@media (max-height:480px){
+  #tray{height:94vh!important;padding:10px!important}
+  #tray .tWrap{gap:8px}  #tray .dCard{padding:8px 10px;gap:5px}#tray .dCard .pic{width:48px}  #tray #stocksPane{gap:10px}#tray #trayGrid{gap:5px;padding:6px}
+}`;
+document.head.appendChild(trayCss);
+$('tray').innerHTML = `<div class="tWrap">
+  <div class="hd"><div class="tabs"><button class="pxb tab on" id="tabStocks">STOCKS</button><button class="pxb tab" id="tabReno">RENOVATE</button><button class="pxb tab" id="tabShop">PAYCHECK SHOP</button></div><button class="pxb sq" id="trayClose" aria-label="Close">X</button></div>
+  <div class="tBody">
+    <div class="tPane" id="stocksPane">
+      <div class="card dCard" id="dCard"><div class="pic"><img id="dImg" alt=""></div><div class="nm" id="dNm"></div><div class="ds" id="dDs"></div><button class="pxb" id="dAct"></button></div>
+      <div class="gCol"><div id="subTabs" class="tabs"><button class="pxb tab on" id="subSell">SELLABLES</button><button class="pxb tab" id="subSkill">SKILL ITEMS</button></div><div id="trayGrid"></div></div>
+    </div>
+    <div class="tPane off" id="renoPane"></div>
+    <div class="tPane off" id="shopPane"></div>
+  </div></div>`;
+
+const cells = new Map();   // item id -> grid cell button
+let focusId = 'shelf';     // the item shown in the left detail card
 function buildCards() {
-  const box = $('trayGrid'); box.innerHTML = '';
+  $('trayGrid').innerHTML = ''; cells.clear();
   BUILD_ORDER.forEach(id => {
     icons[id] = view.makeIcon(id);
-    const c = document.createElement('div'); c.className = 'card px'; c.dataset.id = id;
-    c.innerHTML = `<div class="pic"><img alt="" src="${icons[id]}"></div><div class="nm">${ITEMS[id].name}<span class="k" data-k></span></div><div class="ds">${ITEMS[id].desc}</div><button class="pxb" data-act></button>`;
-    c.querySelector('[data-act]').onclick = () => {
-      if (!game.isUnlocked(id)) { if (!game.unlock(id)) { sfx.bad(); banner(`Need $${UNLOCKS[id]} to unlock ${ITEMS[id].name}`); } return; }   // unlocking costs store profit
-      selected = selected === id ? null : id; pickedTower = null; preview = null; view.setCursor(null); closeTray(); refresh();
-    };
-    box.appendChild(c);
+    const c = document.createElement('button'); c.className = 'sc'; c.dataset.id = id; c.title = ITEMS[id].name;
+    c.innerHTML = `<img alt="" src="${icons[id]}"><span class="sc-k" data-k></span><span class="sc-lk">🔒</span><span class="sc-pr" data-pr></span>`;
+    c.onclick = () => { focusId = id; refresh(); };
+    cells.set(id, c);
   });
   $('buildIcon').src = pxEmoji('🔨', 16);
+  applySub();
 }
-// mouse wheel scrolls the card row sideways
-$('trayGrid').addEventListener('wheel', e => { if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) { e.preventDefault(); e.currentTarget.scrollLeft += e.deltaY; } }, { passive: false });
+// the STOCKS tab has two sub-tabs: SELLABLES (shelves + turrets) and SKILL ITEMS (mop, shaken cola, cigarettes)
+let subTab = 'sell';
+function applySub() {
+  $('subSell').classList.toggle('on', subTab === 'sell'); $('subSkill').classList.toggle('on', subTab === 'skill');
+  const box = $('trayGrid'), ids = BUILD_ORDER.filter(id => (SKILLS.includes(id) ? 'skill' : 'sell') === subTab);
+  box.innerHTML = '';
+  if (!ids.includes(focusId)) focusId = ids[0];
+  ids.forEach(id => box.appendChild(cells.get(id)));
+  for (let i = ids.length; i < 25; i++) { const e = document.createElement('div'); e.className = 'sc empty'; box.appendChild(e); }   // always a full 5x5 grid
+  if (game) refresh();
+}
+// left card: icon, name, description, stats and the build / unlock button
+let detailKey = '';
+function renderDetail() {
+  const id = focusId, def = ITEMS[id]; if (!def || !game) return;
+  const locked = !game.isUnlocked(id), cost = game.costOf(id), uc = UNLOCKS[id];
+  const key = id + '|' + locked; if (key !== detailKey) {
+    detailKey = key;
+    $('dImg').src = icons[id] || ''; $('dNm').textContent = def.name; $('dDs').textContent = def.desc; $('dDs').scrollTop = 0;
+  }
+  $('dCard').classList.toggle('lock', locked); $('dCard').classList.toggle('sel', !locked && selected === id);
+  const act = $('dAct');
+  act.className = 'pxb ' + (locked ? 'gold' : selected === id ? 'green' : '');
+  act.disabled = locked ? game.cash < uc : cost > game.cash;
+  const txt = locked ? `🔒 Unlock $${uc}` : selected === id ? '✔ Selected' : `🔨 Build $${cost}`;   // plain text: smooth emoji, not pixel sprites
+  if (act.textContent !== txt) act.textContent = txt;
+}
+$('dAct').onclick = () => {
+  const id = focusId;
+  if (!game.isUnlocked(id)) { if (!game.unlock(id)) { sfx.bad(); banner(`Need $${UNLOCKS[id]} to unlock ${ITEMS[id].name}`); } else noteSkill(id, true); return; }   // unlocking costs store profit
+  selected = selected === id ? null : id; if (selected) noteSkill(id, true); pickedTower = null; preview = null; view.setCursor(null); closeTray(); refresh();
+};
+$('subSell').onclick = () => { subTab = 'sell'; applySub(); };
+$('subSkill').onclick = () => { subTab = 'skill'; applySub(); };
+// the 3 most recently bought / selected skill items sit in slots at the bottom-left
+const RECENT_KEY = 'shelfDefenseRecentSkills';
+let recentSkills = []; try { recentSkills = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]').filter(id => SKILLS.includes(id)).slice(0, 3); } catch (e) { /* no storage */ }
+function noteSkill(id, toFront) {
+  if (!SKILLS.includes(id)) return;
+  if (!toFront && recentSkills.includes(id)) return;   // placing one from a slot must not shuffle the slots under your finger
+  recentSkills = [id, ...recentSkills.filter(x => x !== id)].slice(0, 3);
+  try { localStorage.setItem(RECENT_KEY, JSON.stringify(recentSkills)); } catch (e) { /* no storage */ }
+}
+let slotHTML = '';
+function renderSlots() {
+  const box = $('skillSlots'); if (!box || !game) return;
+  const ids = recentSkills.filter(id => game.isUnlocked(id));
+  let html = '';
+  for (let i = 0; i < 3; i++) {
+    const id = ids[i];
+    if (!id) { html += '<button class="slot empty" title="Skill items">+</button>'; continue; }
+    const def = ITEMS[id], cost = game.costOf(id), wait = def.kind === 'skill' && game.phase !== 'wave', dis = cost > game.cash || wait;
+    html += `<button class="slot ${selected === id ? 'sel' : ''} ${dis ? 'dis' : ''}" data-id="${id}" title="${def.name}"><img alt="" src="${icons[id] || ''}"><span class="cost">$${cost}</span>${wait ? '<span class="lk">🌙</span>' : ''}</button>`;
+  }
+  if (html !== slotHTML) { box.innerHTML = html; slotHTML = html; }
+}
+$('skillSlots').addEventListener('click', e => {
+  const b = e.target.closest('.slot'); if (!b || !game) return;
+  if (!b.dataset.id) { subTab = 'skill'; setTab('stocks'); applySub(); openTray(); return; }   // empty slot: open the skill items
+  const id = b.dataset.id;
+  selected = selected === id ? null : id; pickedTower = null; preview = null; view.setCursor(null); closeTray(); refresh();
+});
 // the build menu is a centered modal with two tabs: STOCKS (things to build) and RENOVATE (grow the store)
 let trayTab = 'stocks';
 const trayOpen = () => { const t = $('tray'); return !t.classList.contains('off') && !t.classList.contains('hide'); };
@@ -292,7 +454,7 @@ function closeTray() {
 function setTab(tab) {
   trayTab = tab;
   $('tabStocks').classList.toggle('on', tab === 'stocks'); $('tabReno').classList.toggle('on', tab === 'reno'); $('tabShop').classList.toggle('on', tab === 'shop');
-  $('trayGrid').classList.toggle('off', tab !== 'stocks'); $('renoPane').classList.toggle('off', tab !== 'reno'); $('shopPane').classList.toggle('off', tab !== 'shop');
+  $('stocksPane').classList.toggle('off', tab !== 'stocks'); $('renoPane').classList.toggle('off', tab !== 'reno'); $('shopPane').classList.toggle('off', tab !== 'shop');
   renderReno(); renderShopTab();
 }
 function renderReno() {
@@ -321,19 +483,18 @@ function refresh() {
   $('lives').textContent = game.lives; $('cash').textContent = game.cash;
   const ck = game.clock();
   setHTML($('hour'), `${ck.icon} ${ck.text}`);
-  $('waveTxt').textContent = `DAY ${game.wave + 1}`;
+  $('waveTxt').textContent = game.phase === 'wave' ? (game.subWaves > 1 ? `NIGHT ${game.wave + 1} · WAVE ${game.subWave}/${game.subWaves}` : `NIGHT ${game.wave + 1}`) : `DAY ${game.wave + 1}`;
   $('clock').classList.toggle('night', game.isNight);
   const rs = $('restockAll'), cost = game.restockCost();
   $('rsCost').textContent = cost; rs.disabled = cost === 0 || game.cash < cost || game.phase === 'lost';   // restock-all only when you can afford the whole refill
   const av = available();
-  for (const b of $('trayGrid').children) {
-    const id = b.dataset.id, cost = game.costOf(id), locked = !game.isUnlocked(id), uc = UNLOCKS[id], act = b.querySelector('[data-act]');
-    b.classList.toggle('lock', locked); b.classList.toggle('sel', !locked && selected === id);
-    b.querySelector('[data-k]').textContent = locked ? '' : av.indexOf(id) + 1;
-    act.className = 'pxb ' + (locked ? 'gold' : selected === id ? 'green' : '');
-    act.disabled = locked ? game.cash < uc : cost > game.cash;
-    act.textContent = locked ? `🔒 Unlock $${uc}` : selected === id ? '✔ Selected' : `🔨 Build $${cost}`;   // plain text: smooth emoji, not pixel sprites
+  for (const [id, c] of cells) {
+    const locked = !game.isUnlocked(id), cost = game.costOf(id);
+    c.classList.toggle('lock', locked); c.classList.toggle('sel', !locked && selected === id); c.classList.toggle('foc', focusId === id);
+    c.querySelector('[data-k]').textContent = locked ? '' : av.indexOf(id) + 1;
+    c.querySelector('[data-pr]').textContent = '$' + (locked ? UNLOCKS[id] : cost);
   }
+  renderDetail();
   const bi = $('buildIcon');   // the build icon shows what you're holding
   if (selected && icons[selected]) { if (bi.dataset.k !== selected) { bi.src = icons[selected]; bi.className = ''; bi.dataset.k = selected; } }
   else if (bi.dataset.k !== 'hammer') { bi.src = pxEmoji('🔨', 16); bi.className = 'pxe'; bi.dataset.k = 'hammer'; }
@@ -345,14 +506,16 @@ function refresh() {
   else setGo('', true, '...');
   musicWant = !running ? null : game.phase === 'wave' ? 'night' : game.phase === 'lost' ? null : 'day';
   renderInfo();
-  renderReno();
+  renderReno(); renderSlots();
+  $('skillSlots').classList.toggle('dayHide', game.phase !== 'wave');   // skill items only work at night
   view.setRange(...rangeFor());
 }
 
 function rangeFor() {
   if (pickedTower && pickedTower.kind === 'tower') return [pickedTower, game.stat(pickedTower, 'range')];
   const c = preview || hover;
-  if (selected && c && ITEMS[selected].range) return [c, ITEMS[selected].range * game.mods.range];
+  if (selected && c && ITEMS[selected].range) return [c, ITEMS[selected].range * (ITEMS[selected].kind === 'skill' ? 1 : game.mods.range)];
+  if (selected && c && ITEMS[selected].radius) return [c, ITEMS[selected].radius];
   return [null, 0];
 }
 
@@ -371,7 +534,7 @@ popCss.textContent = `
 #pop .row{display:flex;gap:6px;pointer-events:auto}
 #pop .pi{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:46px;min-height:46px;padding:3px 6px;border-radius:12px;border:2px solid #0d0b1d;background:#ffcf4a;color:#1b1530;font:inherit;font-weight:700;cursor:pointer;box-shadow:0 3px 0 #0d0b1d;touch-action:manipulation}
 #pop .pi .ic{font-size:20px;line-height:1}#pop .pi .lb{font-size:11px;line-height:1.1;margin-top:1px}
-#pop .pi.green{background:#5fe3a1}#pop .pi.red{background:#ff6b6b}#pop .pi.gray{background:#d9d4ec}
+#pop .pi.blue{background:#8fc2ff;margin-left:6px}#pop .pi.green{background:#5fe3a1}#pop .pi.red{background:#ff6b6b}#pop .pi.gray{background:#d9d4ec}
 #pop .pi:active:not(:disabled){transform:translateY(2px);box-shadow:0 1px 0 #0d0b1d}
 #pop .pi:disabled{opacity:.45;cursor:default}
 #info{display:none!important}
@@ -379,8 +542,6 @@ canvas#view{touch-action:none;-webkit-tap-highlight-color:transparent;user-selec
 html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%}
 @media (max-width:760px),(pointer:coarse){
   #card{max-width:94vw;max-height:86vh;overflow:auto;box-sizing:border-box}
-  #tray{max-width:96vw!important;max-height:84vh!important;overflow:auto;box-sizing:border-box}
-  #trayGrid{-webkit-overflow-scrolling:touch}
   #pop .pi{min-width:52px;min-height:52px}
 }`;
 document.head.appendChild(popCss);
@@ -418,6 +579,7 @@ function renderInfo() {
       if (game.needsService(t)) acts += pbtn('svc', '🔧', '$' + game.serviceCost(t), game.serviceCost(t) > game.cash);
     }
     acts += pbtn('sell', '💰', '$' + game.sellValue(t), false, 'red');
+    if (isT) acts += pbtn('rot', '🔄', 'TURN', false, 'blue');   // rightmost button
     html = `<div class="hd">${def.name} <small>${tag}</small>${bars}</div><div class="row">${acts}</div>`;
   } else if (selected && preview) {   // touch: first tap previews the spot, then confirm / cancel right on it
     at = [preview.x, preview.y, 1.3];
@@ -436,8 +598,9 @@ pop.addEventListener('click', e => {
   else if (a === 'sell') { if (t.kind === 'trap') sfx.sell(); game.sell(t); pickedTower = null; }
   else if (a === 'upg') { if (!game.upgrade(t)) sfx.bad(); }
   else if (a === 'svc') { if (!game.service(t)) sfx.bad(); }
+  else if (a === 'rot') { if (game.rotate(t)) sfx.place(); }
   else if (a === 'rpl') { if (!game.replace(t)) sfx.bad(); }
-  else if (a === 'place' && selected && preview) { if (game.canPlace(selected, preview.x, preview.y).ok) { game.place(selected, preview.x, preview.y); preview = null; view.setCursor(null); } else sfx.bad(); }
+  else if (a === 'place' && selected && preview) { if (game.canPlace(selected, preview.x, preview.y).ok) { game.place(selected, preview.x, preview.y); noteSkill(selected, false); preview = null; view.setCursor(null); } else sfx.bad(); }
   else if (a === 'cancel') { selected = null; preview = null; pickedTower = null; view.setCursor(null); }
   refresh();
 });
@@ -470,7 +633,7 @@ cv.addEventListener('pointerdown', e => {
     preview = c; view.setCursor(c, game.canPlace(selected, c.x, c.y).ok); refresh(); return;
   }
   const chk = game.canPlace(selected, c.x, c.y);
-  if (chk.ok) { game.place(selected, c.x, c.y); preview = null; view.setCursor(null); }
+  if (chk.ok) { game.place(selected, c.x, c.y); noteSkill(selected, false); preview = null; view.setCursor(null); }
   else { sfx.bad(); floatText(c.x, c.y, chk.reason, 'bad'); }
   refresh();
 });
@@ -484,19 +647,55 @@ window.addEventListener('keydown', e => {
   else if (e.key === 'Escape') { selected = null; pickedTower = null; preview = null; view.setCursor(null); refresh(); }
   else if (e.key === ' ' && (game.phase === 'prep' || game.phase === 'evening')) { e.preventDefault(); $('go').click(); }
   else if (e.key === 'p' || e.key === 'P') $('pause').click();
+  else if ((e.key === 't' || e.key === 'T') && pickedTower && pickedTower.kind === 'tower') { if (game.rotate(pickedTower)) { sfx.place(); refresh(); } }
   else if ((e.key === 'r' || e.key === 'R') && !$('restockAll').disabled) $('restockAll').click();
 });
 $('go').onclick = () => {
   if (paused) setPaused(false);
+  if (tutBlocksOpen()) { sfx.bad(); banner('Sara: Tapusin muna natin ang 5 shelf!'); return; }
   if (game.phase === 'prep') { const c = game.canOpen(); if (!c.ok) { sfx.bad(); banner('🔒 ' + c.reason); return; } }
   if (game.startDay() || game.startWave()) { preview = null; view.setCursor(null); refresh(); }
 };
 $('restockAll').onclick = () => { if (!game.restockAll()) sfx.bad(); refresh(); };
 $('speed').onclick = () => { speed = speed % 3 + 1; $('speed').textContent = speed + 'x'; };
 function setPaused(v) {
-  paused = v; $('pause').textContent = v ? '▶' : '❚❚'; $('pause').classList.toggle('on', v); $('pauseMenu').classList.toggle('off', !v);
+  paused = v; $('pause').textContent = v ? '▶' : '❚❚'; $('pause').classList.toggle('on', v); $('pauseMenu').classList.toggle('off', !v); if (!v) pauseView(false);
 }
 $('p-continue').onclick = () => setPaused(false);
+const pSet = document.createElement('button'); pSet.id = 'p-settings'; pSet.className = 'pxb'; pSet.textContent = '⚙ SETTINGS';
+$('p-exit').before(pSet);
+const setCss = document.createElement('style');
+setCss.textContent = `
+#p-set{display:flex;flex-direction:column;gap:14px;text-align:left}
+#p-set .sr{display:flex;flex-direction:column;gap:6px;background:rgba(255,255,255,.1);border-radius:20px;padding:12px 16px}
+#p-set .sl{display:flex;justify-content:space-between;font:700 17px/1 var(--cf);color:#fff7e0}
+#p-set .sl b{color:#ffd23f}
+#p-set input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:14px;border-radius:99px;margin:8px 0;cursor:pointer;outline:none;border:0;
+  background:linear-gradient(90deg,#ffc233 var(--v,50%),rgba(255,255,255,.2) var(--v,50%));touch-action:none}
+#p-set input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:28px;height:28px;border-radius:50%;background:#fff;border:5px solid #ffc233;box-shadow:0 3px 0 rgba(0,0,0,.35)}
+#p-set input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:#fff;border:5px solid #ffc233;box-shadow:0 3px 0 rgba(0,0,0,.35)}`;
+document.head.appendChild(setCss);
+const pPane = document.createElement('div'); pPane.id = 'p-set'; pPane.className = 'off';
+pPane.innerHTML = `<div class="sr"><div class="sl"><span>🎵 Music</span><b id="vMusicV"></b></div><input type="range" id="vMusic" min="0" max="100" step="1"></div>
+  <div class="sr"><div class="sl"><span>🔊 Sound effects</span><b id="vSfxV"></b></div><input type="range" id="vSfx" min="0" max="100" step="1"></div>
+  <button class="pxb gold" id="p-back">◀ BACK</button>`;
+$('pauseMenu').querySelector('.pbox').appendChild(pPane);
+function bindSlider(id, key, apply) {
+  const el = $(id), val = $(id + 'V');
+  const paint = () => { el.value = Math.round(settings[key] * 100); el.style.setProperty('--v', el.value + '%'); val.textContent = el.value + '%'; };
+  paint();
+  el.addEventListener('input', () => { settings[key] = el.value / 100; paint(); apply(); });
+  el.addEventListener('change', () => { persist(); if (key === 'sfx') sfx.sale(); });   // let go of the sfx slider = hear a sample
+}
+bindSlider('vMusic', 'music', () => { musicOn = true; });
+bindSlider('vSfx', 'sfx', () => { if (outGain) outGain.gain.value = settings.sfx * 1.36; });
+function pauseView(on) {
+  $('pauseMenu').querySelector('h1').textContent = on ? 'SETTINGS' : 'PAUSED';
+  for (const id of ['p-continue', 'p-settings', 'p-exit']) $(id).classList.toggle('off', on);
+  pPane.classList.toggle('off', !on);
+}
+pSet.onclick = () => pauseView(true);
+$('p-back').onclick = () => pauseView(false);
 $('p-exit').onclick = () => { setPaused(false); persist(); newStore(); };
 $('pause').onclick = () => { if (game && running) setPaused(!paused); };
 $('mute').onclick = () => { muted = !muted; if (!muted) { musicOn = true; audio(); } setHTML($('mute'), muted ? '🔇' : '🔊'); };
@@ -528,12 +727,12 @@ function buyMeta(id) {
 // the PAYCHECK SHOP tab of the build menu
 function renderShopTab() {
   if (!game || trayTab !== 'shop') return;
-  const pane = $('shopPane'), top = $('tray').scrollTop;
+  const pane = $('shopPane'), top = $('shopPane').scrollTop;
   pane.innerHTML = shopHTML();
   pane.querySelectorAll('.choice').forEach(b => b.onclick = () => {
     if (buyMeta(b.dataset.id)) { if (shopDirty) { buildCards(); shopDirty = false; } renderShopTab(); refresh(); }
   });
-  $('tray').scrollTop = top;
+  pane.scrollTop = top;
 }
 // the same shop as a full modal, reached from the "till is empty" screen
 function showShop() {
@@ -647,19 +846,267 @@ function showLost(again = false) {
   $('m-new').onclick = () => { save.shifts++; persist(); newStore(true); };
 }
 
+// ---------- Sara's tutorial (first run only) ----------
+const SARA_DIR = 'assets/sara/', FACE = { talk: SARA_DIR + 'talk.png', normal: SARA_DIR + 'normal.png', shh: SARA_DIR + 'shh.png' };
+const FACE_IMG = {};   // preloaded faces (drawn onto the pixel canvas)
+for (const k in FACE) { const im = new Image(); im.src = FACE[k]; FACE_IMG[k] = im; }
+// which button / tab / cell to pulse so the player can find the item in the build menu
+function hintBuild(id) {
+  if (selected === id) return null;
+  if (!trayOpen()) return '#buildBtn';
+  if (trayTab !== 'stocks') return '#tabStocks';
+  const sk = SKILLS.includes(id) ? 'skill' : 'sell';
+  if (subTab !== sk) return sk === 'sell' ? '#subSell' : '#subSkill';
+  return focusId === id ? '#dAct' : `#trayGrid .sc[data-id="${id}"]`;
+}
+// say: [text, face?] lines with a NEXT button. task: Sara waits until done() is true.
+const TUT = [
+  { id: 'hello', say: [
+    ['Uy, kamusta! Ikaw pala ang bago kong kasama dito sa tindahan! 😄', 'talk'],
+    ['Ako nga pala si Sara. Ako muna ang bahala sa iyo ngayong unang araw.'],
+    ['Sa umaga, mamimili ang mga customer. Pagdating ng gabi, papasok ang mga magnanakaw, at ang kaha natin ang target nila!'],
+    ['Kaya simulan natin sa mga shelf. Doon kasi bumibili ang mga customer.'] ] },
+  { id: 'menu', task: () => 'Pindutin ang 🔨 sa kanang-ibaba para buksan ang build menu.',
+    done: () => trayOpen() || !!selected || game.shelves.length > 0, hint: () => hintBuild('shelf') },
+  { id: 'pick', task: () => 'Piliin ang Shelf, tapos pindutin ang "Build".',
+    done: () => selected === 'shelf' || game.shelves.length > 0, hint: () => hintBuild('shelf') },
+  { id: 'shelves', task: () => { const n = Math.min(5, game.shelves.length);
+      return selected === 'shelf' ? `I-tap ang sahig para maglagay ng shelf: ${n}/5. Mag-iwan ng daanan para sa mga customer!` : `Pindutin ulit ang 🔨 at piliin ang Shelf: ${n}/5.`; },
+    done: () => game.shelves.length >= 5, hint: () => hintBuild('shelf') },
+  { id: 'open', say: [
+    ['Ang galing mo! Kumpleto na ang mga shelf natin. 💪', 'talk'],
+    ['Buksan na natin ang tindahan para makapasok ang mga customer.'] ] },
+  { id: 'go', task: () => 'Pindutin ang OPEN STORE sa kanang-ibaba!', done: () => game.phase !== 'prep', hint: () => '#go' },
+  { id: 'watch', task: () => 'Panoorin mo muna silang mamili sa mga shelf at magbayad sa counter...', done: () => game.served > 0 },
+  { id: 'vend', say: [
+    ['Tingnan mo, may kita na tayo! 💰', 'talk'],
+    ['Pero mag-ingat, pagdating ng gabi ay may mga magnanakaw na papasok sa pinto.'],
+    ['Maglagay ka ng Vending Machine malapit sa pinto, kung saan sila dadaan. Minarkahan ko na para sa iyo.'] ] },
+  { id: 'vendTask', marks: true,
+    task: () => selected === 'cans' ? 'I-tap ang may markang sahig malapit sa pinto para ilagay ang Vending Machine.' : 'Buksan ang 🔨, piliin ang Vending Machine, at ilagay ito malapit sa pinto.',
+    done: () => game.towers.some(t => t.type === 'cans'), hint: () => hintBuild('cans') },
+  { id: 'bye', say: [
+    ['Shhh... Tahimik lang. Maririnig mo na sila, malapit na silang dumating.', 'shh'],
+    ['Ang vending machine na ang bahala sa kanila. Good luck, boss! Kaya mo yan! ✨', 'talk'] ] },
+];
+const TUT_OPEN = TUT.findIndex(s => s.id === 'open');
+const tut = { on: false, i: 0, li: 0, full: [], shown: 0, face: null, last: '', timer: null, marks: [] };
+let sara = null, dim = null;
+// the game stands still while Sara is talking (the NEXT lines), so nothing happens behind the dialogue
+const tutHold = () => tut.on && !!TUT[tut.i] && !!TUT[tut.i].say;
+const tutTyping = () => tut.shown < tut.full.length;
+const tutBlocksOpen = () => tut.on && game && game.phase === 'prep' && tut.i < TUT_OPEN;
+
+function tutBuildUI() {
+  if (sara) return;
+  const css = document.createElement('style');
+  css.textContent = `
+#sara{position:fixed;left:50%;bottom:0;transform:translateX(-50%);width:min(620px,calc(100vw - 500px));min-width:360px;display:flex;align-items:flex-end;gap:6px;z-index:8;pointer-events:none;font-family:var(--cf)}
+#saraCv{flex:none;display:block;image-rendering:pixelated;image-rendering:crisp-edges;image-rendering:pixelated}
+#sara.big{width:min(1000px,96vw)}
+#sara.big #saraBox{font-size:clamp(16px,2.1vw,22px);margin-bottom:9vh;padding:22px 24px 12px;min-height:130px}
+#sara.big #saraBox .sn{font-size:14px;top:-15px}
+#saraDim{position:fixed;inset:0;z-index:7;background:rgba(8,5,16,.55);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);visibility:hidden;opacity:0;transition:opacity .35s,visibility .35s}
+#saraDim.on{visibility:visible;opacity:1}
+#saraBox{pointer-events:auto;position:relative;flex:1;margin-bottom:clamp(12px,3vh,26px);padding:16px 16px 10px;border-radius:24px;background:linear-gradient(180deg,#fffaf0,#ffe9cf);border:3px solid #fff;box-shadow:0 6px 0 #d9b08a,0 14px 26px rgba(0,0,0,.35);color:#7a5a40;font:500 clamp(13px,1.9vw,16px)/1.35 var(--cf);min-height:84px;cursor:default}
+#saraBox::before{content:'';position:absolute;left:-10px;bottom:26px;border:9px solid transparent;border-left:0;border-right:10px solid #fff}
+#saraBox .sn{position:absolute;top:-13px;left:16px;background:#ff7a2e;color:#fff;font:700 12px/1 var(--cf);padding:5px 12px;border-radius:99px;letter-spacing:.12em;box-shadow:0 2px 0 #c25a14}
+#saraTxt{min-height:2.7em}
+#saraBox .sa{display:flex;justify-content:space-between;align-items:center;margin-top:8px;gap:8px}
+#saraBox .sk{background:none;border:0;color:#a8896c;font:600 12px var(--cf);cursor:pointer;text-decoration:underline;padding:4px}
+#saraNext{padding:8px 16px;font-size:14px}
+#sara.top{bottom:auto;top:10px;align-items:flex-start}
+#sara.top #saraCv,#sara.top #saraBox::before{display:none}
+#sara.top #saraBox{margin:0}
+[data-tut]{outline:4px solid #ffd23f!important;outline-offset:3px;animation:tutPulse .7s ease-in-out infinite alternate}
+@keyframes tutPulse{to{outline-offset:8px;outline-color:#fff3a0}}
+.tutMark{position:absolute;transform:translate(-50%,-50%);border:3px dashed #ffd23f;border-radius:50%;background:rgba(255,210,63,.25);pointer-events:none;animation:tutMarkP .7s ease-in-out infinite alternate}
+@keyframes tutMarkP{to{background:rgba(255,210,63,.5);border-color:#fff3a0}}
+@media (max-height:480px){#saraBox{min-height:64px;padding:12px 12px 8px}#sara.big #saraBox{min-height:90px;padding:14px 16px 8px}}`;
+  document.head.appendChild(css);
+  sara = document.createElement('div'); sara.id = 'sara'; sara.className = 'off';
+  sara.innerHTML = `<canvas id="saraCv"></canvas><div id="saraBox"><div class="sn">SARA</div><div id="saraTxt"></div><div class="sa"><button class="sk" id="saraSkip">Skip tutorial</button><button class="pxb gold" id="saraNext">NEXT ▶</button></div></div>`;
+  dim = document.createElement('div'); dim.id = 'saraDim'; document.body.appendChild(dim);   // blurs + darkens the game while Sara talks
+  document.body.appendChild(sara);
+  dim.onclick = () => { if (tut.on) tutNext(); };
+  $('saraNext').onclick = tutNext;
+  $('saraSkip').onclick = () => tutEnd(true);
+  $('saraBox').addEventListener('click', e => { if (!e.target.closest('button') && tutTyping()) tutNext(); });
+}
+function tutPaint() {
+  const s = TUT[tut.i]; if (!s || !sara) return;
+  $('saraTxt').textContent = tut.full.slice(0, tut.shown).join('');
+  const face = tut.face || (tutTyping() ? 'talk' : 'normal');
+  if (tut.faceNow !== face) { tut.faceNow = face; tut.popAt = performance.now(); }   // every new picture pops in
+  const isSay = !!s.say, last = isSay && tut.li === s.say.length - 1 && tut.i === TUT.length - 1;
+  $('saraNext').style.display = isSay ? '' : 'none';
+  $('saraNext').textContent = last ? 'GOOD LUCK ✔' : 'NEXT ▶';
+}
+
+// ---- Sara is drawn on a low-res canvas: hard pixels, a white + dark-blue pixel outline, pop-in and sway all snapped to the pixel grid ----
+const sprite = { key: '', cv: document.createElement('canvas') }, bodyCv = document.createElement('canvas');
+let saraAnim = 0, saraLast = 0, saraDh = 0;
+function saraSprite(face, W, H) {   // the face downscaled to W x H with hard (non-antialiased) edges
+  const key = face + '|' + W + 'x' + H; if (sprite.key === key) return sprite.cv;
+  const im = FACE_IMG[face]; if (!im || !im.complete || !im.naturalWidth) return null;
+  const c = sprite.cv; c.width = W; c.height = H;
+  const x = c.getContext('2d', { willReadFrequently: true });
+  x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high'; x.drawImage(im, 0, 0, W, H);
+  const d = x.getImageData(0, 0, W, H), a = d.data;
+  for (let i = 3; i < a.length; i += 4) a[i] = a[i] > 120 ? 255 : 0;
+  x.putImageData(d, 0, 0); sprite.key = key; return c;
+}
+function saraFrame(now) {
+  if (!tut.on) { saraAnim = 0; return; }
+  saraAnim = requestAnimationFrame(saraFrame);
+  if (now - saraLast < 33) return;   // ~30 fps: reads as chunky pixel animation and keeps it cheap
+  saraLast = now;
+  const cv = $('saraCv'); if (!cv || !sara || sara.classList.contains('top')) return;
+  const vh = innerHeight, big = sara.classList.contains('big');
+  const want = (big ? Math.max(260, Math.min(500, vh * 0.64)) : Math.max(130, Math.min(220, vh * 0.32))) * (vh <= 480 ? 0.8 : 1);
+  saraDh = saraDh ? saraDh + (want - saraDh) * 0.25 : want;   // glide between the big and the small size
+  const P = Math.max(2, Math.round(((view && view.pixel) || 3) * 0.67));   // css px per Sara pixel
+  const H = Math.max(40, Math.round(saraDh / P)), W = Math.round(H * 475 / 525);
+  const spr = saraSprite(tut.faceNow || 'normal', W, H); if (!spr) return;
+  const t = now / 1000, pad = Math.ceil(H * 0.05) + 3, top = Math.ceil(H * 0.06) + 3, CW = W + pad * 2, CH = H + top;
+  if (cv.width !== CW || cv.height !== CH) { cv.width = CW; cv.height = CH; bodyCv.width = CW; bodyCv.height = CH; cv.style.width = CW * P + 'px'; cv.style.height = CH * P + 'px'; }
+  // pop: ease-out-back scale from 80% with a little hop; sway: rows lean sideways, anchored at the feet; breathing: 1-2px of height
+  const pp = Math.min(1, (now - (tut.popAt || 0)) / 450), back = 1 + 2.70158 * Math.pow(pp - 1, 3) + 1.70158 * Math.pow(pp - 1, 2), sc = 0.8 + 0.2 * back;
+  const sW = Math.round(W * sc * (1 + 0.05 * (1 - pp))), sH = Math.round(H * sc * (1 + 0.012 * Math.sin(t * 3.4)));
+  const hop = Math.round(Math.sin(pp * Math.PI) * 0.03 * H), amp = Math.sin(t * 1.7) * 0.03 * H;
+  const bx = bodyCv.getContext('2d', { willReadFrequently: true }); bx.clearRect(0, 0, CW, CH); bx.imageSmoothingEnabled = false;
+  const yTop = CH + 3 - hop - sH, x0 = CW / 2 - sW / 2;
+  for (let j = 0; j < sH; j++) {
+    const k = (sH - j) / sH, sy = Math.min(H - 1, Math.floor(j * H / sH));
+    bx.drawImage(spr, 0, sy, W, 1, Math.round(x0 + amp * k * k), yTop + j, sW, 1);
+  }
+  // pixel outline: dark blue touching her, white outside it
+  const src = bx.getImageData(0, 0, CW, CH).data, N = CW * CH, m = new Uint8Array(N);
+  for (let i = 0; i < N; i++) if (src[i * 4 + 3]) m[i] = 3;
+  const ring = (from, to) => {
+    const mark = [];
+    for (let y = 0; y < CH; y++) for (let x = 0; x < CW; x++) {
+      const i = y * CW + x; if (m[i]) continue;
+      let hit = false;
+      for (let dy = -1; dy <= 1 && !hit; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= CW || ny >= CH) continue;
+        if (m[ny * CW + nx] === from) { hit = true; break; }
+      }
+      if (hit) mark.push(i);
+    }
+    for (const i of mark) m[i] = to;
+  };
+  ring(3, 1); ring(1, 2); ring(2, 2);   // dark blue 1px inside, white 2px outside
+  const out = new ImageData(CW, CH), o = out.data;
+  for (let i = 0; i < N; i++) {
+    const v = m[i], q = i * 4;
+    if (v === 3) { o[q] = src[q]; o[q + 1] = src[q + 1]; o[q + 2] = src[q + 2]; o[q + 3] = 255; }
+    else if (v === 1) { o[q] = 22; o[q + 1] = 34; o[q + 2] = 107; o[q + 3] = 255; }   // inner ring: dark blue
+    else if (v === 2) { o[q] = 255; o[q + 1] = 255; o[q + 2] = 255; o[q + 3] = 255; }   // outer ring: white
+  }
+  cv.getContext('2d').putImageData(out, 0, 0);
+}
+function tutSay(text, face) {
+  clearInterval(tut.timer);
+  tut.full = Array.from(text); tut.shown = 0; tut.face = face || null; tut.last = text;
+  tut.timer = setInterval(() => {
+    tut.shown = Math.min(tut.full.length, tut.shown + 1);
+    if (tut.shown % 2 === 0 && tut.full[tut.shown - 1] !== ' ') tone(620 + Math.random() * 140, 0.025, 'triangle', 0.012);
+    tutPaint();
+    if (!tutTyping()) clearInterval(tut.timer);
+  }, 24);
+  tutPaint();
+}
+function tutEnter(i) {
+  if (i >= TUT.length) { tutEnd(true); return; }
+  tut.i = i; tut.li = 0; save.tutStep = i; persist();
+  const s = TUT[i];
+  if (s.say) tutSay(s.say[0][0], s.say[0][1]); else tutSay(s.task(), null);
+}
+function tutNext() {
+  if (!tut.on) return;
+  if (tutTyping()) { clearInterval(tut.timer); tut.shown = tut.full.length; tutPaint(); return; }
+  const s = TUT[tut.i]; if (!s || !s.say) return;
+  if (tut.li + 1 < s.say.length) { tut.li++; tutSay(s.say[tut.li][0], s.say[tut.li][1]); } else tutEnter(tut.i + 1);
+}
+function tutHint(sel) {
+  document.querySelectorAll('[data-tut]').forEach(el => { if (!sel || !el.matches(sel)) el.removeAttribute('data-tut'); });
+  if (sel) { const el = document.querySelector(sel); if (el) el.setAttribute('data-tut', '1'); }
+}
+// dashed circles on the floor right in front of the doors: the spots where burglars walk in
+function tutMarks(on) {
+  const box = $('floats');
+  let cells = [];
+  if (on) {
+    for (const s of game.activeSpawns) {
+      const ix = s.x - s.ox, iy = s.y - s.oy, px = s.ox !== 0 ? 0 : 1, py = s.ox !== 0 ? 1 : 0;
+      for (const [x, y] of [[ix, iy], [ix + px, iy + py], [ix - px, iy - py]]) if (game.canPlace('cans', x, y).ok) cells.push([x, y]);
+    }
+  }
+  while (tut.marks.length > cells.length) tut.marks.pop().remove();
+  while (tut.marks.length < cells.length) { const d = document.createElement('div'); d.className = 'tutMark'; box.appendChild(d); tut.marks.push(d); }
+  const r = $('stage').getBoundingClientRect();
+  cells.forEach(([x, y], k) => {
+    const p0 = view.project(x, y, 0.05), px = view.project(x + 1, y, 0.05), py = view.project(x, y + 1, 0.05), d = tut.marks[k];
+    d.style.left = (p0.x - r.left) + 'px'; d.style.top = (p0.y - r.top) + 'px';
+    d.style.width = (Math.abs(px.x - p0.x) * 0.9 || 40) + 'px'; d.style.height = (Math.abs(py.y - p0.y) * 0.9 || 24) + 'px';
+  });
+}
+function tutTick() {
+  if (!tut.on || !game || !running) return;
+  if (game.wave > 0) { tutEnd(true); return; }
+  const s = TUT[tut.i]; if (!s) return;
+  sara.classList.toggle('top', trayOpen());
+  const talking = !!s.say && !trayOpen();
+  sara.classList.toggle('big', talking); dim.classList.toggle('on', talking);   // dialogue: big Sara + blurred, dimmed game; tasks: small Sara, game fully usable
+  if (s.task) {
+    if (s.done()) { sfx.sale(); tutEnter(tut.i + 1); return; }
+    const t = s.task();
+    if (t !== tut.last) { const typing = tutTyping(); tut.last = t; tut.full = Array.from(t); if (!typing) tut.shown = tut.full.length; tutPaint(); }
+    tutHint(s.hint ? s.hint() : null); tutMarks(!!s.marks);
+  } else { tutHint(null); tutMarks(false); }
+}
+function tutStart() {
+  if (save.tutDone || tut.on || !game) return;
+  if (game.wave > 0 || save.best > 0) { save.tutDone = true; persist(); return; }   // veterans don't need it
+  tutBuildUI(); tut.on = true; sara.classList.remove('off'); saraDh = 0; if (!saraAnim) saraAnim = requestAnimationFrame(saraFrame);
+  let st = save.tutStep || 0;   // resume where we left off; a rolled-back day (no sales yet) goes back to opening the store
+  const gi = TUT.findIndex(x => x.id === 'go'), bi = TUT.findIndex(x => x.id === 'bye');
+  if (st > gi && st < bi && game.served === 0) st = gi;
+  tutEnter(st);
+}
+function tutEnd(done) {
+  clearInterval(tut.timer); tut.on = false;
+  if (sara) { sara.classList.add('off'); sara.classList.remove('big'); dim.classList.remove('on'); }
+  tut.faceNow = null;
+  document.querySelectorAll('[data-tut]').forEach(el => el.removeAttribute('data-tut'));
+  while (tut.marks.length) tut.marks.pop().remove();
+  if (done) { save.tutDone = true; persist(); }
+}
+const tutStop = () => tutEnd(false);   // back to the menu: pause the tutorial, resume next time
+setInterval(tutTick, 150);
+
 // ---------- loop ----------
 let last = performance.now(), clock = 0;
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now; clock += dt;
   musicTick(dt);
   if (game) {
-    const was = game.phase; game.update(paused ? 0 : dt * speed);
+    const was = game.phase; game.update(paused || tutHold() ? 0 : dt * speed);
     if (game.phase === 'wave' || game.phase === 'morning' || game.phase === 'evening' || was !== game.phase) { if (Math.floor(clock * 4) !== Math.floor((clock - dt) * 4)) refresh(); }
   }
   view.render(dt, clock);
   requestAnimationFrame(frame);
 }
 $('t-start').onclick = startRun;
+const tRestart = document.createElement('button'); tRestart.id = 't-restart'; tRestart.className = 'pxb red off'; tRestart.textContent = '↻ RESTART RUN';
+$('t-start').after(tRestart);
+tRestart.onclick = () => {
+  openModal(`<h2>Restart run?</h2><p>Your current store (shelves, machines, cash and upgrades) will be deleted and you start a brand new store. Your paycheck bank stays.</p>
+    <div class="row"><button class="pxb red" id="m-yes">Yes, restart</button><button class="pxb gold" id="m-no">Cancel</button></div>`);
+  $('m-no').onclick = closeModal;
+  $('m-yes').onclick = () => { closeModal(); newStore(true); };
+};
 newStore();
 requestAnimationFrame(frame);
 window.__game = () => game;   // debugging helpers
