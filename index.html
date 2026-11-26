@@ -80,6 +80,19 @@
   #pauseMenu .pxb { padding:16px; font-size:18px; }
   @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
   #hud { z-index:7; }
+  #subTabs { margin:-2px 0 10px; } #tray #subTabs .tab { padding:8px 18px; font-size:13px; }
+  #skillSlots { position:absolute; left:max(12px, env(safe-area-inset-left)); bottom:max(12px, env(safe-area-inset-bottom)); display:flex; gap:8px; z-index:5; }
+  #skillSlots .slot { width:64px; height:64px; position:relative; border-radius:14px; background:rgba(34,24,18,.85); border:2px solid rgba(255,255,255,.18); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; cursor:pointer; color:#fff; font:700 12px/1 var(--cf); padding:0; box-shadow:0 3px 0 rgba(0,0,0,.5); touch-action:manipulation; }
+  #skillSlots .slot img { width:36px; height:36px; image-rendering:pixelated; }
+  #skillSlots .slot .cost { color:#ffd23f; }
+  #skillSlots .slot.sel { border-color:#5fe3a1; box-shadow:0 0 0 2px #5fe3a1, 0 3px 0 rgba(0,0,0,.5); }
+  #skillSlots .slot.dis { opacity:.5; }
+  #skillSlots .slot.empty { border-style:dashed; opacity:.5; font-size:24px; color:#d9d4ec; }
+  #skillSlots .slot .lk { position:absolute; top:2px; right:4px; font-size:11px; }
+  .mshot { position:fixed; left:0; top:0; width:18px; height:9px; background:#3ddc84; border:2px solid #c8ffd9; box-shadow:0 0 10px 3px rgba(61,220,132,.85), 0 0 22px 6px rgba(61,220,132,.35); z-index:9; pointer-events:none; image-rendering:pixelated; will-change:transform; }
+  .mtrail { position:fixed; width:6px; height:6px; z-index:9; pointer-events:none; image-rendering:pixelated; }
+  #cash { display:inline-block; } #cash.pulse { animation:cashPulse .4s ease-out; }
+  @keyframes cashPulse { 0% { transform:scale(1); color:#fff; } 35% { transform:scale(1.5); color:#7dffb0; } 100% { transform:scale(1); } }
   #hud #mute, #hud #pause { position:absolute; top:0; } #hud #pause { right:0; } #hud #mute { right:52px; }
   #view { transition:filter .7s ease; }
   #stage.menu #view { filter:blur(7px) brightness(.75); }
@@ -280,10 +293,12 @@
     <div id="trayBack" class="off hide"></div>
     <div id="tray" class="px off hide">
       <div class="hd"><div class="tabs"><button class="pxb tab on" id="tabStocks">STOCKS</button><button class="pxb tab" id="tabReno">RENOVATE</button><button class="pxb tab" id="tabShop">PAYCHECK SHOP</button></div><button class="pxb sq" id="trayClose" style="width:30px;height:30px">X</button></div>
+      <div id="subTabs" class="tabs"><button class="pxb tab on" id="subSell">SELLABLES</button><button class="pxb tab" id="subSkill">SKILL ITEMS</button></div>
       <div id="trayGrid"></div>
       <div id="renoPane" class="off"></div>
       <div id="shopPane" class="off"></div>
     </div>
+    <div id="skillSlots" class="off"></div>
     <div id="dock" class="off">
       <div id="dockTop">
         <button class="pxb" id="restockAll" title="Restock every shelf (R)"><img data-emoji="📦" alt=""> $<span id="rsCost">0</span></button>
