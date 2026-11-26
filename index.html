@@ -4,6 +4,20 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Tindang Sara</title>
+<!-- installable app (Android + iOS) -->
+<link rel="manifest" href="./manifest.webmanifest">
+<meta name="theme-color" content="#000000">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Tindang Sara">
+<link rel="apple-touch-icon" href="./assets/icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="./assets/icons/icon-192.png">
+<style>html,body{background:#000}</style>
+<script>
+  // keep Android's install prompt event until loadingscreen.js is ready to use it
+  window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); window.__bip = e; });
+</script>
 <!-- pixel fonts (falls back to a monospace font when offline) -->
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -284,6 +298,35 @@
   #title.pop { animation:titleOut .5s linear forwards; }
   @keyframes titleOut { 0%, 55% { transform:translateY(-50%); opacity:1; } 100% { transform:translateY(-50%); opacity:0; } }
   #logo3d canvas, #logo3d img { display:block; width:100%; height:100%; image-rendering:pixelated; image-rendering:crisp-edges; image-rendering:pixelated; }
+
+  /* ================= phone / small screens (landscape): compact HUD, dock, slots, menus, safe areas ================= */
+  html, body { -webkit-touch-callout:none; -webkit-text-size-adjust:100%; }
+  #hud { left:max(12px, env(safe-area-inset-left)); }
+  #dock { right:max(12px, env(safe-area-inset-right)); bottom:max(12px, env(safe-area-inset-bottom)); }
+  #modal { padding:max(14px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left)); }
+  .sheet { max-width:min(540px, 100%); }
+  @media (max-height:520px), (pointer:coarse) and (max-width:950px) {
+    .chip { padding:6px 12px; font-size:14px; }
+    .pxb.sq { width:38px; height:38px; }
+    #hud #mute { right:46px; }
+    #restockAll { padding:8px 12px; font-size:13px; }
+    #dock { gap:6px; } #dockTop, #dockBot { gap:6px; }
+    #go { padding:10px 12px; min-width:112px; font-size:14px; border-radius:20px; }
+    #buildBtn { width:54px; height:54px; border-radius:20px; } #buildBtn img { width:34px; height:34px; } #buildBtn img.pxe { width:28px; height:28px; } #buildBtn kbd { display:none; }
+    #skillSlots { gap:6px; }
+    #skillSlots .slot { width:50px; height:50px; border-radius:12px; font-size:11px; } #skillSlots .slot img { width:28px; height:28px; }
+    #banner { top:12%; font-size:clamp(16px,4.2vh,24px); }
+    #title .btns { width:min(260px, 60%); } #title .btns .pxb { padding:12px; font-size:15px; }
+    #pauseMenu .pbox { gap:10px; } #pauseMenu .pxb { padding:12px; font-size:16px; } #pauseMenu h1 { font-size:32px; margin-bottom:2px; }
+    #p-set .sr { padding:8px 12px; } #p-set .sl { font-size:15px; }
+    .sheet { padding:14px 16px; border-radius:24px; } .sheet h1 { font-size:20px; } .sheet h2 { font-size:18px; } .sheet p { font-size:15px; margin:6px 0; } .sub { font-size:14px; }
+    .choice { padding:8px 12px; gap:10px; } .choice .nm { font-size:14px; } .choice .ds { font-size:13px; } .row .pxb { padding:11px; font-size:14px; }
+    .float { font-size:14px; }
+    #pop .pi { min-width:48px; min-height:48px; }
+    #rotate { font-size:16px; }
+  }
+  @media (max-height:520px) and (pointer:coarse) { #tray .tHome { touch-action:manipulation; } }
+  @media (max-width:640px) and (orientation:landscape) { .chip { padding:5px 9px; font-size:13px; } #clock small { display:none; } }
 </style>
 </head>
 <body>
@@ -334,6 +377,7 @@
 <div id="modal"><div class="sheet px" id="card"></div></div>
 <div id="rotate"><span>📱↻</span>ROTATE YOUR DEVICE<br>Tindang Sara plays in landscape</div>
 <script type="importmap">{ "imports": { "three": "./lib/three.module.min.js" } }</script>
+<script type="module" src="./js/loadingscreen.js"></script>   <!-- first, so the loading screen shows before the rest of the game finishes loading -->
 <script type="module" src="./js/main.js"></script>
 <script type="module" src="./js/title3d.js"></script>
 </body>
