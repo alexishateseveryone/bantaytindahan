@@ -176,7 +176,7 @@ const SAVE_EVENTS = new Set(['place', 'sell', 'upgrade', 'stock', 'service', 're
 
 // every run starts in a freshly generated store (or your saved one), shown behind the title plate
 function newStore(fresh = false) {
-  if (fresh) { save.run = null; if (!save.tutDone) save.tutStep = 0; persist(); }
+  if (fresh) { save.run = null; save.tutDone = false; save.tutStep = 0; persist(); }   // a brand new store plays Sara's tutorial again
   game = new Game({ meta: save.levels });
   game.on = onEvent;
   if (save.run) { try { game.restore(save.run); } catch (e) { save.run = null; game = new Game({ meta: save.levels }); game.on = onEvent; } }
@@ -1068,7 +1068,7 @@ function tutTick() {
 }
 function tutStart() {
   if (save.tutDone || tut.on || !game) return;
-  if (game.wave > 0 || save.best > 0) { save.tutDone = true; persist(); return; }   // veterans don't need it
+  if (game.wave > 0 || (save.tutDone === undefined && save.best > 0)) { save.tutDone = true; persist(); return; }   // veterans who never saw it skip it; a restarted run replays it
   tutBuildUI(); tut.on = true; sara.classList.remove('off'); saraDh = 0; if (!saraAnim) saraAnim = requestAnimationFrame(saraFrame);
   let st = save.tutStep || 0;   // resume where we left off; a rolled-back day (no sales yet) goes back to opening the store
   const gi = TUT.findIndex(x => x.id === 'go'), bi = TUT.findIndex(x => x.id === 'bye');
