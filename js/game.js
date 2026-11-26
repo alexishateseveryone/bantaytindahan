@@ -100,11 +100,29 @@ ITEMS.fence = { id: 'fence', kind: 'shelf', name: 'Security Fence', cost: 10, hp
   desc: 'A cheap, sturdy steel barrier. Burglars have to walk around it or smash through. Use it to build a maze.' };
 export const SELLABLES = ['shelf', 'fence', 'cans', 'gum', 'fruit', 'sauce', 'soda', 'cola', 'steel', 'hotdog', 'micro', 'atm', 'statue', 'fridge', 'water', 'donut', 'cereal', 'tissue'];   // shelves + turrets: the things customers buy from
 export const SKILLS = ['mop', 'shakecola', 'cigs'];
-export const BUILD_ORDER = [...SELLABLES, ...SKILLS];
-// Only shelves and the vending machine are available on day one. The rest are bought in the Paycheck Shop.
-export const BASE_UNLOCKS = ['shelf', 'cans'];
+// Day one: only the shelf, the vending machine and the bubble gum machine. Everything else has to be reached (a day) AND bought (store profit).
+export const BASE_UNLOCKS = ['shelf', 'cans', 'gum'];
 // Unlocking is paid with the run's own cash (store profit), from the build menu. Each run starts with only the base items.
-export const UNLOCKS = { shakecola: 90, cigs: 130, fence: 20, mop: 30, fruit: 45, sauce: 60, gum: 70, steel: 75, soda: 80, hotdog: 100, cola: 110, micro: 130, atm: 145, statue: 150, fridge: 160, tissue: 105, cereal: 100, water: 115, donut: 120 };
+export const UNLOCKS = { shakecola: 90, cigs: 130, fence: 20, mop: 30, fruit: 45, sauce: 60, steel: 75, soda: 80, hotdog: 100, cola: 110, micro: 130, atm: 145, statue: 150, fridge: 160, tissue: 105, cereal: 100, water: 115, donut: 120 };
+// The first day each item can be bought, ordered by how strong it is for its price (cheap helpers first, the big machines last):
+// 2 items one day, 1 item the next, and so on. Before that day it is locked and cannot be bought, after it you still have to pay its price.
+export const UNLOCK_DAY = {
+  fence: 2, fruit: 2,
+  sauce: 3,
+  mop: 4, soda: 4,
+  steel: 5,
+  hotdog: 6, shakecola: 6,
+  cola: 7,
+  water: 8, cereal: 8,
+  tissue: 9,
+  donut: 10, micro: 10,
+  cigs: 11,
+  atm: 12, fridge: 12,
+  statue: 13,
+};
+// the build menu lists everything in the order it unlocks: day 1 items first, then day 2, day 3 ... (same-day items keep the order above)
+const dayKey = id => (UNLOCK_DAY[id] ?? 1) * 100 + (Object.keys(UNLOCK_DAY).indexOf(id) + 1);
+export const BUILD_ORDER = [...SELLABLES, ...SKILLS].sort((x, y) => dayKey(x) - dayKey(y));
 export const MAX_ROOM = 4;
 export const MAX_PERMIT = 12;
 export const PERMIT_FOR_RENO = [3, 6, 9, 12];   // store permit level you need for the 1st / 2nd / 3rd / 4th renovation
@@ -354,8 +372,10 @@ export class Game {
   // ---------- unlocks ----------
   isUnlocked(type) { return this.unlocked.has(type); }
   unlockCost(type) { return UNLOCKS[type] ?? 0; }
+  unlockDay(type) { return UNLOCK_DAY[type] ?? 1; }          // the first day it can be bought
+  canUnlock(type) { return this.wave + 1 >= this.unlockDay(type); }   // has this day been reached yet?
   unlock(type) {
-    if (this.isUnlocked(type) || UNLOCKS[type] === undefined) return false;
+    if (this.isUnlocked(type) || UNLOCKS[type] === undefined || !this.canUnlock(type)) return false;
     const c = this.unlockCost(type); if (c > this.cash) return false;
     this.cash -= c; this.unlocked.add(type);
     this.emit('unlock', { type }); return true;
@@ -886,18 +906,19 @@ export class Game {
   }
 
   // ---------- Night: burglars ----------
-  // nights get one more wave every 5 days: nights 1-5 have 1 wave, 6-10 have 2, 11-15 have 3 ...
-  nightWaves(n) { return 1 + Math.floor((n - 1) / 5); }
+  // one more wave per night every 10 days (with the tier): days 1-9 have 1 wave, 10-19 have 2, 20-29 have 3 ...
+  nightWaves(n) { return 1 + this.tierOf(n); }
+  // every 10 days the burglars step up a tier: days 1-9 = tier 0, days 10-19 = tier 1, 20-29 = tier 2 ...
+  tierOf(n) { return Math.floor(n / 10); }
+  get tier() { return this.tierOf(this.wave + 1); }
   makeWave(n, scale = 1, boss = true) {
     const pool = ['sneak']; if (n >= 3) pool.push('runner'); if (n >= 5) pool.push('vest'); if (n >= 7) pool.push('bruiser');
     if (n >= 4) pool.push('jacket'); if (n >= 6) pool.push('molotov'); if (n >= 8) pool.push('moto'); if (n >= 9) pool.push('bat');
     // endless: grows fast early, then settles into steady growth (enemy HP keeps scaling per night)
-    let budget = (3 + n * 2.2 + Math.min(n, 12) ** 2 * 0.35 + Math.max(0, n - 12) * 4) * scale;
+    // the amount does NOT grow day by day: it is 6 burglars a night, doubled every 10 days (12 from day 10, 24 from day 20, 48 from day 30 ...)
+    const count = Math.max(1, Math.round(6 * Math.pow(2, this.tierOf(n)) * scale));
     const list = [];
-    while (budget > 0) {
-      const t = pool[Math.floor(this.rng() * pool.length)];
-      list.push(t); budget -= ENEMIES[t].cost;
-    }
+    for (let i = 0; i < count; i++) list.push(pool[Math.floor(this.rng() * pool.length)]);
     if (boss && n % 10 === 0) list.splice(Math.floor(list.length * 0.55), 0, 'boss');   // a Mastermind every 10th night
     const gap = Math.max(0.6, 1.25 - n * 0.05);
     let t = 0; const q = [];
@@ -925,10 +946,11 @@ export class Game {
   // at = optional exact start (motor riders jumping off the bike): { x, y, tx, ty, hop }
   spawnEnemy(type, s, at) {
     const def = ENEMIES[type], n = this.wave + 1, out = type === 'moto' ? 5.5 : 0.9;
-    const hpMul = type === 'boss' ? 1 + 0.18 * (n - 1) : 1 + 0.15 * (n - 1);
+    const tier = this.tierOf(n);
+    const hpMul = (type === 'boss' ? 1 + 0.18 * (n - 1) : 1 + 0.15 * (n - 1)) * (1 + 0.35 * tier);   // +35% HP per tier
     const e = {
       id: this.nextId++, type, x: at ? at.x : s.x + s.ox * out, y: at ? at.y : s.y + s.oy * out, hp: def.hp * hpMul, maxhp: def.hp * hpMul,
-      speed: def.speed * 0.88, push: def.push, pushT: 0, armor: def.armor, steal: def.steal, bounty: def.bounty,
+      speed: def.speed * 0.88 * Math.min(1.5, 1 + 0.06 * tier), push: def.push * (1 + 0.2 * tier), pushT: 0, armor: def.armor + Math.floor((tier + 1) / 2), steal: def.steal, bounty: Math.round(def.bounty * (1 + 0.1 * tier)), tier,   // faster, shove harder, tougher armor, a bit more bounty
       tx: at ? at.tx : s.x, ty: at ? at.ty : s.y, noSlow: !!def.noSlow, burn: 0, burnDps: 0, soak: 0, soakDps: 0, kvx: 0, kvy: 0, slow: 0, slowF: 0, stun: 0, slipped: new Set(), iced: new Set(), angle: 0,
       jitter: (this.rng() - 0.5) * 0.0, route: Math.floor(Math.random() * ROUTES),
       flee: 0, wind: 0, pending: null, dash: null, abCd: def.cd * (0.5 + this.rng() * 0.8) * (1.15 - 0.03 * n), dashMul: def.dashMul || 1,
@@ -956,7 +978,7 @@ export class Game {
     const c = Math.round(e.bounty * this.mods.cash);
     this.cash += c;
     this.emit('kill', { enemy: e, cash: c });
-    if (e.type === 'molotov') this.molotovFire(e.x, e.y, 3);   // the Molotov robber bursts into a 3x3 fire
+    if (e.type === 'molotov') this.molotovFire(e.x, e.y, 2, true);   // the Molotov robber bursts into a 2x2 fire
     else if (e.type === 'moto') this.motoRiders(e);             // shot off the bike: the two riders still bail out
   }
 
@@ -1503,11 +1525,11 @@ export class Game {
     return out;
   }
   // size = patch width in cells (2 = 2x2, 3 = 3x3). If it lands on an item it feeds on it: one size bigger, hotter and longer.
-  molotovFire(x, y, size) {
+  molotovFire(x, y, size, fixed = false) {   // fixed: stay exactly this size (the burst when a Molotov robber dies)
     const snap = sz => sz % 2 === 1 ? [Math.round(x), Math.round(y)] : [Math.floor(x) + 0.5, Math.floor(y) + 0.5];
     let [cx, cy] = snap(size), items = this.fireItems(cx, cy, size / 2);
     const fueled = items.length > 0;
-    if (fueled && size < 3) { size += 1; [cx, cy] = snap(size); items = this.fireItems(cx, cy, size / 2); }
+    if (fueled && size < 3 && !fixed) { size += 1; [cx, cy] = snap(size); items = this.fireItems(cx, cy, size / 2); }
     if (this.fires.filter(f => f.foe).length < FIRE_MAX) {
       this.fires.push({ id: this.nextId++, x: cx, y: cy, r: size / 2, half: size / 2, size, foe: true, fueled, t: MOLO_TIME * (fueled ? 1.2 : 1), max: MOLO_TIME * (fueled ? 1.2 : 1), dps: 0, tick: 0 });
     }
@@ -1629,7 +1651,7 @@ export class Game {
     // bombers are rare early on and get more common every night (none before night 4)
     const bombMul = n < 4 ? 0 : Math.min(2.2, 0.2 + (n - 4) * 0.22);
     const wb = (def.abil.bomb || 0) * bombMul, wd = def.abil.dash || 0, wm = def.abil.molo || 0, ws = def.abil.smash || 0, tot = wb + wd + wm + ws;
-    e.abCd = def.cd * (1.15 - 0.03 * n) * (0.7 + this.rng() * 0.7);
+    e.abCd = def.cd * (1.15 - 0.03 * n) * (0.7 + this.rng() * 0.7) * Math.pow(0.92, this.tierOf(n));   // tricks come 8% sooner per tier
     if (tot <= 0 || this.rng() > 0.75) return false;
     let r = this.rng() * tot;
     if (r < wb) {
