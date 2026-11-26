@@ -14,14 +14,24 @@ import { makeFire, animFire } from './fire.js';
 import { makeGum, makeGumProjectile } from './gum.js';
 import { makeCola, makeColaProjectile } from './cola.js';
 import { makeAtm, makeReceiptProjectile } from './atm.js';
+import { makeSteel } from './steel.js';
+import { makeFruitShelf, makeFruit } from './fruit.js';
+import { makeStatue } from './statue.js';
+import { makeFence } from './fence.js';
+import { makeWater, makeWaterProjectile } from './water.js';
+import { makeDonut, makeDonutProjectile } from './donut.js';
+import { makeCereal, makeCerealProjectile, makeCerealBox } from './cereal.js';
+import { makeTissue, makeTissueRoll } from './tissue.js';
 
-export { makeShelf, setShelfGoods, makeCan, makeBomb, makeGroundBomb, animGroundBomb, makeFire, animFire, makeIceCube };
+export { makeShelf, setShelfGoods, makeCan, makeBomb, makeGroundBomb, animGroundBomb, makeFire, animFire, makeIceCube, makeFruit };
 
 const BUILDERS = { shelf: makeShelf, cans: makeVending, sauce: makeSauce, soda: makeSoda, micro: makeMicrowave, mop: makeMop, hotdog: makeHotdog, fridge: makeFridge,
-  gum: makeGum, cola: makeCola, atm: makeAtm };
+  gum: makeGum, cola: makeCola, atm: makeAtm, steel: makeSteel, fruit: makeFruitShelf, statue: makeStatue, fence: makeFence,
+  water: makeWater, donut: makeDonut, cereal: makeCereal, tissue: makeTissue, cerealbox: makeCerealBox };
 const PROJECTILES = { cans: makeCanProjectile, soda: makeSprayProjectile, sauce: makeSauceProjectile, bomb: makeBombProjectile,
   hotdog: makeHotdogProjectile, milk: makeMilkProjectile, icecream: makeIceCreamProjectile, ice: makeIceProjectile,
-  gum: makeGumProjectile, cola: makeColaProjectile, atm: makeReceiptProjectile };
+  gum: makeGumProjectile, cola: makeColaProjectile, atm: makeReceiptProjectile,
+  water: makeWaterProjectile, cereal: makeCerealProjectile, donut: makeDonutProjectile, tissue: makeTissueRoll };
 
 // Any buildable thing: entity = { type, ... } (shelves use type 'shelf')
 export function makeItem(v, entity) { return BUILDERS[entity.type || 'shelf'](v, entity); }
