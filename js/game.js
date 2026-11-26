@@ -16,8 +16,10 @@ export function setRoom(level = 0) { COLS = ROWS = ROOM_BASE + ROOM_STEP * level
 export const RANDOM_SIDES = true;
 export const WAVES = Infinity;    // endless: nights never stop coming
 export const HOURS = ['10 PM', '11 PM', '12 AM', '1 AM', '2 AM', '3 AM', '4 AM', '5 AM'];
+export const SUB_GAP = 6;         // seconds of calm between the waves of one night
 export const NIGHT_DELAY = 3;      // seconds between the store closing and the night starting by itself
 export const DAY_LEN = 18;        // seconds during which new customers keep arriving
+export const ROUTES = 6;          // how many different routes burglars spread over
 export const SHELF_COST = 400;    // path weight of a shelf: burglars only push through when nothing else is open
 export const SHELF_HP = 80;
 export const START_CASH = 250;       // the store starts as an EMPTY room with this much cash
@@ -30,6 +32,8 @@ export const BOMB_DMG = 30, BOMB_RADIUS = 1.1, BOMB_FUSE = 1.0, DASH_DMG = 22;
 export const BOUNCE_RANGE = 2.6;   // how far a hotdog can bounce to the next burglar
 export const ICE_TIME = 4.5;       // seconds scattered ice cubes stay on the floor
 export const CAN_COLORS = [0xe0463e, 0x3a86ff, 0x2fb67a, 0xffb703, 0xb26bd6, 0xff7aa2];
+export const GUM_COLORS = [0xff5a8a, 0x5fe3a1, 0xffcf4a, 0x6fa8ff, 0xb26bd6, 0xffffff, 0xff8c1a];
+export const COLA_PUSH_CAP = 3.2;   // max speed (tiles/s) a burglar can be shoved or dragged at
 
 // ---------- Build cards ----------
 // 'shelf' is the shelf itself: place a new one on the floor. Tap any shelf to restock it.
@@ -51,11 +55,24 @@ export const ITEMS = {
   fridge: { id: 'fridge', kind: 'tower', name: 'Fridge', cost: 230, range: 3.2, dmg: 7, rate: 0.9, iceChance: 0.22, wear: 1 / 110, color: 0x9fd8ee, sale: [4, 7],
     desc: 'Customers buy frozen treats. Shoots milk and ice cream (chill + slow) and sometimes ice cubes that scatter on the floor and freeze burglars.' },
 };
-export const BUILD_ORDER = ['shelf', 'cans', 'mop', 'sauce', 'soda', 'hotdog', 'micro', 'fridge'];
+ITEMS.gum = { id: 'gum', kind: 'tower', name: 'Bubblegum Machine', cost: 120, range: 3.3, dmg: 4.5, rate: 0.55, burst: 5, wear: 1 / 85, color: 0xff7aa2, sale: [3, 5],
+  desc: 'Customers buy gumballs. At night it fires 5 gumballs in a row that scatter and bounce across the floor on impact.' };
+ITEMS.cola = { id: 'cola', kind: 'tower', name: 'Cola Dispenser', cost: 150, range: 2.8, dmg: 3, rate: 1.8, splash: 0.65, push: 2.6, soak: 4, soakTime: 2.4, wear: 1 / 130, color: 0xd6262b, sale: [3, 5],
+  desc: 'Customers fill a cup. At night it sprays fizzy cola that shoves burglars back and keeps soaking them for damage.' };
+ITEMS.atm = { id: 'atm', kind: 'tower', name: 'ATM', cost: 260, range: 3.0, dmg: 7, rate: 0.75, swirlR: 1.35, swirlTime: 2.2, swirlDps: 6, wear: 1 / 100, color: 0x2a5db0, sale: [6, 10],
+  desc: 'Customers withdraw cash (fees included). At night it shoots receipts that swirl around every burglar nearby, dragging and hurting them.' };
+// SKILL ITEMS: one-off tricks (not sellables). The mop is a floor trap; the other two are used at night and go off right where you drop them.
+ITEMS.shakecola = { id: 'shakecola', kind: 'skill', name: 'Shaken Cola', cost: 45, fuse: 1.1, radius: 1.9, dmg: 8, push: 8, soak: 3, soakTime: 2.2, color: 0xd6262b,
+  desc: 'Night skill. Drop it and it bursts in a huge fizzy splash that blasts every burglar around it away.' };
+ITEMS.cigs = { id: 'cigs', kind: 'skill', name: 'Cigarette Pack', cost: 70, count: 20, range: 5.2, spread: 3.4, interval: 0.07, radius: 0.8, dmg: 7, burn: 2.5, burnTime: 1.5, color: 0xd62828,
+  desc: 'Night skill. Drop it and it lobs 20 lit cigarettes at the burglars. Each one pops in a small blast when it hits the floor.' };
+export const SELLABLES = ['shelf', 'cans', 'gum', 'sauce', 'soda', 'cola', 'hotdog', 'micro', 'atm', 'fridge'];   // shelves + turrets: the things customers buy from
+export const SKILLS = ['mop', 'shakecola', 'cigs'];
+export const BUILD_ORDER = [...SELLABLES, ...SKILLS];
 // Only shelves and the vending machine are available on day one. The rest are bought in the Paycheck Shop.
 export const BASE_UNLOCKS = ['shelf', 'cans'];
 // Unlocking is paid with the run's own cash (store profit), from the build menu. Each run starts with only the base items.
-export const UNLOCKS = { mop: 30, sauce: 60, soda: 80, hotdog: 100, micro: 130, fridge: 160 };
+export const UNLOCKS = { shakecola: 90, cigs: 130, mop: 30, sauce: 60, gum: 70, soda: 80, hotdog: 100, cola: 110, micro: 130, atm: 145, fridge: 160 };
 export const MAX_ROOM = 4;
 export const RENO_COST = [180, 380, 650, 1000];   // cash price of the next room level (RENOVATE tab)
 export const MAX_LEVEL = 3;
@@ -85,6 +102,12 @@ export const UPGRADES = [
   { id: 'mustard', icon: '🟡', name: 'Spicy Mustard', desc: 'Hot Dog Launcher damage +35%.', apply: g => g.mods.dmg.hotdog *= 1.35, avail: g => hasTower(g, 'hotdog') },
   { id: 'cold', icon: '❄️', name: 'Deep Freeze', desc: 'Fridges shoot ice cubes +15% more often.', apply: g => g.mods.ice += 0.15, avail: g => hasTower(g, 'fridge') },
   { id: 'dairy', icon: '🥛', name: 'Fresh Dairy', desc: 'Fridge damage +35%.', apply: g => g.mods.dmg.fridge *= 1.35, avail: g => hasTower(g, 'fridge') },
+  { id: 'gumpack', icon: '🍬', name: 'Family Size Pack', desc: 'Bubblegum Machines fire 2 more gumballs per burst.', apply: g => g.mods.gumExtra += 2, avail: g => hasTower(g, 'gum') },
+  { id: 'gumdmg', icon: '🍭', name: 'Sugar Rush', desc: 'Bubblegum damage +30%.', apply: g => g.mods.dmg.gum *= 1.3, avail: g => hasTower(g, 'gum') },
+  { id: 'colafizz', icon: '🍾', name: 'Extra Carbonation', desc: 'Cola shoves 50% harder and soaks 40% more.', apply: g => { g.mods.push *= 1.5; g.mods.soak *= 1.4; }, avail: g => hasTower(g, 'cola') },
+  { id: 'colarate', icon: '⛲', name: 'Fountain Pressure', desc: 'Cola Dispensers fire 30% faster.', apply: g => g.mods.rate.cola *= 1.3, avail: g => hasTower(g, 'cola') },
+  { id: 'paperjam', icon: '🌀', name: 'Paper Jam', desc: 'ATM receipt swirls last 50% longer and hit 30% harder.', apply: g => { g.mods.swirlTime *= 1.5; g.mods.swirlDmg *= 1.3; }, avail: g => hasTower(g, 'atm') },
+  { id: 'atmrate', icon: '💳', name: 'Overdraft Fees', desc: 'ATMs print 30% faster.', apply: g => g.mods.rate.atm *= 1.3, avail: g => hasTower(g, 'atm') },
   { id: 'maint', icon: '🔧', name: 'Maintenance Contract', desc: 'Turrets wear out 40% slower.', apply: g => g.mods.wear *= 0.6, avail: g => g.towers.some(t => t.kind === 'tower') },
   { id: 'casing', icon: '🛡️', name: 'Reinforced Casing', desc: 'Turrets +50% HP vs bombs and dashes (heals them).', apply: g => { g.mods.towerHp *= 1.5; g.towers.forEach(t => { if (t.kind === 'tower') { t.maxhp *= 1.5; t.hp = t.maxhp; } }); }, avail: g => g.towers.some(t => t.kind === 'tower') },
   { id: 'mirror', icon: '🪞', name: 'Convex Mirror', desc: 'All tower range +12%.', apply: g => g.mods.range *= 1.12 },
@@ -113,7 +136,7 @@ export const META = [
 // Room expansion: every level makes the (square) store 2 tiles wider and taller. Applies to the next new store.
 export const ROOM_UPGRADE = { id: 'room', icon: '📐', name: 'Bigger Starting Store', desc: 'New stores start 2 tiles wider and taller / level (you can also renovate in the build menu)', max: MAX_ROOM, cost: l => 120 + l * 140 };
 // Every machine except the starter ones is a one-time purchase.
-export const UNLOCK_ICONS = { mop: '🧹', sauce: '🌶️', soda: '🥤', hotdog: '🌭', micro: '🍲', fridge: '🧊' };
+export const UNLOCK_ICONS = { shakecola: '🍾', cigs: '🚬', mop: '🧹', sauce: '🌶️', gum: '🍬', soda: '🥤', cola: '🍹', hotdog: '🌭', micro: '🍲', atm: '🏧', fridge: '🧊' };
 export const UNLOCK_META = Object.keys(UNLOCKS).map(id => ({
   id: 'u_' + id, item: id, icon: UNLOCK_ICONS[id], name: ITEMS[id].name, desc: 'Unlocks this in the build menu.', max: 1, cost: () => UNLOCKS[id],
 }));
@@ -154,16 +177,17 @@ export class Game {
     this.rerolls = meta.reroll || 0;
     this.unlocked = new Set(BASE_UNLOCKS); this.nightIn = 0;
     this.mods = {
-      dmg: { cans: 1, sauce: 1, soda: 1, micro: 1, hotdog: 1, fridge: 1 }, rate: { cans: 1, sauce: 1, soda: 1, micro: 1, hotdog: 1, fridge: 1 },
+      dmg: { cans: 1, sauce: 1, soda: 1, micro: 1, hotdog: 1, fridge: 1, gum: 1, cola: 1, atm: 1 }, rate: { cans: 1, sauce: 1, soda: 1, micro: 1, hotdog: 1, fridge: 1, gum: 1, cola: 1, atm: 1 },
+      gumExtra: 0, push: 1, soak: 1, swirlTime: 1, swirlDmg: 1,
       bounce: 0, ice: 0, rateAll: 1, range: 1, cost: 1 - 0.04 * (meta.disc || 0), cash: 1.3, burn: 1, splash: 1, slow: 0, crit: 0,
       mopUses: 0, mopStun: 0, globalDmg: 1 + 0.06 * (meta.dmg || 0), shelfPay: 1, crowd: 1, shelfHp: 1, wear: 1, towerHp: 1,
     };
     // blocked: 0 free, 1 permanent wall/prop, 2 tower, 3 shelf (breakable by burglars)
     this.blocked = new Uint8Array(COLS * ROWS);
     this.towers = []; this.traps = []; this.enemies = []; this.projectiles = []; this.customers = []; this.walkers = [];
-    this.fires = []; this.bombs = []; this.ice = [];   // sauce puddles, enemy bombs waiting to blow, scattered ice cubes
+    this.fires = []; this.bombs = []; this.ice = []; this.swirls = []; this.skills = [];   // sauce puddles, enemy bombs waiting to blow, scattered ice cubes, ATM receipt whirlwinds
     this.shelves = []; this.obstacles = [];
-    this.spawnQueue = []; this.waveTime = 0; this.waveTotal = 0;
+    this.spawnQueue = []; this.waveTime = 0; this.waveTotal = 0; this.subWave = 1; this.subWaves = 1; this.gapT = 0;
     this.dayQueue = []; this.dayTime = 0; this.walkT = 0.5; this.dayWalk = 0;
     this.choices = [];
     this.pathVersion = 0;
@@ -219,6 +243,23 @@ export class Game {
     if (this.renovateCost() > this.cash) return { ok: false, reason: 'Not enough cash' };
     return { ok: true };
   }
+  cellOn(side, p) { return side === 'left' ? { x: 0, y: p } : side === 'right' ? { x: COLS - 1, y: p } : side === 'bottom' ? { x: p, y: ROWS - 1 } : { x: p, y: 0 }; }
+  // after a renovation the room is bigger, so the counter and the doors slide back to the middle of their walls
+  // (the first door dead centre, the second one a few cells beside it). Wall cells are never built on, so nothing is in the way.
+  recenter() {
+    const horiz = side => side === 'top' || side === 'bottom';
+    const cl = horiz(this.counterSide) ? COLS : ROWS, dl = horiz(this.doorSide) ? COLS : ROWS;
+    this.counterPos = Math.round((cl - 1) / 2);
+    this.tills = [-1, 0, 1].map(k => this.cellOn(this.counterSide, this.counterPos + k));
+    const sep = dl >= 11 ? 4 : 3, mid = Math.round((dl - 1) / 2);
+    const along = o => horiz(o.side) ? o.x : o.y;
+    const dir = this.spawns.length > 1 && along(this.spawns[1]) < along(this.spawns[0]) ? -1 : 1;   // keep the second door on the same side as before
+    this.spawns.forEach((o, i) => {
+      let p = mid + (i ? dir * sep : 0);
+      if (p < 1 || p > dl - 2) p = mid - dir * sep;
+      Object.assign(o, this.cellOn(o.side, Math.max(1, Math.min(dl - 2, p))));
+    });
+  }
   // adds 2 columns on the right and 2 rows at the bottom; everything already built stays where it is
   renovate() {
     if (!this.canRenovate().ok) return false;
@@ -228,8 +269,7 @@ export class Game {
     const nb = new Uint8Array(COLS * ROWS);
     for (let y = 0; y < orw; y++) for (let x = 0; x < oc; x++) nb[y * COLS + x] = this.blocked[y * oc + x];
     this.blocked = nb;
-    for (const o of this.tills) if (this.counterSide === 'right') o.x = COLS - 1;
-    for (const o of this.spawns) { if (this.doorSide === 'right') o.x = COLS - 1; if (this.doorSide === 'bottom') o.y = ROWS - 1; }
+    this.recenter();
     this.refreshPaths();
     this.emit('renovate', { level: this.room });
     return true;
@@ -246,6 +286,13 @@ export class Game {
   }
 
   // Machines face an open side: if the neighbour in front is a shelf / machine / wall, turn to a free one.
+  // turn a machine a quarter turn (clockwise on screen); it stays that way until turned again
+  rotate(t) {
+    if (!t || t.kind !== 'tower' || !this.towers.includes(t)) return false;
+    const f = (t.facing || 0) + Math.PI / 2;
+    t.facing = Math.atan2(Math.sin(f), Math.cos(f)); t.angle = t.facing; t.manual = true;
+    this.emit('facing', { tower: t }); return true;
+  }
   updateFacing() {
     const dirs = [0, -Math.PI / 2, Math.PI / 2, Math.PI];   // angle convention: atan2(dx, dy), 0 = facing the front (+y)
     for (const t of this.towers) {
@@ -255,7 +302,7 @@ export class Game {
         return x >= 0 && y >= 0 && x < COLS && y < ROWS && this.blocked[idx(x, y)] === 0;
       };
       const was = t.facing;
-      if (t.facing === undefined || !open(t.facing)) {
+      if (t.facing === undefined || (!t.manual && !open(t.facing))) {   // a machine the player turned by hand stays as turned
         const a = dirs.find(open);
         if (a !== undefined) t.facing = a; else if (t.facing === undefined) t.facing = 0;
       }
@@ -264,7 +311,7 @@ export class Game {
   }
 
   // weighted flow field to the counter cells. walls/towers are solid, shelves cost SHELF_COST.
-  flow(extra = -1) {
+  flow(extra = -1, noise = null) {   // noise: per-cell extra step cost (0..5) -> a different, equally valid way to the register
     const N = COLS * ROWS, B = this.blocked;
     const d = new Int32Array(N).fill(-1), done = new Uint8Array(N);
     for (const t of this.tills) { const i = idx(t.x, t.y); if (!B[i] && i !== extra) d[i] = 0; }
@@ -279,7 +326,7 @@ export class Game {
         if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
         const j = idx(nx, ny);
         if (done[j] || j === extra || B[j] === 1 || B[j] === 2) continue;
-        const nd = bd + (B[j] === 3 ? SHELF_COST : 1);
+        const nd = bd + (noise ? (B[j] === 3 ? SHELF_COST * 4 : 4 + noise[j]) : (B[j] === 3 ? SHELF_COST : 1));
         if (d[j] < 0 || nd < d[j]) d[j] = nd;
       }
     }
@@ -331,6 +378,11 @@ export class Game {
     if (x < 0 || y < 0 || x >= COLS || y >= ROWS || this.reserved(x, y)) return { ok: false, reason: 'Not buildable here' };
     if (this.spawns.some(s => s.x === x && s.y === y)) return { ok: false, reason: 'Door — keep clear' };
     if (this.blocked[idx(x, y)]) return { ok: false, reason: 'Occupied' };
+    if (def.kind === 'skill') {
+      if (this.phase !== 'wave') return { ok: false, reason: 'Skill items work at night' };
+      if (this.costOf(type) > this.cash) return { ok: false, reason: 'Not enough cash' };
+      return { ok: true };
+    }
     if (this.trapAt(x, y)) return { ok: false, reason: 'Mop is there' };
     if (this.costOf(type) > this.cash) return { ok: false, reason: 'Not enough cash' };
     if (def.kind === 'trap') return { ok: true };
@@ -354,6 +406,10 @@ export class Game {
     if (!this.canPlace(type, x, y).ok) return false;
     const def = ITEMS[type], cost = this.costOf(type);
     this.cash -= cost;
+    if (def.kind === 'skill') {
+      const sk = { id: this.nextId++, kind: 'skill', type, x, y, t: def.fuse || 0, max: def.fuse || 1, left: def.count || 0, gap: 0, kick: 0 };
+      this.skills.push(sk); this.emit('skillPlace', { skill: sk }); return true;
+    }
     if (def.kind === 'trap') {
       const t = { id: this.nextId++, type, kind: 'trap', x, y, uses: def.uses + this.mods.mopUses };
       this.traps.push(t); this.emit('place', { tower: t }); return true;
@@ -464,7 +520,13 @@ export class Game {
     this.emit('shelfBreak', { shelf: s });
   }
 
-  refreshPaths() { this.dist = this.flow(); this.pathVersion++; this.updateFacing(); }
+  refreshPaths() {
+    this.dist = this.flow();
+    const N = COLS * ROWS;   // each burglar sticks to one of several slightly different flow fields, so they spread over different aisles and tills
+    if (!this.noise || this.noise[0].length !== N) this.noise = Array.from({ length: ROUTES }, () => Uint8Array.from({ length: N }, () => Math.floor(Math.random() * 6)));
+    this.flows = this.noise.map(nz => this.flow(-1, nz));
+    this.pathVersion++; this.updateFacing();
+  }
 
   // ---------- clock (for the HUD) ----------
   clock() {
@@ -627,21 +689,23 @@ export class Game {
   }
 
   // ---------- Night: burglars ----------
-  makeWave(n) {
+  // nights get one more wave every 5 days: nights 1-5 have 1 wave, 6-10 have 2, 11-15 have 3 ...
+  nightWaves(n) { return 1 + Math.floor((n - 1) / 5); }
+  makeWave(n, scale = 1, boss = true) {
     const pool = ['sneak']; if (n >= 3) pool.push('runner'); if (n >= 5) pool.push('vest'); if (n >= 7) pool.push('bruiser');
     // endless: grows fast early, then settles into steady growth (enemy HP keeps scaling per night)
-    let budget = 3 + n * 2.2 + Math.min(n, 12) ** 2 * 0.35 + Math.max(0, n - 12) * 4;
+    let budget = (3 + n * 2.2 + Math.min(n, 12) ** 2 * 0.35 + Math.max(0, n - 12) * 4) * scale;
     const list = [];
     while (budget > 0) {
       const t = pool[Math.floor(this.rng() * pool.length)];
       list.push(t); budget -= ENEMIES[t].cost;
     }
-    if (n % 10 === 0) list.splice(Math.floor(list.length * 0.55), 0, 'boss');   // a Mastermind every 10th night
+    if (boss && n % 10 === 0) list.splice(Math.floor(list.length * 0.55), 0, 'boss');   // a Mastermind every 10th night
     const gap = Math.max(0.6, 1.25 - n * 0.05);
     let t = 0; const q = [];
     const sp = this.activeSpawns;
     list.forEach((type, i) => {
-      q.push({ type, t, spawn: sp[i % sp.length] });
+      q.push({ type, t, spawn: sp[Math.floor(this.rng() * sp.length)] });
       t += gap * (0.7 + this.rng() * 0.6);
     });
     return q;
@@ -650,11 +714,15 @@ export class Game {
   startWave() {
     if (this.phase !== 'evening') return false;
     this.phase = 'wave'; this.waveTime = 0;
-    this.spawnQueue = this.makeWave(this.wave + 1);
+    const n = this.wave + 1;
+    this.subWaves = this.nightWaves(n); this.subWave = 1; this.gapT = 0;
+    this.spawnQueue = this.makeWave(n, this.subScale(1), this.subWaves === 1);
     this.waveTotal = this.spawnQueue.length;
-    this.emit('waveStart', { n: this.wave + 1, count: this.spawnQueue.length });
+    this.emit('waveStart', { n, count: this.spawnQueue.length, sub: 1, subs: this.subWaves });
     return true;
   }
+  // with several waves in a night each one is smaller than a full night; the last one is the biggest (and brings the boss)
+  subScale(k) { return this.subWaves === 1 ? 1 : 0.5 + 0.15 * (k - 1); }
 
   spawnEnemy(type, s) {
     const def = ENEMIES[type], n = this.wave + 1;
@@ -662,8 +730,8 @@ export class Game {
     const e = {
       id: this.nextId++, type, x: s.x + s.ox * 0.9, y: s.y + s.oy * 0.9, hp: def.hp * hpMul, maxhp: def.hp * hpMul,
       speed: def.speed * 0.88, push: def.push, pushT: 0, armor: def.armor, steal: def.steal, bounty: def.bounty,
-      tx: s.x, ty: s.y, burn: 0, burnDps: 0, slow: 0, slowF: 0, stun: 0, slipped: new Set(), iced: new Set(), angle: 0,
-      jitter: (this.rng() - 0.5) * 0.0,
+      tx: s.x, ty: s.y, burn: 0, burnDps: 0, soak: 0, soakDps: 0, kvx: 0, kvy: 0, slow: 0, slowF: 0, stun: 0, slipped: new Set(), iced: new Set(), angle: 0,
+      jitter: (this.rng() - 0.5) * 0.0, route: Math.floor(Math.random() * ROUTES),
       flee: 0, wind: 0, pending: null, dash: null, abCd: def.cd * (0.5 + this.rng() * 0.8) * (1.15 - 0.03 * n), dashMul: def.dashMul || 1,
     };
     this.enemies.push(e);
@@ -710,6 +778,8 @@ export class Game {
       let s = this.progress(e) * 10 + e.hp * 0.001;
       if (t.type === 'sauce' && e.burn > 0.5) s += 40;
       if (t.type === 'soda' && e.slow > 0.5) s += 40;
+      if (t.type === 'cola' && e.soak > 0.5) s += 15;
+      if (t.type === 'atm') s -= 12 * inRange.filter(o => o !== e && Math.hypot(o.x - e.x, o.y - e.y) <= ITEMS.atm.swirlR).length;   // aim where the crowd is
       if (s < bs) { bs = s; best = e; }
     }
     t.angle = Math.atan2(best.x - t.x, best.y - t.y);
@@ -727,15 +797,19 @@ export class Game {
       return true;
     }
     const f = t.facing || 0;
-    const front = vend || t.type === 'hotdog' || t.type === 'fridge';   // these dispense from a chute on their front side
+    const front = vend || ['hotdog', 'fridge', 'gum', 'cola', 'atm'].includes(t.type);   // these dispense from a chute on their front side
     const sx = t.x + (front ? Math.sin(f) * 0.32 : 0), sy = t.y + (front ? Math.cos(f) * 0.32 : 0);
     if (t.type === 'fridge') return this.fridgeFire(t, best, dmg, sx, sy);
-    const speed = t.type === 'cans' ? 10 : 9;
+    const speed = { cans: 10, gum: 8.5, cola: 11, atm: 8 }[t.type] || 9;
+    const H0 = { cans: 0.32, gum: 0.4, cola: 0.5, atm: 0.62 }[t.type] ?? 0.8;   // height of the chute / nozzle / slot the shot comes out of
     const d0 = Math.hypot(best.x - sx, best.y - sy);
-    this.projectiles.push({ id: this.nextId++, kind: t.type, x: sx, y: sy, h: vend ? 0.32 : 0.8, h0: vend ? 0.32 : 0.8, sx, sy, d0: Math.max(0.3, d0), target: best,
-      tx: best.x, ty: best.y, speed, dmg, level: t.level, dx: 0, dy: 0,
-      color: vend ? CAN_COLORS[Math.floor(this.rng() * CAN_COLORS.length)] : 0,
-      bouncesLeft: t.type === 'hotdog' ? ITEMS.hotdog.bounces + (t.level - 1) + this.mods.bounce : 0, bounce: 0, hit: new Set() });
+    const n = t.type === 'gum' ? ITEMS.gum.burst + (this.mods.gumExtra || 0) : 1;   // bubblegum: a burst of gumballs, one after another
+    for (let i = 0; i < n; i++) {
+      this.projectiles.push({ id: this.nextId++, kind: t.type, x: sx, y: sy, h: H0, h0: H0, sx, sy, d0: Math.max(0.3, d0), target: best,
+        tx: best.x, ty: best.y, speed, dmg, level: t.level, dx: 0, dy: 0, delay: i * 0.11,
+        color: vend ? CAN_COLORS[Math.floor(this.rng() * CAN_COLORS.length)] : t.type === 'gum' ? GUM_COLORS[Math.floor(this.rng() * GUM_COLORS.length)] : 0,
+        bouncesLeft: t.type === 'hotdog' ? ITEMS.hotdog.bounces + (t.level - 1) + this.mods.bounce : 0, bounce: 0, hit: new Set() });
+    }
     this.emit('shoot', { tower: t });
     return true;
   }
@@ -820,7 +894,110 @@ export class Game {
     this.emit('splash', { x, y, r });
   }
 
+  // ---------- Cola Dispenser: shoves burglars back and keeps soaking them ----------
+  drench(e, dps, time) {
+    e.soakDps = e.soak > 0 ? Math.max(e.soakDps, dps) : dps;
+    e.soak = Math.max(e.soak || 0, time);
+  }
+  // adds knock-back velocity (tiles/s); moveEnemy applies it and it fades out quickly
+  shove(e, dx, dy, f, cap = COLA_PUSH_CAP) {
+    e.kvx = (e.kvx || 0) + dx * f; e.kvy = (e.kvy || 0) + dy * f;
+    const m = Math.hypot(e.kvx, e.kvy);
+    if (m > cap) { e.kvx *= cap / m; e.kvy *= cap / m; }
+  }
+  // ---------- skill items (night) ----------
+  stepSkill(sk, dt) {
+    const def = ITEMS[sk.type];
+    if (sk.kick > 0) sk.kick = Math.max(0, sk.kick - dt * 6);
+    if (sk.type === 'shakecola') { sk.t -= dt; if (sk.t <= 0) { sk.done = true; this.colaBlast(sk, def); } return; }
+    // cigarette pack: lobs its cigarettes one after another, then disappears
+    sk.gap -= dt;
+    if (sk.left > 0 && sk.gap <= 0) { sk.gap = def.interval; sk.left--; this.lobCig(sk, def); sk.kick = 1; }
+    if (sk.left <= 0) { sk.t += dt; if (sk.t > 0.45) sk.done = true; }
+  }
+  colaBlast(sk, def) {
+    for (const e of this.enemies) {
+      if (e.dead) continue;
+      const dx = e.x - sk.x, dy = e.y - sk.y, d = Math.hypot(dx, dy);
+      if (d > def.radius) continue;
+      this.damage(e, def.dmg * this.mods.globalDmg);
+      if (e.dead) continue;
+      this.drench(e, def.soak * this.mods.globalDmg, def.soakTime);
+      const a = this.rng() * Math.PI * 2, nx = d > 0.05 ? dx / d : Math.cos(a), ny = d > 0.05 ? dy / d : Math.sin(a);   // straight away from the bottle
+      this.shove(e, nx, ny, def.push * (1 - 0.5 * d / def.radius) * (e.type === 'boss' ? 0.35 : 1), 9);
+      e.dash = null; e.wind = 0; e.pending = null;
+    }
+    this.emit('colaBlast', { x: sk.x, y: sk.y, r: def.radius });
+  }
+  lobCig(sk, def) {
+    const near = this.enemies.filter(e => !e.dead && e.x > -0.5 && e.y > -0.5 && e.x < COLS - 0.5 && e.y < ROWS - 0.5 && Math.hypot(e.x - sk.x, e.y - sk.y) <= def.range);
+    let tx, ty;
+    if (near.length) {
+      const e = near[Math.floor(this.rng() * near.length)];
+      tx = e.x + (e.tx - e.x) * 0.4 + (this.rng() - 0.5) * 1.1; ty = e.y + (e.ty - e.y) * 0.4 + (this.rng() - 0.5) * 1.1;   // a little ahead of where they're walking
+    } else {
+      const a = this.rng() * Math.PI * 2, r = Math.sqrt(this.rng()) * def.spread;
+      tx = sk.x + Math.cos(a) * r; ty = sk.y + Math.sin(a) * r;
+    }
+    tx = Math.max(0, Math.min(COLS - 1, tx)); ty = Math.max(0, Math.min(ROWS - 1, ty));
+    this.projectiles.push({ id: this.nextId++, kind: 'cig', lob: true, arc: 1.4 + this.rng() * 0.7, x: sk.x, y: sk.y, h: 0.6, h0: 0.6, sx: sk.x, sy: sk.y,
+      d0: Math.max(0.5, Math.hypot(tx - sk.x, ty - sk.y)), target: null, tx, ty, speed: 5.5 + this.rng() * 1.5, dmg: def.dmg, level: 1, dx: 0, dy: 0 });
+    this.emit('cigLaunch', { skill: sk });
+  }
+  cigBoom(p) {   // a lit cigarette only pops where it lands on the floor: small blast, sets burglars smouldering
+    const def = ITEMS.cigs;
+    for (const e of this.enemies) {
+      if (e.dead || Math.hypot(e.x - p.tx, e.y - p.ty) > def.radius) continue;
+      this.damage(e, def.dmg * this.mods.globalDmg);
+      if (!e.dead) this.ignite(e, def.burn * this.mods.globalDmg, def.burnTime);
+    }
+    this.emit('cigBoom', { x: p.tx, y: p.ty, r: def.radius });
+  }
+  applyKnock(e, dt) {
+    if (!e.kvx && !e.kvy) return;
+    const nx = e.x + e.kvx * dt, ny = e.y + e.kvy * dt, cx = Math.round(nx), cy = Math.round(ny);
+    if (cx < 0 || cy < 0 || cx >= COLS || cy >= ROWS || this.blocked[idx(cx, cy)] !== 0) { e.kvx = 0; e.kvy = 0; return; }   // never shove them through walls, shelves or machines
+    e.x = nx; e.y = ny;
+    const f = Math.exp(-5 * dt); e.kvx *= f; e.kvy *= f;
+    if (Math.hypot(e.kvx, e.kvy) < 0.05) { e.kvx = 0; e.kvy = 0; }
+  }
+  colaHit(p) {
+    const e = p.target, def = ITEMS.cola;
+    const hx = e && !e.dead ? e.x : p.tx, hy = e && !e.dead ? e.y : p.ty;
+    const dps = def.soak * (this.mods.soak ?? 1) * this.mods.globalDmg * (1 + 0.35 * (p.level - 1));
+    for (const o of this.enemies) {
+      if (o.dead || Math.hypot(o.x - hx, o.y - hy) > def.splash) continue;
+      this.damage(o, o === e ? p.dmg : p.dmg * 0.5);
+      if (o.dead) continue;
+      this.drench(o, dps, def.soakTime);
+      this.shove(o, p.dx, p.dy, def.push * (this.mods.push ?? 1) * (o.type === 'boss' ? 0.3 : 1));
+    }
+    this.emit('colaSplash', { x: hx, y: hy, r: def.splash });
+  }
+
+  // ---------- ATM: receipts that start a swirl around every burglar nearby ----------
+  receiptHit(p) {
+    const e = p.target, def = ITEMS.atm;
+    const hx = e && !e.dead ? e.x : p.tx, hy = e && !e.dead ? e.y : p.ty, r = def.swirlR;
+    for (const o of this.enemies) {
+      if (o.dead || Math.hypot(o.x - hx, o.y - hy) > r) continue;
+      this.damage(o, o === e ? p.dmg : p.dmg * 0.5);
+    }
+    const T = def.swirlTime * (this.mods.swirlTime ?? 1);
+    const s = { id: this.nextId++, x: hx, y: hy, r, t: T, max: T, dps: def.swirlDps * (this.mods.swirlDmg ?? 1) * this.mods.globalDmg * (1 + 0.35 * (p.level - 1)) };
+    this.swirls.push(s);
+    this.emit('swirl', { swirl: s });
+  }
+
   hitProjectile(p) {
+    if (p.kind === 'gum') {
+      this.emit('gumHit', { x: p.x, y: p.y, dx: p.dx, dy: p.dy, color: p.color });   // the gumball bounces off and scatters on the floor
+      if (p.target && !p.target.dead) this.damage(p.target, p.dmg);
+      return;
+    }
+    if (p.kind === 'cig') { this.cigBoom(p); return; }
+    if (p.kind === 'cola') { this.colaHit(p); return; }
+    if (p.kind === 'atm') { this.receiptHit(p); return; }
     if (p.kind === 'sauce') { this.sauceSplash(p.tx, p.ty, p); return; }
     if (p.kind === 'bomb') { this.plantBomb(p.tx, p.ty); return; }
     if (p.kind === 'ice') { this.iceBurst(p.tx, p.ty, p); return; }
@@ -1032,6 +1209,7 @@ export class Game {
     for (const p of this.projectiles) {
       const e = p.target;
       if (!p.lob && e && !e.dead) { p.tx = e.x; p.ty = e.y; }
+      if (p.delay > 0) { p.delay -= dt; p.x = p.sx; p.y = p.sy; p.h = p.h0; continue; }   // queued gumballs wait inside the machine
       const dx = p.tx - p.x, dy = p.ty - p.y, d = Math.hypot(dx, dy), mv = p.speed * dt;
       if (d > 0.001) { p.dx = dx / d; p.dy = dy / d; }
       if (d <= mv + 0.05) { p.done = true; this.hitProjectile(p); continue; }
@@ -1039,6 +1217,9 @@ export class Game {
       const prog = 1 - Math.min(1, d / p.d0);
       if (p.lob) p.h = p.h0 + Math.sin(prog * Math.PI) * p.arc;                      // lobbed: high arc, lands on the floor
       else if (p.kind === 'cans') p.h = p.h0 + (0.5 - p.h0) * prog + Math.sin(prog * Math.PI) * 0.55;
+      else if (p.kind === 'gum') p.h = p.h0 + (0.45 - p.h0) * prog + Math.sin(prog * Math.PI) * 0.4;
+      else if (p.kind === 'cola') p.h = p.h0 + (0.5 - p.h0) * prog + Math.sin(prog * Math.PI) * 0.1;
+      else if (p.kind === 'atm') p.h = p.h0 + (0.6 - p.h0) * prog + Math.sin(prog * Math.PI) * 0.3;
       else p.h = 0.8 + Math.sin(prog * Math.PI) * (p.kind === 'soda' ? 0.18 : 0.6);
     }
     this.projectiles = this.projectiles.filter(p => !p.done);
@@ -1054,14 +1235,42 @@ export class Game {
       for (const e of this.enemies) if (!e.dead && Math.hypot(e.x - p.x, e.y - p.y) <= p.r) this.freeze(e, p);
     }
     this.ice = this.ice.filter(p => p.t > 0);
+    // ATM receipt whirlwinds: burglars inside are slowed, dragged around the centre and hurt (armor doesn't help)
+    for (const s of this.swirls) {
+      s.t -= dt;
+      for (const e of this.enemies) {
+        const dx = s.x - e.x, dy = s.y - e.y, d = Math.hypot(dx, dy);
+        if (e.dead || d > s.r) continue;
+        const ux = d > 0.01 ? dx / d : 0, uy = d > 0.01 ? dy / d : 0, w = e.type === 'boss' ? 0.4 : 1;
+        this.shove(e, (ux * 4 - uy * 5) * dt, (uy * 4 + ux * 5) * dt, w);   // pull in + spin around
+        this.chill(e, 0.4, 0.3);
+        e.hp -= s.dps * dt; e.flash = Math.max(e.flash || 0, 0.04);
+        if (e.hp <= 0) this.kill(e);
+      }
+    }
+    this.swirls = this.swirls.filter(s => s.t > 0);
     for (const b of this.bombs) { b.t -= dt; if (b.t <= 0) { b.done = true; this.explode(b); } }
+    for (const sk of this.skills) this.stepSkill(sk, dt);
+    this.skills = this.skills.filter(sk => !sk.done);
     this.bombs = this.bombs.filter(b => !b.done);
     // burglars
     for (const e of this.enemies) { if (!e.dead) this.moveEnemy(e, dt); }
     this.enemies = this.enemies.filter(e => !e.dead);
     if (this.lives <= 0 && this.phase !== 'lost') { this.lives = 0; this.phase = 'lost'; this.emit('lost', {}); return; }
     // night end
-    if (this.phase === 'wave' && !this.spawnQueue.length && !this.enemies.length) {
+    if (this.phase === 'wave' && this.gapT > 0) {      // calm before the next wave of the same night
+      this.gapT -= dt;
+      if (this.gapT <= 0) {
+        this.gapT = 0; this.subWave++; this.waveTime = 0;
+        this.spawnQueue = this.makeWave(this.wave + 1, this.subScale(this.subWave), this.subWave === this.subWaves);
+        this.waveTotal = this.spawnQueue.length;
+        this.emit('subWave', { n: this.wave + 1, sub: this.subWave, subs: this.subWaves, count: this.spawnQueue.length });
+      }
+    }
+    if (this.phase === 'wave' && !this.spawnQueue.length && !this.enemies.length && this.gapT <= 0 && this.subWave < this.subWaves) {
+      this.gapT = SUB_GAP; this.emit('subClear', { sub: this.subWave, subs: this.subWaves, gap: SUB_GAP });
+    }
+    if (this.phase === 'wave' && !this.spawnQueue.length && !this.enemies.length && this.gapT <= 0) {
       this.wave++;
       const bonus = 20 + this.wave * 4;
       this.cash += bonus;
@@ -1074,6 +1283,8 @@ export class Game {
     // status
     if (e.flash > 0) e.flash -= dt;
     if (e.burn > 0) { e.burn -= dt; e.hp -= e.burnDps * dt; if (e.hp <= 0) { this.kill(e); return; } }
+    if (e.soak > 0) { e.soak -= dt; e.hp -= e.soakDps * dt; if (e.hp <= 0) { this.kill(e); return; } }   // cola keeps soaking
+    this.applyKnock(e, dt);
     if (e.slow > 0) e.slow -= dt;
     if (e.flee > 0) e.flee -= dt;
     if (e.abCd > 0) e.abCd -= dt;
@@ -1106,11 +1317,12 @@ export class Game {
       }
       if (!fleeing && e.abCd <= 0 && !this.reserved(cx, cy) && this.startTrick(e)) return;
       let best = null, bd = fleeing ? -1 : 1e9;
-      const here = this.dist[idx(cx, cy)];
+      const fld = fleeing || !this.flows ? this.dist : (this.flows[e.route] || this.dist);
+      const here = fld[idx(cx, cy)];
       for (const [ox, oy] of NB) {
         const nx = cx + ox, ny = cy + oy;
         if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
-        const j = idx(nx, ny), dd = this.dist[j];
+        const j = idx(nx, ny), dd = fld[j];
         if (dd < 0 || this.blocked[j] === 1 || this.blocked[j] === 2) continue;
         if (fleeing) { if (this.blocked[j] === 0 && dd > here && dd > bd) { bd = dd; best = [nx, ny]; } }   // panic: run AWAY from the register
         else if (dd < bd) { bd = dd; best = [nx, ny]; }
@@ -1165,13 +1377,18 @@ export class Game {
     this.wave = s.wave; this.cash = s.cash; this.lives = s.lives; this.maxLives = s.maxLives;
     this.kills = s.kills; this.served = s.served; this.sales = s.sales; this.rerolls = s.rerolls;
     this.unlocked = new Set(s.unlocked); this.mods = c(s.mods); this.nextId = Math.max(this.nextId, s.nextId);
+    {   // saves made before the Bubblegum / Cola / ATM machines don't have their modifiers yet
+      const m = this.mods, one = { cans: 1, sauce: 1, soda: 1, micro: 1, hotdog: 1, fridge: 1, gum: 1, cola: 1, atm: 1 };
+      m.dmg = { ...one, ...m.dmg }; m.rate = { ...one, ...m.rate };
+      for (const [k, v] of Object.entries({ gumExtra: 0, push: 1, soak: 1, swirlTime: 1, swirlDmg: 1 })) if (m[k] === undefined) m[k] = v;
+    }
     this.counterSide = s.counterSide; this.doorSide = s.doorSide; this.counterPos = s.counterPos; this.tills = c(s.tills); this.spawns = c(s.spawns);
     this.shelves = c(s.shelves); this.towers = c(s.towers); this.traps = c(s.traps);
     this.blocked = new Uint8Array(COLS * ROWS);
     for (const sh of this.shelves) this.blocked[idx(sh.x, sh.y)] = 3;
     for (const t of this.towers) this.blocked[idx(t.x, t.y)] = 2;
-    this.enemies = []; this.projectiles = []; this.fires = []; this.bombs = []; this.ice = []; this.customers = []; this.walkers = [];
-    this.spawnQueue = []; this.dayQueue = []; this.waveTime = 0; this.dayTime = 0; this.waveTotal = 0; this.nightIn = 0;
+    this.enemies = []; this.projectiles = []; this.fires = []; this.bombs = []; this.ice = []; this.swirls = []; this.skills = []; this.customers = []; this.walkers = [];
+    this.spawnQueue = []; this.gapT = 0; this.subWave = 1; this.subWaves = 1; this.dayQueue = []; this.waveTime = 0; this.dayTime = 0; this.waveTotal = 0; this.nightIn = 0;
     this.phase = s.phase; this.daySnap = null;
     this.choices = (s.choices || []).map(id => UPGRADES.find(u => u.id === id)).filter(Boolean);
     this.refreshPaths();
@@ -1184,8 +1401,8 @@ export class Game {
     if (this.phase !== 'lost') return false;
     if (this.daySnap) this.restore(this.daySnap, { retry: true });
     else {
-      this.enemies = []; this.projectiles = []; this.fires = []; this.bombs = []; this.ice = []; this.customers = []; this.walkers = [];
-      this.spawnQueue = []; this.dayQueue = []; this.waveTime = 0; this.dayTime = 0; this.phase = 'prep';
+      this.enemies = []; this.projectiles = []; this.fires = []; this.bombs = []; this.ice = []; this.swirls = []; this.skills = []; this.customers = []; this.walkers = [];
+      this.spawnQueue = []; this.gapT = 0; this.subWave = 1; this.subWaves = 1; this.dayQueue = []; this.waveTime = 0; this.dayTime = 0; this.phase = 'prep';
     }
     this.lives = this.maxLives;
     for (const t of this.towers) { t.broken = null; t.wear = 0; t.hp = t.maxhp; t.warned = false; t.cd = 0.5; }
