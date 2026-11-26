@@ -1,8 +1,12 @@
 // Three.js view: flat toon materials + low-res render target upscaled with nearest filtering (pixel look)
 import * as THREE from 'three';
-import { COLS, ROWS, ITEMS, MAX_STOCK, BOMB_RADIUS } from './game.js';   // COLS/ROWS are live bindings: the room size changes per game
+import { COLS, ROWS, ITEMS, MAX_STOCK, BOMB_RADIUS, GUM_COLORS } from './game.js';   // COLS/ROWS are live bindings: the room size changes per game
+const COLA_PAL = [0x3b1f14, 0x6b3a22, 0xffffff, 0xc98a5a, 0xffffff, 0x8a4b2a];
 import { makeItem, makeShelf, setShelfGoods, makeCan, makeEnemy, makeCustomer, makeProjectile,
   makeGroundBomb, animGroundBomb, makeFire, animFire } from './model/index.js';
+
+import { makeShakenCola, animShakenCola } from './model/colaShake.js';
+import { makeCigPack, animCigPack, makeLitCig } from './model/cigs.js';
 
 // Keep raw hex colors, no sRGB conversion: flat, predictable retro palette
 THREE.ColorManagement.enabled = false;
@@ -252,7 +256,31 @@ export class View {
     this.part(clerk, this.box, 0x3a7bd5, 0.34, 0.4, 0.22, 0, 0.35, 0, false);
     this.part(clerk, this.box, 0xf1c9a0, 0.24, 0.22, 0.22, 0, 0.68, 0, false);
     this.part(clerk, this.box, 0xd9534f, 0.28, 0.07, 0.26, 0, 0.82, 0.01, false);
+    // ----- money stack: bricks of cash piled on the counter next to the register, growing with the player's cash -----
+    this.money = new THREE.Group(); cg.add(this.money); this.moneyN = -1; this.moneyPop = 0; this.moneyOx = ox;
+    this.moneySlots = [az + 0.72, az + 1.05, az - 2.25, az - 2.62, az + 2.15].filter(z => Math.abs(z) < len / 2 - 0.25);
     return { group: S, clerk };
+  }
+
+  // cash on the counter: one brick per ~4x$ (square-root growth so it keeps filling up), ten bricks high per pile
+  syncMoney(g, dt) {
+    const cap = this.moneySlots.length * 10;
+    const n = Math.min(cap, Math.max(0, Math.floor(Math.sqrt(Math.max(0, g.cash) / 4))));
+    if (n !== this.moneyN) {
+      if (this.moneyN >= 0 && n > this.moneyN) this.moneyPop = 1;
+      this.moneyN = n;
+      while (this.money.children.length) this.money.remove(this.money.children[0]);
+      for (let i = 0; i < n; i++) {
+        const z = this.moneySlots[Math.floor(i / 10)], h = i % 10;
+        const r1 = ((i * 9301 + 49297) % 233280) / 233280, r2 = ((i * 4271 + 1237) % 9973) / 9973;
+        const rot = (r1 - 0.5) * 0.3, y = 0.96 + 0.0375 + h * 0.075, x = this.moneyOx + (r2 - 0.5) * 0.03;
+        this.part(this.money, this.box, i % 2 ? 0x3fae5a : 0x35a04e, 0.34, 0.07, 0.2, x, y, z + (r1 - 0.5) * 0.03, true).rotation.y = rot;
+        this.part(this.money, this.box, 0xe9ddc0, 0.09, 0.076, 0.21, x, y, z + (r1 - 0.5) * 0.03, false).rotation.y = rot;
+      }
+    }
+    if (this.moneyPop > 0) this.moneyPop = Math.max(0, this.moneyPop - dt * 5);
+    const sy = 1 + 0.18 * Math.sin(this.moneyPop * Math.PI);
+    this.money.scale.y = sy; this.money.position.y = 0.96 * (1 - sy);
   }
 
   // ---------- hover outline: a white pixel outline around the building under the mouse ----------
@@ -327,11 +355,13 @@ export class View {
     let obj;
     if (type === 'shelf') {
       obj = makeShelf(this, { v: 0 }); setShelfGoods(this, obj, MAX_STOCK); obj.rotation.y = Math.PI / 2;
-    } else obj = makeItem(this, { type, id: 1, level: 1 });
+    } else if (type === 'shakecola') obj = makeShakenCola(this, 1, 0);
+    else if (type === 'cigs') obj = makeCigPack(this, 1);
+    else obj = makeItem(this, { type, id: 1, level: 1 });
     if (type === 'fridge') obj.scale.setScalar(0.78);
     obj.position.set(0, 0, 0); scene.add(obj);
     const cam = new THREE.OrthographicCamera(-0.98, 0.98, 0.98, -0.98, 0.1, 20);
-    cam.position.set(2.4, 2.5, 3.0); cam.lookAt(0, type === 'mop' ? 0.35 : type === 'cans' ? 0.62 : 0.5, 0);
+    cam.position.set(2.4, 2.5, 3.0); cam.lookAt(0, type === 'mop' ? 0.35 : type === 'shakecola' || type === 'cigs' ? 0.36 : type === 'cans' || type === 'gum' || type === 'atm' ? 0.65 : 0.5, 0);
     const prevClear = new THREE.Color(); this.renderer.getClearColor(prevClear); const prevA = this.renderer.getClearAlpha();
     this.renderer.setClearColor(0x000000, 0);
     this.renderer.setRenderTarget(rt); this.renderer.clear(); this.renderer.render(scene, cam); this.renderer.setRenderTarget(null);
@@ -443,6 +473,37 @@ export class View {
     const cans = this.fx.filter(f => f.can);
     for (let i = 0; i < cans.length - 60; i++) cans[i].t = Math.max(cans[i].t, cans[i].life - 0.4);
   }
+  // gumballs bouncing off an enemy and rolling around the floor
+  scatterGum(x, y, dx, dy, color) {
+    const px = wx(x), pz = wz(y);
+    for (let i = 0; i < 3; i++) {
+      const main = i === 0, spd = 1.4 + Math.random() * 2, r = main ? 0.1 : 0.075;
+      const m = new THREE.Mesh(this.sph, this.toon(main ? color : GUM_COLORS[Math.floor(Math.random() * GUM_COLORS.length)]));
+      m.scale.setScalar(r); m.position.set(px, 0.5, pz); this.scene.add(m);
+      const back = main ? 0.9 : 0.35;
+      this.fx.push({ ball: true, m, r, rest: false, vx: -dx * spd * back + (Math.random() - 0.5) * spd * 1.5, vy: 2 + Math.random() * 2, vz: -dy * spd * back + (Math.random() - 0.5) * spd * 1.5, life: 4.5 + Math.random() * 1.5, t: 0 });
+    }
+    const balls = this.fx.filter(f => f.ball);   // keep the floor from filling up forever
+    for (let i = 0; i < balls.length - 70; i++) balls[i].t = Math.max(balls[i].t, balls[i].life - 0.4);
+  }
+  // receipt whirlwind: paper strips spiral around the centre while the swirl lasts
+  makeSwirlModel() {
+    const g = new THREE.Group(); g.userData.strips = [];
+    for (let i = 0; i < 12; i++) {
+      const w = new THREE.Group(); this.part(w, this.box, i % 3 ? 0xffffff : 0xe8e8f0, 0.12, 0.012, 0.3, 0, 0, 0, false);
+      this.part(w, this.box, 0x8b92a3, 0.08, 0.014, 0.015, 0, 0, 0.05, false);
+      g.add(w); g.userData.strips.push(w);
+    }
+    return g;
+  }
+  animSwirl(g, s, time) {
+    const sc = Math.max(0.01, Math.min(1, (s.max - s.t) / 0.25, s.t / 0.4));
+    g.userData.strips.forEach((w, i) => {
+      const a = time * (4.5 + (i % 3) * 1.1) + i * 0.52, rr = s.r * (0.3 + 0.7 * ((i * 0.37) % 1)) * 0.9;
+      w.position.set(Math.cos(a) * rr, 0.12 + ((time * 0.7 + i * 0.17) % 1) * 0.95, Math.sin(a) * rr);
+      w.rotation.set(time * 3 + i, -a, time * 2 + i * 0.5); w.scale.setScalar(sc);
+    });
+  }
   // one droplet of soda spray that hangs in the air and shrinks away: many of them make the trail
   trailDrop(x, y, z, pal = [0x7df0d8, 0xffffff, 0xb8fff2, 0x2fb6a6], g = 1.2, size = 1) {
     const col = pal[Math.floor(Math.random() * pal.length)], sz = (0.06 + Math.random() * 0.08) * size;
@@ -484,7 +545,24 @@ export class View {
   }
   onEvent(type, d) {
     if (type === 'shoot') { const o = this.meshes.get(d.tower.id); if (o) o.kick = 0.18; if (d.tower.type === 'soda') this.burst(d.tower.x, d.tower.y, 0.8, 0x7df0d8, 5, 1.4, 0.8); if (d.tower.type === 'sauce') { this.burst(d.tower.x, d.tower.y, 1.1, 0xff5a1f, 6, 1.8, 0.9); this.burst(d.tower.x, d.tower.y, 1.1, 0xffd23f, 3, 1.4, 0.7); } }
+    else if (type === 'gumHit') { this.scatterGum(d.x, d.y, d.dx, d.dy, d.color); this.burst(d.x, d.y, 0.5, d.color, 4, 1.8, 0.8); }
+    else if (type === 'colaSplash') {
+      this.ringFx(d.x, d.y, d.r * 1.4, 0xc98a5a);
+      for (const c of [0x3b1f14, 0x6b3a22, 0xffffff]) this.burst(d.x, d.y, 0.5, c, 5, 2.2, 0.9);
+    }
+    else if (type === 'swirl') { this.ringFx(d.swirl.x, d.swirl.y, d.swirl.r, 0xffffff); this.burst(d.swirl.x, d.swirl.y, 0.5, 0xffffff, 8, 2.2, 1); }
     else if (type === 'canHit') { this.scatterCans(d.x, d.y, d.dx, d.dy, d.color); this.burst(d.x, d.y, 0.5, 0xffffff, 4, 1.8); }
+    else if (type === 'skillPlace') { const k = d.skill; this.ringFx(k.x, k.y, 1.2, 0xffffff); this.burst(k.x, k.y, 0.3, 0xffffff, 8, 2, 1); }
+    else if (type === 'colaBlast') {                                                      // the shaken bottle erupts: big brown + white fizz burst
+      this.ringFx(d.x, d.y, d.r, 0xc98a5a); this.ringFx(d.x, d.y, d.r * 0.6, 0xffffff);
+      this.burst(d.x, d.y, 0.5, 0x6b3a22, 26, 4.2, 1.7); this.burst(d.x, d.y, 0.6, 0xffffff, 18, 3.4, 1.4); this.burst(d.x, d.y, 1.1, 0x3b1f14, 10, 2.6, 1.2);
+      for (let i = 0; i < 8; i++) this.puff(d.x + (Math.random() - 0.5) * 1.2, d.y + (Math.random() - 0.5) * 1.2, 0.4, 0xffffff, 1.6, 0.9, 0.7);
+      this.shake = Math.max(this.shake || 0, 0.3);
+    }
+    else if (type === 'cigBoom') {                                                        // small pop where a cigarette lands
+      this.ringFx(d.x, d.y, d.r, 0xffb347); this.burst(d.x, d.y, 0.25, 0xffd23f, 6, 2.2, 1); this.burst(d.x, d.y, 0.3, 0xff5a1f, 5, 1.8, 1);
+      this.puff(d.x, d.y, 0.3, 0x55556a, 0.9, 0.6, 0.5);
+    }
     else if (type === 'buy') { this.burst(d.x, d.y, 0.9, 0xffcf4a, 4, 1.6); const o = this.meshes.get(d.id); if (o) { o.kick = 0.18; o.flash = 0.35; if (d.kind === 'shelf') o.pop = 0.34; } }
     else if (type === 'pay') this.burst(d.x, d.y, 1.1, 0xffe45c, 7, 2.2, 1.2);
     else if (type === 'hit') this.burst(d.x, d.y, 0.5, d.crit ? 0xffee58 : 0xffffff, d.crit ? 6 : 3, 1.5);
@@ -538,6 +616,7 @@ export class View {
   // ---------- per frame ----------
   render(dt, time) {
     const g = this.game; if (!g) return;
+    if (this.money) this.syncMoney(g, dt);
     // sync dynamic entities
     const seen = new Set();
     const sync = (list, make, upd) => {
@@ -571,9 +650,20 @@ export class View {
     });
     sync(g.fires, f => this.at(makeFire(this, f), f), (f, m) => animFire(this, m.group, f, time));
     sync(g.bombs, b => this.at(makeGroundBomb(this, b), b), (b, m) => animGroundBomb(m.group, b, time));
-    sync(g.projectiles, p => p.kind === 'hotdog' ? this.makeHotdogProj() : p.kind === 'ice' ? this.makeIceProj() : makeProjectile(this, p), (p, m) => {
+    sync(g.skills || [], s => this.at(s.type === 'cigs' ? makeCigPack(this, 1) : makeShakenCola(this, 1, ITEMS.shakecola.radius), s),
+      (s, m) => s.type === 'cigs' ? animCigPack(m.group, s, time, this) : animShakenCola(m.group, s, time, this));
+    sync(g.swirls || [], s => this.at(this.makeSwirlModel(), s), (s, m) => this.animSwirl(m.group, s, time));
+    sync(g.projectiles, p => p.kind === 'hotdog' ? this.makeHotdogProj() : p.kind === 'ice' ? this.makeIceProj() : p.kind === 'cig' ? makeLitCig(this) : makeProjectile(this, p), (p, m) => {
       const grp = m.group; grp.position.set(wx(p.x), p.h, wz(p.y));
-      if (p.kind === 'cans') { const c = grp.userData.can; c.tilt.rotation.x += dt * 13; c.tilt.rotation.z += dt * 8; }          // tumbling can
+      grp.visible = !(p.delay > 0);   // queued gumballs are still inside the machine
+      if (p.kind === 'gum') { grp.rotation.x += dt * 9; grp.rotation.z += dt * 6; }
+      else if (p.kind === 'cola') {                                                                                           // fizzy spray + brown trail
+        for (const d of grp.userData.drops) d.position.set((Math.random() - 0.5) * 0.2, (Math.random() - 0.5) * 0.14, (Math.random() - 0.5) * 0.2);
+        m.acc = (m.acc || 0) + dt;
+        while (m.acc > 0.012) { m.acc -= 0.012; this.trailDrop(wx(p.x) - p.dx * m.acc * p.speed, p.h, wz(p.y) - p.dy * m.acc * p.speed, COLA_PAL, 1.0, 0.9); }
+      } else if (p.kind === 'atm') {                                                                                          // receipt flutters through the air
+        const pa = grp.userData.paper; pa.rotation.y = Math.atan2(p.dx, p.dy); pa.rotation.z = Math.sin(time * 22 + p.id) * 0.9; pa.rotation.x = Math.cos(time * 17 + p.id) * 0.5;
+      } else if (p.kind === 'cans') { const c = grp.userData.can; c.tilt.rotation.x += dt * 13; c.tilt.rotation.z += dt * 8; }          // tumbling can
       else if (p.kind === 'soda') {                                                                                           // spray + trail
         for (const d of grp.userData.drops) d.position.set((Math.random() - 0.5) * 0.22, (Math.random() - 0.5) * 0.16, (Math.random() - 0.5) * 0.22);
         m.acc = (m.acc || 0) + dt;
@@ -585,6 +675,10 @@ export class View {
         m.acc = (m.acc || 0) + dt;
         while (m.acc > 0.02) { m.acc -= 0.02; this.trailDrop(wx(p.x) - p.dx * m.acc * p.speed, p.h, wz(p.y) - p.dy * m.acc * p.speed, [0xd62828, 0xff5a1f, 0xffd23f, 0xff8c1a], 3, 0.8); }
         if (Math.random() < dt * 25) this.flame(p.x, p.y, p.h + 0.1);
+      } else if (p.kind === 'cig') {                                                                                          // tumbling lit cigarette, ember sparks + smoke
+        grp.rotation.y = Math.atan2(-p.dy, p.dx); grp.userData.cig.rotation.x += dt * 14;
+        if (Math.random() < dt * 40) this.burst(p.x, p.y, p.h, 0xff8c1a, 1, 0.5, 0.5);
+        if (Math.random() < dt * 18) this.puff(p.x, p.y, p.h + 0.1, 0x9a9aa8, 0.35, 0.5, 0.35);
       } else if (p.kind === 'bomb') {                                                                                         // spinning bomb with a sparking fuse
         grp.rotation.z += dt * 7; grp.userData.spark.visible = Math.floor(time * 30) % 2 === 0;
         if (Math.random() < dt * 20) this.puff(p.x, p.y, p.h + 0.3, 0xffd23f, 0.5, 0.4, 0.25);
@@ -630,6 +724,14 @@ export class View {
         const y0 = 0.08, drop = Math.min(1, f.t / 0.25);
         f.m.position.y = y0 + (1 - drop) * (1 - drop) * 0.8; if (drop < 1) f.m.rotation.x += f.spin * dt;
         const k = Math.max(0.01, Math.min(1, f.t / 0.1, (f.life - f.t) / 0.6)); f.m.scale.setScalar(f.s * k);
+      }
+      else if (f.ball) {
+        const p = f.m.position;
+        if (!f.rest) {
+          f.vy -= 14 * dt; p.x += f.vx * dt; p.y += f.vy * dt; p.z += f.vz * dt;
+          if (p.y <= f.r) { p.y = f.r; if (f.vy < -1.2) { f.vy = -f.vy * 0.55; f.vx *= 0.8; f.vz *= 0.8; } else { f.vy = 0; f.rest = true; } }
+        } else { const damp = Math.exp(-2.2 * dt); f.vx *= damp; f.vz *= damp; p.x += f.vx * dt; p.z += f.vz * dt; }
+        f.m.scale.setScalar(Math.max(0.01, Math.min(1, (f.life - f.t) / 0.4)) * f.r);
       }
       else if (f.flash) { const k = f.t / f.life; f.m.scale.setScalar(Math.max(0.01, f.r * Math.sin(k * Math.PI))); }
       else if (f.can) {
@@ -751,6 +853,7 @@ export class View {
     if (u.hold.visible) { u.hold.position.y = (1.1 + (0.55 - e.wind) * 0.3) * u.big; u.hold.children[1].visible = Math.floor(time * 30) % 2 === 0; }
     m.fl = (m.fl || 0) - dt;
     if (e.burn > 0 && m.fl <= 0) { m.fl = 0.05; this.flame(e.x, e.y, (0.25 + Math.random() * 0.55) * u.big); }       // on fire!
+    if (e.soak > 0 && (m.sk = (m.sk || 0) - dt) <= 0) { m.sk = 0.07; this.trailDrop(wx(e.x), (0.25 + Math.random() * 0.6) * u.big, wz(e.y), COLA_PAL, -0.5, 0.7); }   // soaked in cola: fizz rising off them
     if (e.dash && (m.dust = (m.dust || 0) - dt) <= 0) { m.dust = 0.04; this.burst(e.x, e.y, 0.1, 0xe9ddc0, 2, 1, 0.9); }   // dash dust trail
     u.body.visible = !(e.flash > 0 && Math.floor(time * 40) % 2 === 0);
     const r = Math.max(0, e.hp / e.maxhp);
