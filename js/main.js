@@ -163,6 +163,7 @@ function musicTick(dt) {
 // ---------- state ----------
 const view = new View($('stage'), $('view'));
 let game = null, running = false, selected = null /* build item id */, pickedTower = null, preview = null, hover = null, speed = 1, paused = false;
+let moving = null, drag = null;   // moving = the owned item being relocated (tap a new spot, or drag it there)
 pxifyStatic();
 
 // ---------- HUD: the time sits in the top-left corner, the till and the money right below it. No containers. ----------
@@ -199,7 +200,7 @@ function newStore(fresh = false) {
   game.on = onEvent;
   if (save.run) { try { game.restore(save.run); } catch (e) { save.run = null; game = new Game({ meta: save.levels }); game.on = onEvent; } }
   view.setGame(game); view.menu = true; view.tod = 0;
-  running = false; selected = null; pickedTower = null; preview = null; speed = 1;
+  running = false; selected = null; pickedTower = null; moving = null; drag = null; preview = null; speed = 1;
   $('speed').textContent = '1x'; setPaused(false);
   $('hud').classList.add('off'); $('info').classList.add('off'); $('dock').classList.add('off'); $('skillSlots').classList.add('off'); closeTray(); setTab('stocks'); $('title').classList.remove('off', 'pop'); $('stage').classList.add('menu'); $('t-restart').classList.toggle('off', !save.run);
   closeModal(); hideTarot(); buildCards(); refresh(); tutStop(); hideBossBanner(true);
@@ -309,6 +310,7 @@ function onEvent(type, d) {
   view.onEvent(type, d);
   switch (type) {
     case 'place': sfx.place(); break;
+    case 'move': break;
     case 'upgrade': sfx.upgrade(); break;
     case 'stock': sfx.restock(); break;
     case 'sell': if (d.tower.broken !== 'destroyed') sfx.sell(); break;
@@ -605,7 +607,7 @@ function renderRecent() {
 $('dAct').onclick = () => {
   const id = focusId;
   if (!game.isUnlocked(id)) { if (!game.canUnlock(id)) { sfx.bad(); banner(`🔒 ${ITEMS[id].name} unlocks on day ${UNLOCK_DAY[id]}`); return; } if (!game.unlock(id)) { sfx.bad(); banner(`Need $${UNLOCKS[id]} to unlock ${ITEMS[id].name}`); } else { noteSkill(id, true); noteRecent(id); } return; }   // unlocking costs store profit
-  selected = selected === id ? null : id; if (selected) noteSkill(id, true); pickedTower = null; preview = null; view.setCursor(null); closeTray(); refresh();
+  selected = selected === id ? null : id; if (selected) noteSkill(id, true); pickedTower = null; moving = null; preview = null; view.setCursor(null); closeTray(); refresh();
 };
 $('subSell').onclick = () => { subTab = 'sell'; setTab('stocks'); applySub(); };
 $('subSkill').onclick = () => { subTab = 'skill'; setTab('stocks'); applySub(); };
@@ -635,7 +637,7 @@ $('skillSlots').addEventListener('click', e => {
   const b = e.target.closest('.slot'); if (!b || !game) return;
   if (!b.dataset.id) { subTab = 'skill'; setTab('stocks'); applySub(); openTray(); return; }   // empty slot: open the skill items
   const id = b.dataset.id;
-  selected = selected === id ? null : id; pickedTower = null; preview = null; view.setCursor(null); closeTray(); refresh();
+  selected = selected === id ? null : id; pickedTower = null; moving = null; preview = null; view.setCursor(null); closeTray(); refresh();
 });
 // the build card is always on the right side (above OPEN STORE), so it's never a modal: no open / close, just tabs.
 let trayTab = 'stocks', panelFolded = false, panelTouched = false;
@@ -693,13 +695,16 @@ function placeBuild() {
   const r = dock.getBoundingClientRect();   // anchored above the WHOLE dock, so it never covers restock / speed / OPEN STORE
   const show = !!game && running && !dock.classList.contains('off') && r.width > 0 && !panelFolded;
   t.classList.toggle('off', !show);
-  if (!show) { if (r.width) document.documentElement.style.setProperty('--bpx', Math.round(innerWidth - r.left + 14) + 'px'); return; }
-  const k = Math.max(0.4, Math.min(1, (r.top - 12 - 58) / BP_H, innerWidth * 0.62 / (BP_W + TAB_W)));
+  if (!show) { if (r.width) document.documentElement.style.setProperty('--bpx', Math.round(innerWidth - r.left + 14) + 'px'); view.setReserve(0); return; }
+  // responsive: the receipt never takes more than ~34% of the screen width (phone / tablet), and never taller than the room above the dock
+  const k = Math.max(0.34, Math.min(1, (r.top - 12 - 58) / BP_H, innerWidth * 0.34 / (BP_W + TAB_W)));
   t.style.setProperty('--k', k.toFixed(4)); t.style.setProperty('--w', (BP_W * k).toFixed(1) + 'px'); t.style.setProperty('--h', (BP_H * k).toFixed(1) + 'px');
   document.documentElement.style.setProperty('--bpx', Math.round((BP_W + TAB_W) * k + Math.max(6, innerWidth - r.right) + 14) + 'px');   // Sara stays left of the card
   t.style.setProperty('--r', Math.max(6, innerWidth - r.right) + 'px'); t.style.setProperty('--b', Math.max(6, innerHeight - r.top + 10) + 'px');
+  view.setReserve((BP_W + TAB_W) * k + Math.max(6, innerWidth - r.right) + 8);   // the store is re-framed in the space LEFT of the receipt
 }
 window.addEventListener('resize', placeBuild);
+window.addEventListener('orientationchange', () => setTimeout(placeBuild, 300));
 function renderTabletStatus() { placeBuild(); }
 
 
@@ -788,11 +793,17 @@ function renderInfo() {
   $('info').classList.add('off');
   if (!game || !running || game.phase === 'lost' || trayOpen()) { hidePop(); return; }
   let html = '', at = null, key = '';
-  if (pickedTower && pickedTower.kind === 'shelf' && game.shelves.includes(pickedTower)) {
+  if (moving && ![...game.towers, ...game.shelves, ...game.traps].includes(moving)) { moving = null; drag = null; preview = null; view.setCursor(null); }
+  if (moving) {   // relocating: touch gets a confirm / cancel right on the target spot; mouse just clicks the spot
+    if (preview && !(drag && drag.on)) {
+      at = [preview.x, preview.y, 1.3];
+      html = `<div class="hd">Move ${ITEMS[moving.type || 'shelf'].name} here?</div><div class="row">${pbtn('mvok', '✔', '', !game.canMove(moving, preview.x, preview.y).ok, 'green')}${pbtn('mvno', '✖', '', false, 'gray')}</div>`;
+    } else { hidePop(); return; }
+  } else if (pickedTower && pickedTower.kind === 'shelf' && game.shelves.includes(pickedTower)) {
     const s = pickedTower, cap = game.capOf(s), uc = game.unitCostOf(s), need = cap - s.units, can = Math.min(need, Math.floor(game.cash / uc));
     at = [s.x, s.y, s.type === 'statue' ? 2.6 : s.type === 'steel' ? 1.7 : 1.5];
     html = `<div class="hd">${ITEMS[s.type || 'shelf'].name} ${cap ? `<small>${s.units}/${cap}</small>` : ''}<div class="bars">${pbar(s.hp / s.maxhp < 0.35 ? 'lo' : '', s.hp / s.maxhp)}</div></div><div class="row">`
-      + (cap ? pbtn('rst', '📦', need === 0 ? 'FULL' : '$' + can * uc, can <= 0, 'green') : '') + (s.placed ? pbtn('sell', '💰', '$' + game.sellValue(s), false, 'red') : '') + '</div>';
+      + (cap ? pbtn('rst', '📦', need === 0 ? 'FULL' : '$' + can * uc, can <= 0, 'green') : '') + (game.canMoveItem(s) ? pbtn('mov', '✥', 'MOVE', false, 'blue') : '') + (s.placed ? pbtn('sell', '💰', '$' + game.sellValue(s), false, 'red') : '') + '</div>';
   } else if (pickedTower && (game.towers.includes(pickedTower) || game.traps.includes(pickedTower))) {
     const t = pickedTower, def = ITEMS[t.type], isT = t.kind === 'tower', up = isT ? game.upgradeCost(t) : 0;
     at = [t.x, t.y, isT ? 1.9 : 0.8];
@@ -804,6 +815,7 @@ function renderInfo() {
       acts += pbtn('upg', '⏫', t.level >= MAX_LEVEL ? 'MAX' : '$' + up, t.level >= MAX_LEVEL || up > game.cash, 'green');
       if (game.needsService(t)) acts += pbtn('svc', '🔧', '$' + game.serviceCost(t), game.serviceCost(t) > game.cash);
     }
+    acts += pbtn('mov', '✥', 'MOVE', false, 'blue');
     acts += pbtn('sell', '💰', '$' + game.sellValue(t), false, 'red');
     if (isT) acts += pbtn('rot', '🔄', 'TURN', false, 'blue');   // rightmost button
     html = `<div class="hd">${def.name} <small>${tag}</small>${bars}</div><div class="row">${acts}</div>`;
@@ -828,8 +840,13 @@ pop.addEventListener('click', e => {
   else if (a === 'rpl') { if (!game.replace(t)) sfx.bad(); }
   else if (a === 'place' && selected && preview) { if (game.canPlace(selected, preview.x, preview.y).ok) { game.place(selected, preview.x, preview.y); noteRecent(selected); noteSkill(selected, false); preview = null; view.setCursor(null); } else sfx.bad(); }
   else if (a === 'cancel') { selected = null; preview = null; pickedTower = null; view.setCursor(null); }
+  else if (a === 'mov') { if (game.canMoveItem(t)) { moving = t; selected = null; preview = null; view.setCursor(null); banner('✥ Tap a new spot (or drag the item)'); } else sfx.bad(); }
+  else if (a === 'mvok') { if (moving && preview && game.move(moving, preview.x, preview.y)) endMove(); else sfx.bad(); }
+  else if (a === 'mvno') { moving = null; preview = null; view.setCursor(null); }
   refresh();
 });
+// finish a move: the item stays picked so its buttons pop up again at the new spot
+function endMove() { pickedTower = moving; moving = null; drag = null; preview = null; view.setCursor(null); sfx.place(); }
 window.addEventListener('resize', () => game && refresh());
 window.addEventListener('orientationchange', () => setTimeout(() => game && refresh(), 250));
 
@@ -839,9 +856,29 @@ cv.addEventListener('pointermove', e => {
   if (e.pointerType !== 'mouse' || !game || !running) return;
   hover = view.pick(e.clientX, e.clientY);
   view.setHover(hover ? (game.towerAt(hover.x, hover.y) || game.shelfAt(hover.x, hover.y) || game.trapAt(hover.x, hover.y)) : null);
-  if (selected && hover) view.setCursor(hover, game.canPlace(selected, hover.x, hover.y).ok, fpOf(selected)); else view.setCursor(null);
+  if (moving && hover) view.setCursor(hover, game.canMove(moving, hover.x, hover.y).ok, fpOf(moving.type));
+  else if (selected && hover) view.setCursor(hover, game.canPlace(selected, hover.x, hover.y).ok, fpOf(selected)); else view.setCursor(null);
   view.setRange(...rangeFor());
 });
+// drag an item (mouse or finger): press the item you already tapped, drag it over the floor, release on the new spot
+cv.addEventListener('pointermove', e => {
+  if (!drag || e.pointerId !== drag.id || !game) return;
+  if (!drag.on && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) < 10) return;
+  if (!drag.on) { drag.on = true; moving = drag.item; hidePop(); }
+  const c = view.pick(e.clientX, e.clientY);
+  preview = c; if (c) view.setCursor(c, game.canMove(moving, c.x, c.y).ok, fpOf(moving.type)); else view.setCursor(null);
+});
+function dragEnd(e, cancel) {
+  if (!drag || e.pointerId !== drag.id) return;
+  const d = drag; drag = null; try { cv.releasePointerCapture(e.pointerId); } catch (_) {}
+  if (!d.on) return;
+  const c = cancel ? null : view.pick(e.clientX, e.clientY);
+  if (c && game.move(d.item, c.x, c.y)) { moving = d.item; endMove(); }
+  else { if (c && !(c.x === d.item.x && c.y === d.item.y)) { sfx.bad(); floatText(c.x, c.y, game.canMove(d.item, c.x, c.y).reason, 'bad'); } moving = null; preview = null; view.setCursor(null); }
+  refresh();
+}
+cv.addEventListener('pointerup', e => dragEnd(e, false));
+cv.addEventListener('pointercancel', e => dragEnd(e, true));
 cv.addEventListener('pointerleave', () => { hover = null; view.setHover(null); if (!preview) view.setCursor(null); });
 cv.addEventListener('pointerdown', e => {
   if (!game || !running || game.phase === 'lost') return;
@@ -849,6 +886,17 @@ cv.addEventListener('pointerdown', e => {
   const c = view.pick(e.clientX, e.clientY);
   if (!c) return;
   const existing = game.towerAt(c.x, c.y) || game.shelfAt(c.x, c.y) || game.trapAt(c.x, c.y);
+  if (moving) {   // tap-to-move: pick the new spot (touch: first tap previews, the ✔ confirms)
+    if (existing === moving) { moving = null; preview = null; view.setCursor(null); refresh(); return; }
+    const touch = e.pointerType !== 'mouse';
+    if (touch && !(preview && preview.x === c.x && preview.y === c.y)) { preview = c; view.setCursor(c, game.canMove(moving, c.x, c.y).ok, fpOf(moving.type)); refresh(); return; }
+    if (game.move(moving, c.x, c.y)) endMove();
+    else { sfx.bad(); floatText(c.x, c.y, game.canMove(moving, c.x, c.y).reason, 'bad'); }
+    refresh(); return;
+  }
+  if (existing && existing === pickedTower && !selected && game.canMoveItem(existing)) {   // already selected: pressing it can start a drag
+    drag = { item: existing, id: e.pointerId, sx: e.clientX, sy: e.clientY, on: false }; try { cv.setPointerCapture(e.pointerId); } catch (_) {}
+  }
   const overShelf = selected && ITEMS[selected].onShelves && existing && existing.kind === 'shelf' && !existing.type;   // the steel shelf is built ON a plain shelf
   if (existing && !overShelf && !(selected && ITEMS[selected].kind === 'trap' && !game.towerAt(c.x, c.y) && !game.shelfAt(c.x, c.y))) {
     pickedTower = existing; preview = null; selected = null; view.setCursor(null); refresh(); return;
@@ -869,8 +917,8 @@ window.addEventListener('keydown', e => {
   if (paused) { if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') $('pause').click(); return; }
   const i = parseInt(e.key, 10);
   const av = available();
-  if (i >= 1 && i <= av.length) { selected = av[i - 1]; pickedTower = null; preview = null; closeTray(); refresh(); }
-  else if (e.key === 'Escape') { selected = null; pickedTower = null; preview = null; view.setCursor(null); refresh(); }
+  if (i >= 1 && i <= av.length) { selected = av[i - 1]; pickedTower = null; moving = null; preview = null; closeTray(); refresh(); }
+  else if (e.key === 'Escape') { selected = null; pickedTower = null; moving = null; drag = null; preview = null; view.setCursor(null); refresh(); }
   else if (e.key === ' ' && (game.phase === 'prep' || game.phase === 'evening')) { e.preventDefault(); $('go').click(); }
   else if (e.key === 'p' || e.key === 'P') $('pause').click();
   else if ((e.key === 't' || e.key === 'T') && pickedTower && pickedTower.kind === 'tower') { if (game.rotate(pickedTower)) { sfx.place(); refresh(); } }
@@ -1067,7 +1115,7 @@ function showLost(again = false) {
     <p style="font-size:18px;color:#ffcf4a">Paycheck: 💰 ${lastPay} <span class="lvl">(banked: ${save.bank})</span></p>
     <div class="row"><button class="pxb gold" id="m-retry">▶ Retry day ${game.wave + 1}</button></div>
     <div class="row" style="margin-top:8px"><button class="pxb" id="m-new">↻ Brand new store</button></div>`);
-  $('m-retry').onclick = () => { game.retryDay(); view.setGame(game); pickedTower = null; preview = null; selected = null; view.setCursor(null); closeModal(); refresh(); };
+  $('m-retry').onclick = () => { game.retryDay(); view.setGame(game); pickedTower = null; moving = null; preview = null; selected = null; view.setCursor(null); closeModal(); refresh(); };
   $('m-new').onclick = () => { save.shifts++; persist(); newStore(true); };
 }
 
