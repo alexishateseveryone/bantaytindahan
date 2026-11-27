@@ -46,7 +46,21 @@ export const STEEL_REFUND = 0.75;   // share of its price a steel shelf pays bac
 export const FRUIT_DMG = 18, FRUIT_RADIUS = 1.15;   // one scattered fruit explosion
 export const STATUE_RANGE = 5;      // the soda statue repairs everything within this many tiles (an 11x11 square around it)
 export const STATUE_HEAL = 0.10;    // share of max HP it restores per second to each damaged item
-export const STATUE_UNIT_HP = 150;  // one unit of statue stock repairs this much HP in total
+export const STATUE_UNIT_HP = 150;
+// ---------- Bosses: one every 10th day, in the LAST wave of the night. They rotate: day 10, 20, 30, 40, then it starts over ----------
+export const BOSS_ORDER = ['bombexpert', 'gunslinger', 'motoduo', 'doorrobber'];
+export const BOSS_INFO = {
+  bombexpert: { title: 'BOMB EXPERT', sub: 'Lobs bombs at your machines and charges in', icon: '💣' },
+  gunslinger: { title: 'GUNSLINGER', sub: 'Shotguns whatever blocks him. Calls 3 fast gunners', icon: '🔫' },
+  motoduo:    { title: 'RIDING IN TANDEM', sub: 'Drives through the door and wrecks everything', icon: '🏍️' },
+  doorrobber: { title: 'DOOR ROBBER', sub: 'His shield door tanks your shots. Slams the floor', icon: '🚪' },
+};
+export const bossForDay = n => (n > 0 && n % 10 === 0) ? BOSS_ORDER[(n / 10 - 1) % BOSS_ORDER.length] : null;
+export const SLAM_DMG = 100;          // Door Robber floor slam: one-shots shelves and machines in the 3x3
+export const GUNNER_DMG = 5, GUNNER_RANGE = 2.4;   // gunners shoot machines that are close to them
+export const TORNADO_TIME = 7, TORNADO_R = 1.25, TORNADO_ITEM_DPS = 20, TORNADO_MAX = 3;
+export const MOTODUO_SMASH = 0.25;   // chance the bike actually wrecks an item it rolls over (it used to be 100%)
+export const MOTODUO_RUSH = 42;       // seconds after it parks: the tandem stops playing around and races for the register  // one unit of statue stock repairs this much HP in total
 
 // ---------- Build cards ----------
 // 'shelf' is the shelf itself: place a new one on the floor. Tap any shelf to restock it.
@@ -68,7 +82,7 @@ export const ITEMS = {
   fridge: { id: 'fridge', kind: 'tower', name: 'Fridge', cost: 230, range: 3.2, dmg: 7, rate: 0.9, iceChance: 0.22, wear: 1 / 110, color: 0x9fd8ee, sale: [4, 7],
     desc: 'Customers buy frozen treats. Shoots milk and ice cream (chill + slow) and sometimes ice cubes that scatter on the floor and freeze burglars.' },
 };
-ITEMS.gum = { id: 'gum', kind: 'tower', name: 'Bubblegum Machine', cost: 120, range: 3.3, dmg: 4.5, rate: 0.55, burst: 5, wear: 1 / 85, color: 0xff7aa2, sale: [3, 5],
+ITEMS.gum = { id: 'gum', kind: 'tower', name: 'Bubblegum Machine', cost: 120, range: 3.3, dmg: 3, rate: 0.55, burst: 5, wear: 1 / 85, color: 0xff7aa2, sale: [3, 5],
   desc: 'Customers buy gumballs. At night it fires 5 gumballs in a row that scatter and bounce across the floor on impact.' };
 ITEMS.cola = { id: 'cola', kind: 'tower', name: 'Cola Dispenser', cost: 150, range: 2.8, dmg: 3, rate: 1.8, splash: 0.65, push: 2.6, soak: 4, soakTime: 2.4, wear: 1 / 130, color: 0xd6262b, sale: [3, 5],
   desc: 'Customers fill a cup. At night it sprays fizzy cola that shoves burglars back and keeps soaking them for damage.' };
@@ -78,7 +92,7 @@ ITEMS.water = { id: 'water', kind: 'tower', name: 'Water Dispenser', cost: 130, 
   desc: 'Customers fill a cup. At night it lobs 3 drops of water that each splash an area and slow burglars. Slow, but wide.' };
 ITEMS.donut = { id: 'donut', kind: 'tower', name: 'Donut Tray', cost: 140, range: 3.6, dmg: 13, rate: 0.75, count: 3, speed: 9, back: 0.9, wear: 1 / 105, color: 0xff7aa2, sale: [3, 5],
   desc: 'Customers grab a donut. At night it throws 3 donuts in a row; a donut that hits a burglar flies back to the tray like a boomerang, hitting again on the way.' };
-ITEMS.cereal = { id: 'cereal', kind: 'tower', name: 'Cereal Shelf', cost: 110, range: 3.6, dmg: 14, rate: 0.65, boxHp: 60, boxLife: 5, wear: 1 / 100, color: 0xff9f1c, sale: [3, 5],
+ITEMS.cereal = { id: 'cereal', kind: 'tower', name: 'Cereal Shelf', cost: 110, range: 3.6, dmg: 14, rate: 0.4, boxHp: 60, boxLife: 5, wear: 1 / 100, color: 0xff9f1c, sale: [3, 5],
   desc: 'Customers grab a box. At night it lobs a giant cereal box ahead of the burglars. It stands as a wall for 5 seconds: they must walk around or smash it.' };
 ITEMS.tissue = { id: 'tissue', kind: 'tower', name: 'Tissue Dispenser', cost: 120, range: 4.5, dmg: 14, rate: 1.1, speed: 9.5, chill: 0.4, chillTime: 1.6, wear: 1 / 110, color: 0x8fb4e8, sale: [2, 4],
   desc: 'Customers pull a tissue. Only fires along its own row or column (never omni): a roll of tissue unrolls down the lane and pierces EVERY burglar on it.' };
@@ -103,7 +117,7 @@ export const SKILLS = ['mop', 'shakecola', 'cigs'];
 // Day one: only the shelf, the vending machine and the bubble gum machine. Everything else has to be reached (a day) AND bought (store profit).
 export const BASE_UNLOCKS = ['shelf', 'cans', 'gum'];
 // Unlocking is paid with the run's own cash (store profit), from the build menu. Each run starts with only the base items.
-export const UNLOCKS = { shakecola: 90, cigs: 130, fence: 20, mop: 30, fruit: 45, sauce: 60, steel: 75, soda: 80, hotdog: 100, cola: 110, micro: 130, atm: 145, statue: 150, fridge: 160, tissue: 105, cereal: 100, water: 115, donut: 120 };
+export const UNLOCKS = { fence: 300, fruit: 400, sauce: 500, mop: 500, soda: 600, steel: 800, shakecola: 900, hotdog: 1000, cola: 1000, water: 1200, cereal: 1200, tissue: 1500, donut: 1800, micro: 1800, cigs: 2000, atm: 2500, fridge: 2500, statue: 3000 };
 // The first day each item can be bought, ordered by how strong it is for its price (cheap helpers first, the big machines last):
 // 2 items one day, 1 item the next, and so on. Before that day it is locked and cannot be bought, after it you still have to pay its price.
 export const UNLOCK_DAY = {
@@ -144,7 +158,12 @@ export const ENEMIES = {
   molotov:{ name: 'Molotov', hp: 40,  push: 10, speed: 1.3,  steal: 1, bounty: 9,  armor: 0, cost: 2, abil: { molo: 4, dash: 1 }, cd: 5 },
   moto:   { name: 'Motor Bandit', hp: 50, push: 0, speed: 4, steal: 0, bounty: 10, armor: 1, cost: 3, abil: {}, cd: 99 },
   bat:    { name: 'Bat',     hp: 110, push: 24, speed: 1.1,  steal: 2, bounty: 14, armor: 1, cost: 3, abil: { smash: 1 }, cd: 3.2 },
-  boss:   { name: 'Mastermind', hp: 520, push: 70, speed: 0.95, steal: 5, bounty: 80, armor: 2, cost: 0, abil: { bomb: 3, dash: 2 }, cd: 3.5, dashMul: 1.6 },
+  // ----- BOSSES (boss: true). bk = a custom behaviour handled in bossAct() -----
+  bombexpert: { name: 'Bomb Expert', hp: 520, push: 70, speed: 0.95, steal: 5, bounty: 80, armor: 2, cost: 0, abil: { bomb: 3, dash: 2 }, cd: 3.5, dashMul: 1.6, boss: true },
+  gunslinger: { name: 'Gunslinger', hp: 600, push: 50, speed: 1.0, steal: 5, bounty: 90, armor: 2, cost: 0, abil: {}, cd: 99, boss: true, bk: 'gunslinger' },
+  gunner:     { name: 'Gunner', hp: 30, push: 6, speed: 3.6, steal: 1, bounty: 5, armor: 0, cost: 0, abil: {}, cd: 99, bk: 'gunner' },
+  motoduo:    { name: 'Riding in Tandem', hp: 700, push: 0, speed: 3.2, steal: 5, bounty: 100, armor: 2, cost: 0, abil: {}, cd: 99, boss: true, bk: 'motoduo', noSlow: true },
+  doorrobber: { name: 'Door Robber', hp: 650, push: 60, speed: 0.8, steal: 6, bounty: 100, armor: 3, cost: 0, abil: {}, cd: 5, boss: true, bk: 'doorrobber', shield: 0.7 },
 };
 
 // ---------- Restock upgrades (random per night) ----------
@@ -188,7 +207,6 @@ export const UPGRADES = [
   { id: 'bestseller', icon: '📈', name: 'Bestseller', desc: 'Customers spend 35% more on every purchase.', apply: g => g.mods.shelfPay *= 1.35 },
   { id: 'rush', icon: '🛒', name: 'Rush Hour', desc: '30% more customers each morning.', apply: g => g.mods.crowd *= 1.3 },
   { id: 'bolts', icon: '🔩', name: 'Bolted Down', desc: 'All shelves +60% HP (heals them).', apply: g => { g.mods.shelfHp *= 1.6; g.shelves.forEach(s => { s.maxhp *= 1.6; s.hp = s.maxhp; }); } },
-  { id: 'till', icon: '🧾', name: 'Till Insurance', desc: '+3 Till.', apply: g => { g.lives += 3; g.maxLives += 3; } },
   { id: 'sign', icon: '⚠️', name: 'Wet Floor Sign', desc: 'Mops last +8 slips and stun longer.', apply: g => { g.mods.mopUses += 8; g.mods.mopStun += 0.4; g.traps.forEach(t => t.uses += 8); } },
   { id: 'lucky', icon: '🎟️', name: 'Lucky Scratcher', desc: '+12% chance to crit (x2) with all towers.', apply: g => g.mods.crit += 0.12 },
   { id: 'overtime', icon: '⏫', name: 'Overtime', desc: 'Free level-up on a random tower.', apply: g => { const c = g.towers.filter(t => t.kind === 'tower' && t.level < MAX_LEVEL); const t = c[Math.floor(g.rng() * c.length)]; if (t) { t.level++; g.emit('upgrade', { tower: t }); } }, avail: g => g.towers.some(t => t.kind === 'tower' && t.level < MAX_LEVEL) },
@@ -197,7 +215,6 @@ export const UPGRADES = [
 // ---------- Permanent "paycheck" upgrades ----------
 export const META = [
   { id: 'cash', icon: '💵', name: 'Petty Cash Advance', desc: '+$15 starting cash / level', max: 5, cost: l => 20 + l * 20 },
-  { id: 'lives', icon: '🧾', name: 'Till Insurance', desc: '+2 Till / level', max: 3, cost: l => 40 + l * 40 },
   { id: 'dmg', icon: '💪', name: 'Gym Membership', desc: '+6% tower damage / level', max: 5, cost: l => 30 + l * 25 },
   { id: 'disc', icon: '🏷️', name: 'Employee Discount Card', desc: '-4% build costs / level', max: 4, cost: l => 35 + l * 30 },
   { id: 'choice', icon: '📦', name: 'Supplier Connections', desc: '+1 restock card to choose from', max: 2, cost: l => 80 + l * 90 },
@@ -242,7 +259,7 @@ export class Game {
     this.phase = 'prep';
     this.wave = 0;                  // nights completed
     this.cash = START_CASH + 15 * (meta.cash || 0);
-    this.maxLives = 15 + 2 * (meta.lives || 0);
+    this.maxLives = 1;   // one life only: the first burglar that reaches the till ends the run
     this.lives = this.maxLives;
     this.kills = 0; this.served = 0; this.sales = 0; this.daySales = 0; this.dayServed = 0; this.paidOut = 0;
     this.rerolls = meta.reroll || 0;
@@ -257,7 +274,7 @@ export class Game {
     // blocked: 0 free, 1 permanent wall/prop, 2 tower, 3 shelf (breakable by burglars)
     this.blocked = new Uint8Array(COLS * ROWS);
     this.towers = []; this.traps = []; this.enemies = []; this.projectiles = []; this.customers = []; this.walkers = [];
-    this.fires = []; this.bombs = []; this.ice = []; this.swirls = []; this.skills = []; this.fruits = []; this.donuts = []; this.rolls = [];   // sauce puddles, enemy bombs waiting to blow, scattered ice cubes, ATM receipt whirlwinds
+    this.fires = []; this.bombs = []; this.ice = []; this.swirls = []; this.skills = []; this.fruits = []; this.donuts = []; this.rolls = []; this.tornados = [];   // sauce puddles, enemy bombs waiting to blow, scattered ice cubes, ATM receipt whirlwinds
     this.shelves = []; this.obstacles = [];
     this.spawnQueue = []; this.waveTime = 0; this.waveTotal = 0; this.subWave = 1; this.subWaves = 1; this.gapT = 0;
     this.dayQueue = []; this.dayTime = 0; this.walkT = 0.5; this.dayWalk = 0;
@@ -750,7 +767,7 @@ export class Game {
       case 'evening': return { icon: '🌆', text: hm(18) };
       case 'wave': {
         const left = this.enemies.length + this.spawnQueue.length;
-        const p = this.waveTotal ? 1 - left / this.waveTotal : 0;
+        const p = this.waveTotal ? Math.max(0, Math.min(1, 1 - left / this.waveTotal)) : 0;
         return { icon: '🌙', text: hm(22 + 7 * p) };
       }
       case 'won': return { icon: '🌅', text: hm(6) };
@@ -919,7 +936,8 @@ export class Game {
     const count = Math.max(1, Math.round(6 * Math.pow(2, this.tierOf(n)) * scale));
     const list = [];
     for (let i = 0; i < count; i++) list.push(pool[Math.floor(this.rng() * pool.length)]);
-    if (boss && n % 10 === 0) list.splice(Math.floor(list.length * 0.55), 0, 'boss');   // a Mastermind every 10th night
+    const bk = boss ? bossForDay(n) : null;
+    if (bk) list.splice(Math.floor(list.length * 0.55), 0, bk);   // a boss every 10th night, in the last wave: Bomb Expert, Gunslinger, Riding in Tandem, Door Robber
     const gap = Math.max(0.6, 1.25 - n * 0.05);
     let t = 0; const q = [];
     const sp = this.activeSpawns;
@@ -945,9 +963,9 @@ export class Game {
 
   // at = optional exact start (motor riders jumping off the bike): { x, y, tx, ty, hop }
   spawnEnemy(type, s, at) {
-    const def = ENEMIES[type], n = this.wave + 1, out = type === 'moto' ? 5.5 : 0.9;
+    const def = ENEMIES[type], n = this.wave + 1, out = (type === 'moto' || type === 'motoduo') ? 5.5 : 0.9;
     const tier = this.tierOf(n);
-    const hpMul = (type === 'boss' ? 1 + 0.18 * (n - 1) : 1 + 0.15 * (n - 1)) * (1 + 0.35 * tier);   // +35% HP per tier
+    const hpMul = (def.boss ? 1 + 0.18 * (n - 1) : 1 + 0.15 * (n - 1)) * (1 + 0.35 * tier);   // +35% HP per tier
     const e = {
       id: this.nextId++, type, x: at ? at.x : s.x + s.ox * out, y: at ? at.y : s.y + s.oy * out, hp: def.hp * hpMul, maxhp: def.hp * hpMul,
       speed: def.speed * 0.88 * Math.min(1.5, 1 + 0.06 * tier), push: def.push * (1 + 0.2 * tier), pushT: 0, armor: def.armor + Math.floor((tier + 1) / 2), steal: def.steal, bounty: Math.round(def.bounty * (1 + 0.1 * tier)), tier,   // faster, shove harder, tougher armor, a bit more bounty
@@ -955,6 +973,12 @@ export class Game {
       jitter: (this.rng() - 0.5) * 0.0, route: Math.floor(Math.random() * ROUTES),
       flee: 0, wind: 0, pending: null, dash: null, abCd: def.cd * (0.5 + this.rng() * 0.8) * (1.15 - 0.03 * n), dashMul: def.dashMul || 1,
     };
+    e.boss = !!def.boss; e.bk = def.bk || null;
+    if (def.shield) { e.shield = e.shieldMax = e.maxhp * def.shield; }   // Door Robber: the door soaks shots until it breaks
+    if (e.bk === 'gunslinger') { e.sumCd = 2.5; e.gunFor = null; e.gunT = 0; }
+    if (e.bk === 'gunner') e.gunCd = 0.4 + this.rng() * 0.6;
+    if (e.bk === 'motoduo') { e.ms = 'enter'; e.mt = 0; e.mh = Math.atan2(-s.ox, -s.oy); e.angle = e.mh; e.life = 0; e.door = s; e.cycle = 0; e.hitSlow = 0; e.sumCd = 0; e.wp = null; e.wpT = 0; e.pk = null; e.tornDone = false; e.parked = false; e.spin = false; }
+    if (e.boss && !at) this.emit('bossSpawn', { enemy: e, info: BOSS_INFO[type] });
     if (type === 'moto') { e.moto = 'ride'; e.mdx = -s.ox; e.mdy = -s.oy; e.angle = Math.atan2(e.mdx, e.mdy); e.door = s; e.crossed = false; }
     if (at && at.hop) { e.hop = { t: 0.5, max: 0.5, sx: at.x, sy: at.y }; e.angle = Math.atan2(at.tx - at.x, at.ty - at.y); e.air = 0; }
     this.enemies.push(e);
@@ -967,6 +991,16 @@ export class Game {
     let crit = false;
     if (this.mods.crit > 0 && this.rng() < this.mods.crit) { dmg *= 2; crit = true; }
     if (!pierce) dmg = Math.max(1, dmg - e.armor);
+    if (e.shield > 0) {   // the shield door tanks it (burning / soaking / swirls go straight through)
+      e.shield -= dmg; e.flash = 0.05;
+      this.emit('shieldHit', { enemy: e, x: e.x, y: e.y });
+      if (e.shield <= 0) {
+        const over = -e.shield; e.shield = 0; e.speed *= 1.2; e.abCd = Math.min(e.abCd, 1.5);
+        this.emit('shieldBreak', { enemy: e, x: e.x, y: e.y });
+        if (over > 0) { e.hp -= over; if (e.hp <= 0) this.kill(e); }
+      }
+      return;
+    }
     e.hp -= dmg; e.flash = 0.12;
     this.emit('hit', { x: e.x, y: e.y, crit });
     if (e.hp <= 0) this.kill(e);
@@ -1069,7 +1103,7 @@ export class Game {
     if (e.dead) return;
     if (patch) { if (e.iced.has(patch.id)) return; e.iced.add(patch.id); }
     if (e.noSlow) { this.emit('immune', { enemy: e }); return; }   // the puffer jacket shrugs off the cold
-    e.stun = Math.max(e.stun, e.type === 'boss' ? 0.5 : 1.2);
+    e.stun = Math.max(e.stun, e.boss ? 0.5 : 1.2);
     e.dash = null; e.wind = 0; e.pending = null;
     this.chill(e, 0.5, 2.2);
     this.emit('freeze', { enemy: e });
@@ -1156,7 +1190,7 @@ export class Game {
       if (e.dead) continue;
       this.drench(e, def.soak * this.mods.globalDmg, def.soakTime);
       const a = this.rng() * Math.PI * 2, nx = d > 0.05 ? dx / d : Math.cos(a), ny = d > 0.05 ? dy / d : Math.sin(a);   // straight away from the bottle
-      this.shove(e, nx, ny, def.push * (1 - 0.5 * d / def.radius) * (e.type === 'boss' ? 0.35 : 1), 9);
+      this.shove(e, nx, ny, def.push * (1 - 0.5 * d / def.radius) * (e.boss ? 0.35 : 1), 9);
       e.dash = null; e.wind = 0; e.pending = null;
     }
     this.emit('colaBlast', { x: sk.x, y: sk.y, r: def.radius });
@@ -1186,6 +1220,7 @@ export class Game {
     this.emit('cigBoom', { x: p.tx, y: p.ty, r: def.radius });
   }
   applyKnock(e, dt) {
+    if (e.bk === 'motoduo') { e.kvx = 0; e.kvy = 0; return; }   // a motorbike doesn't get shoved
     if (!e.kvx && !e.kvy) return;
     const nx = e.x + e.kvx * dt, ny = e.y + e.kvy * dt, cx = Math.round(nx), cy = Math.round(ny);
     if (cx < 0 || cy < 0 || cx >= COLS || cy >= ROWS || this.blocked[idx(cx, cy)] !== 0) { e.kvx = 0; e.kvy = 0; return; }   // never shove them through walls, shelves or machines
@@ -1202,7 +1237,7 @@ export class Game {
       this.damage(o, o === e ? p.dmg : p.dmg * 0.5);
       if (o.dead) continue;
       this.drench(o, dps, def.soakTime);
-      this.shove(o, p.dx, p.dy, def.push * (this.mods.push ?? 1) * (o.type === 'boss' ? 0.3 : 1));
+      this.shove(o, p.dx, p.dy, def.push * (this.mods.push ?? 1) * (o.boss ? 0.3 : 1));
     }
     this.emit('colaSplash', { x: hx, y: hy, r: def.splash });
   }
@@ -1358,7 +1393,7 @@ export class Game {
     for (const e of sorted) {
       const c = this.cerealCell(e, pending); if (!c) continue;
       this.projectiles.push({ id: this.nextId++, kind: 'cereal', lob: true, arc: 1.6, x: sx, y: sy, h: 1.2, h0: 1.2, sx, sy, d0: Math.max(0.3, Math.hypot(c.x - sx, c.y - sy)),
-        target: null, tx: c.x, ty: c.y, speed: 5, dmg, level: t.level, dx: 0, dy: 0, variant: Math.floor(this.rng() * 4) });
+        target: null, tx: c.x, ty: c.y, speed: 3.6, dmg, level: t.level, dx: 0, dy: 0, variant: Math.floor(this.rng() * 4) });
       this.emit('shoot', { tower: t });
       return true;
     }
@@ -1476,7 +1511,7 @@ export class Game {
       this.damage(e, p.dmg);
       if (e.dead) continue;
       this.ignite(e, p.burnDps, def.burnTime);
-      if (this.rng() < def.panic * (e.type === 'boss' ? 0.3 : 1)) {   // burning burglars may panic and run back toward the door
+      if (this.rng() < def.panic * (e.boss ? 0.3 : 1)) {   // burning burglars may panic and run back toward the door
         e.flee = 1.5 + this.rng(); e.dash = null; e.wind = 0; e.pending = null;
         this.emit('panic', { enemy: e });
       }
@@ -1648,6 +1683,13 @@ export class Game {
   // called when a burglar arrives on a cell and its trick timer is up
   startTrick(e) {
     const n = this.wave + 1, def = ENEMIES[e.type];
+    if (e.bk === 'doorrobber') {   // floor slam: marks a 3x3 and brings the door down on it
+      e.abCd = def.cd * (0.8 + this.rng() * 0.5) * Math.pow(0.92, this.tierOf(n)) * (e.shield > 0 ? 1 : 0.7);
+      const c = this.slamTarget(e); if (!c) { e.abCd = 1.2; return false; }
+      e.pending = { kind: 'slam', cx: c.x, cy: c.y }; e.angle = Math.atan2(c.x - e.x, c.y - e.y); e.wind = 0.95;
+      this.emit('slamWarn', { x: c.x, y: c.y, t: e.wind, enemy: e });
+      this.emit('windup', { enemy: e, kind: 'slam' }); return true;
+    }
     // bombers are rare early on and get more common every night (none before night 4)
     const bombMul = n < 4 ? 0 : Math.min(2.2, 0.2 + (n - 4) * 0.22);
     const wb = (def.abil.bomb || 0) * bombMul, wd = def.abil.dash || 0, wm = def.abil.molo || 0, ws = def.abil.smash || 0, tot = wb + wd + wm + ws;
@@ -1682,6 +1724,8 @@ export class Game {
     if (p.kind === 'bomb') this.throwBomb(e, p.tx, p.ty);
     else if (p.kind === 'molo') this.throwMolotov(e, p.tx, p.ty);
     else if (p.kind === 'smash') this.smash(e, p.tgt);
+    else if (p.kind === 'slam') this.slam(e, p.cx, p.cy);
+    else if (p.kind === 'summon') this.summonGunners(e, p.n);
     else { e.dash = { dx: p.dx, dy: p.dy, left: p.n, speed: 8.5 }; this.emit('dash', { enemy: e }); }
   }
   endDash(e, stun = 0.35) { e.dash = null; e.stun = Math.max(e.stun, stun); }
@@ -1705,6 +1749,192 @@ export class Game {
     else if (b === 3) { const sh = this.shelfAt(nx, ny); if (sh) { sh.hp -= dmg; sh.hit = 0.25; if (sh.hp <= 0) this.breakShelf(sh); } }
     this.emit('dashHit', { enemy: e, x: nx, y: ny, kind: b });
     this.endDash(e, 0.8);
+  }
+
+
+  // ================= BOSSES =================
+  // returns true when the boss is busy (the normal walk is skipped this frame)
+  bossAct(e, dt) {
+    switch (e.bk) {
+      case 'gunner': return this.gunnerAct(e, dt);
+      case 'gunslinger': {
+        if (e.wind > 0) return false;
+        e.sumCd -= dt;
+        if (e.sumCd <= 0) {
+          const alive = this.enemies.filter(o => !o.dead && o.owner === e.id).length, n = Math.min(3, 6 - alive);
+          e.sumCd = n > 0 ? 18 : 3;
+          if (n > 0) { e.pending = { kind: 'summon', n }; e.wind = 0.8; e.angle = Math.PI; this.emit('windup', { enemy: e, kind: 'summon' }); return true; }
+        }
+        return false;
+      }
+      case 'motoduo': this.motoBoss(e, dt); return true;
+    }
+    return false;
+  }
+  freeCellsAround(cx, cy) {
+    const ok = (x, y) => x >= 0 && y >= 0 && x < COLS && y < ROWS && !this.reserved(x, y) && this.blocked[idx(x, y)] === 0 && !this.isTill(x, y);
+    const cand = [];
+    for (const [dx, dy] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]]) if (ok(cx + dx, cy + dy)) cand.push([cx + dx, cy + dy]);
+    for (let i = cand.length - 1; i > 0; i--) { const j = Math.floor(this.rng() * (i + 1)); [cand[i], cand[j]] = [cand[j], cand[i]]; }
+    return cand;
+  }
+  // ---------- Gunslinger ----------
+  // whatever blocks his way (a shelf, a cereal box, a fence...) is shot: one shotgun blast, guaranteed destroyed
+  gunslingerBlast(e, sh, dt) {
+    if (e.gunFor !== sh) { e.gunFor = sh; e.gunT = 0.45; this.emit('aim', { enemy: e, x: sh.x, y: sh.y }); }
+    e.pushing = sh; e.angle = Math.atan2(sh.x - e.x, sh.y - e.y);
+    e.gunT -= dt;
+    if (e.gunT > 0) return;
+    this.emit('shotgun', { enemy: e, x: e.x, y: e.y, tx: sh.x, ty: sh.y });
+    if (this.shelves.includes(sh)) { sh.hp = 0; this.breakShelf(sh); }
+    e.gunFor = null; e.pushing = null; e.stun = Math.max(e.stun, 0.3);
+  }
+  summonGunners(e, n) {
+    const cells = this.freeCellsAround(Math.round(e.x), Math.round(e.y));
+    for (let i = 0; i < n; i++) {
+      const c = cells.length ? cells[i % cells.length] : [e.tx, e.ty];
+      const g = this.spawnEnemy('gunner', this.activeSpawns[0] || this.spawns[0], { x: e.x, y: e.y, tx: c[0], ty: c[1], hop: true });
+      g.owner = e.id;
+    }
+    this.emit('summon', { enemy: e, x: e.x, y: e.y, label: 'GUNNERS!' });
+  }
+  // gunners run fast and shoot any machine close to them
+  gunnerAct(e, dt) {
+    e.gunCd -= dt;
+    if (e.gunCd > 0 || e.hop || e.stun > 0) return false;
+    let best = null, bd = GUNNER_RANGE;
+    for (const t of this.towers) { if (t.kind !== 'tower' || t.broken) continue; const d = Math.hypot(t.x - e.x, t.y - e.y); if (d < bd) { bd = d; best = t; } }
+    if (!best) { e.gunCd = 0.2; return false; }
+    e.gunCd = 1.0 + this.rng() * 0.4;
+    this.emit('gunShot', { enemy: e, x: e.x, y: e.y, tx: best.x, ty: best.y });
+    this.hurtTower(best, GUNNER_DMG);
+    return false;   // and keeps running
+  }
+  // ---------- Door Robber ----------
+  // the 3x3 that covers the most machines / shelves near him (center cell)
+  slamTarget(e) {
+    const items = [...this.towers.filter(t => t.kind === 'tower' && !t.broken), ...this.shelves];
+    let best = null, bs = 0;
+    for (const it of items) {
+      if (this.shelfNear(it, e.x, e.y) > 3.2 && Math.hypot(it.x - e.x, it.y - e.y) > 3.2) continue;
+      const cx = Math.max(1, Math.min(COLS - 2, it.x)), cy = Math.max(1, Math.min(ROWS - 2, it.y));
+      let n = 0;
+      for (const o of items) if (this.cellsOf(o).some(([x, y]) => Math.abs(x - cx) <= 1 && Math.abs(y - cy) <= 1)) n++;
+      const sc = n * 10 - Math.hypot(cx - e.x, cy - e.y);
+      if (sc > bs || !best) { bs = sc; best = { x: cx, y: cy }; }
+    }
+    return best;
+  }
+  slam(e, cx, cy) {
+    const inBox = (x, y) => Math.abs(x - cx) <= 1 && Math.abs(y - cy) <= 1;
+    for (const t of [...this.towers]) if (t.kind === 'tower' && !t.broken && inBox(t.x, t.y)) this.hurtTower(t, SLAM_DMG);
+    for (const s of [...this.shelves]) if (this.cellsOf(s).some(([x, y]) => inBox(x, y))) { s.hp -= SLAM_DMG; s.hit = 0.3; if (s.hp <= 0) this.breakShelf(s); }
+    for (const tr of [...this.traps]) if (inBox(tr.x, tr.y)) { this.traps = this.traps.filter(x => x !== tr); this.emit('trapGone', { trap: tr }); }
+    this.refreshPaths();
+    this.emit('slam', { enemy: e, x: cx, y: cy });
+    e.stun = Math.max(e.stun, 0.6);
+  }
+  // ---------- Riding in Tandem ----------
+  roamBounds() {
+    const B = { x0: 0, y0: 0, x1: COLS - 1, y1: ROWS - 1 };
+    for (const sd of [this.counterSide, this.doorSide]) { if (sd === 'left') B.x0 = 1; else if (sd === 'right') B.x1 = COLS - 2; else if (sd === 'top') B.y0 = 1; else B.y1 = ROWS - 2; }
+    return B;
+  }
+  motoSteer(e, tx, ty, dt, turn, sp) {
+    let d = Math.atan2(tx - e.x, ty - e.y) - e.mh; d = Math.atan2(Math.sin(d), Math.cos(d));
+    e.mh += Math.max(-turn * dt, Math.min(turn * dt, d));
+    e.x += Math.sin(e.mh) * sp * dt; e.y += Math.cos(e.mh) * sp * dt; e.angle = e.mh;
+  }
+  // everything the bike touches is destroyed: machines, shelves, cereal boxes, mops
+  motoSmash(e) {
+    const pts = [[e.x, e.y], [e.x + Math.sin(e.mh) * 0.55, e.y + Math.cos(e.mh) * 0.55]];
+    if (!e.smashMem) e.smashMem = {};
+    for (const [px, py] of pts) {
+      const cx = Math.round(px), cy = Math.round(py);
+      if (cx < 0 || cy < 0 || cx >= COLS || cy >= ROWS || this.reserved(cx, cy)) continue;
+      const b = this.blocked[idx(cx, cy)];
+      if (b !== 2 && b !== 3) continue;
+      const key = cx + ',' + cy;
+      if (e.smashMem[key] !== undefined && e.life - e.smashMem[key] < 4) continue;   // already rolled for this tile: roll again only after a few seconds
+      e.smashMem[key] = e.life;
+      if (this.rng() >= MOTODUO_SMASH) { e.hitSlow = 0.15; continue; }               // it clips the item and swerves on: nothing breaks
+      if (b === 2) { const t = this.towerAt(cx, cy); if (t) { t.hp = 0; t.broken = null; this.breakTower(t, 'destroyed'); } }
+      else { const sh = this.shelfAt(cx, cy); if (sh) this.breakShelf(sh); }
+      this.emit('bossSmash', { enemy: e, x: cx, y: cy }); e.hitSlow = 0.3;
+    }
+    for (const tr of [...this.traps]) if (Math.hypot(tr.x - e.x, tr.y - e.y) < 0.6) { this.traps = this.traps.filter(x => x !== tr); this.emit('trapGone', { trap: tr }); }
+  }
+  motoWaypoint(e, B) {
+    const items = [...this.towers.filter(t => t.kind === 'tower'), ...this.shelves];
+    if (items.length && this.rng() < 0.15) { const it = items[Math.floor(this.rng() * items.length)]; e.wp = { x: it.x, y: it.y }; }
+    else e.wp = { x: B.x0 + this.rng() * (B.x1 - B.x0), y: B.y0 + this.rng() * (B.y1 - B.y0) };
+    e.wpT = 3.5;
+  }
+  summonMotos(e, n) {
+    const alive = this.enemies.filter(o => !o.dead && o.type === 'moto').length;
+    n = Math.min(n, 6 - alive);
+    for (let i = 0; i < n; i++) this.spawnEnemy('moto', this.activeSpawns[Math.floor(this.rng() * this.activeSpawns.length)]);
+    if (n > 0) this.emit('summon', { enemy: e, x: e.x, y: e.y, label: 'MOTOR ROBBERS!' });
+  }
+  spawnTornado(x, y) {
+    if (this.tornados.length >= TORNADO_MAX) this.tornados.shift();
+    this.tornados.push({ id: this.nextId++, x, y, t: TORNADO_TIME, max: TORNADO_TIME, r: TORNADO_R, tick: 0, wt: 0, dx: 0, dy: 0 });
+    this.emit('tornado', { x, y });
+  }
+  // state machine: enter -> goPark -> parked (calls 2 motor robbers) -> roam -> spin (dust tornado) -> roam -> park ... -> rush the register
+  motoBoss(e, dt) {
+    e.life += dt; e.mt -= dt; e.wpT -= dt;
+    if (e.hitSlow > 0) e.hitSlow -= dt;
+    const B = this.roamBounds(), sp = e.speed * (e.hitSlow > 0 ? 0.45 : 1);
+    e.spin = false; e.parked = false;
+    const inside = e.x >= B.x0 && e.x <= B.x1 && e.y >= B.y0 && e.y <= B.y1;
+    if (e.ms !== 'enter' && e.ms !== 'rush') { e.x = Math.max(B.x0, Math.min(B.x1, e.x)); e.y = Math.max(B.y0, Math.min(B.y1, e.y)); }
+    if (e.ms === 'enter') {   // straight through the door
+      if (!e.crossed && (e.x - e.door.x) * -e.door.ox + (e.y - e.door.y) * -e.door.oy >= 0) { e.crossed = true; this.emit('doorCrash', { x: e.door.x, y: e.door.y, side: e.door.side }); }
+      e.x += Math.sin(e.mh) * sp * 1.7 * dt; e.y += Math.cos(e.mh) * sp * 1.7 * dt;
+      if (inside) { e.ms = 'goPark'; const c = this.freeCellsAround(Math.round(B.x0 + this.rng() * (B.x1 - B.x0)), Math.round(B.y0 + this.rng() * (B.y1 - B.y0)))[0]; e.pk = c ? { x: c[0], y: c[1] } : { x: e.x, y: e.y }; }
+    } else if (e.ms === 'goPark') {
+      this.motoSteer(e, e.pk.x, e.pk.y, dt, 4, sp);
+      if (Math.hypot(e.pk.x - e.x, e.pk.y - e.y) < 0.3) { e.ms = 'parked'; e.mt = 2.6; this.emit('park', { enemy: e, x: e.x, y: e.y }); this.summonMotos(e, 2); }
+    } else if (e.ms === 'parked') {
+      e.parked = true;
+      if (e.mt <= 0) { e.ms = 'roam'; e.mt = 8; this.motoWaypoint(e, B); }
+    } else if (e.ms === 'roam') {   // free driving: it turns any way it likes
+      if (!e.wp || e.wpT <= 0 || Math.hypot(e.wp.x - e.x, e.wp.y - e.y) < 0.6) this.motoWaypoint(e, B);
+      this.motoSteer(e, e.wp.x, e.wp.y, dt, 3.4, sp);
+      if (e.mt <= 0) { e.ms = 'spin'; e.mt = 1.7; e.tornDone = false; this.emit('spinStart', { enemy: e, x: e.x, y: e.y }); }
+    } else if (e.ms === 'spin') {   // rotate attack: the bike whirls on the spot and kicks up a dust tornado
+      e.spin = true; e.mh += 13 * dt; e.angle = e.mh;
+      if (!e.tornDone && e.mt <= 1.0) { e.tornDone = true; this.spawnTornado(e.x, e.y); }
+      if (e.mt <= 0) { e.spin = false; e.cycle++; if (e.cycle % 2 === 0) { e.ms = 'goPark'; const c = this.freeCellsAround(Math.round(B.x0 + this.rng() * (B.x1 - B.x0)), Math.round(B.y0 + this.rng() * (B.y1 - B.y0)))[0]; e.pk = c ? { x: c[0], y: c[1] } : { x: e.x, y: e.y }; } else { e.ms = 'roam'; e.mt = 8; this.motoWaypoint(e, B); } }
+    } else if (e.ms === 'rush') {
+      let till = this.tills[0], bd = 1e9;
+      for (const t of this.tills) { const d = Math.hypot(t.x - e.x, t.y - e.y); if (d < bd) { bd = d; till = t; } }
+      this.motoSteer(e, till.x, till.y, dt, 5, sp * 1.5);
+      if (bd < 0.7) { e.dead = true; this.lives -= e.steal; this.emit('leak', { enemy: e }); return; }
+    }
+    if (e.ms !== 'rush' && e.ms !== 'enter' && e.life > MOTODUO_RUSH + 8) { e.ms = 'rush'; this.emit('summon', { enemy: e, x: e.x, y: e.y, label: 'GOING FOR THE TILL!' }); }
+    if (e.ms !== 'enter' && !e.parked) this.motoSmash(e);
+    e.tx = Math.max(0, Math.min(COLS - 1, Math.round(e.x))); e.ty = Math.max(0, Math.min(ROWS - 1, Math.round(e.y)));
+  }
+  stepTornados(dt) {
+    for (const tn of this.tornados) {
+      tn.t -= dt; tn.wt -= dt;
+      if (tn.wt <= 0) {   // drifts towards the nearest machine or shelf
+        tn.wt = 1.2; let best = null, bd = 6;
+        for (const it of [...this.towers.filter(t => t.kind === 'tower' && !t.broken), ...this.shelves]) { const d = Math.hypot(it.x - tn.x, it.y - tn.y); if (d < bd && d > 0.3) { bd = d; best = it; } }
+        const a = best ? Math.atan2(best.y - tn.y, best.x - tn.x) + (this.rng() - 0.5) * 0.8 : this.rng() * Math.PI * 2;
+        tn.dx = Math.cos(a) * 1.3; tn.dy = Math.sin(a) * 1.3;
+      }
+      tn.x = Math.max(1, Math.min(COLS - 2, tn.x + tn.dx * dt)); tn.y = Math.max(1, Math.min(ROWS - 2, tn.y + tn.dy * dt));
+      tn.tick += dt;
+      if (tn.tick >= 0.4) {
+        tn.tick -= 0.4; const dmg = TORNADO_ITEM_DPS * 0.4;
+        for (const t of [...this.towers]) if (t.kind === 'tower' && !t.broken && Math.hypot(t.x - tn.x, t.y - tn.y) <= tn.r + 0.3) this.hurtTower(t, dmg);
+        for (const s of [...this.shelves]) if (this.shelfNear(s, tn.x, tn.y) <= tn.r + 0.3) { s.hp -= dmg; s.hit = 0.3; if (s.hp <= 0) this.breakShelf(s); }
+      }
+    }
+    this.tornados = this.tornados.filter(t => t.t > 0);
   }
 
   // ---------- Main update ----------
@@ -1817,7 +2047,7 @@ export class Game {
     this.projectiles = this.projectiles.filter(p => !p.done);
     this.stepDonuts(dt); this.stepRolls(dt); this.stepBoxes(dt);
     // sauce puddles keep burglars burning; bombs on the floor count down
-    this.stepFoeFires(dt);
+    this.stepFoeFires(dt); this.stepTornados(dt);
     for (const f of this.fires) {
       f.t -= dt;
       if (f.foe) continue;   // molotov fire hurts the store, not the burglars
@@ -1836,7 +2066,7 @@ export class Game {
       for (const e of this.enemies) {
         const dx = s.x - e.x, dy = s.y - e.y, d = Math.hypot(dx, dy);
         if (e.dead || d > s.r) continue;
-        const ux = d > 0.01 ? dx / d : 0, uy = d > 0.01 ? dy / d : 0, w = e.type === 'boss' ? 0.4 : 1;
+        const ux = d > 0.01 ? dx / d : 0, uy = d > 0.01 ? dy / d : 0, w = e.boss ? 0.4 : 1;
         this.shove(e, (ux * 4 - uy * 5) * dt, (uy * 4 + ux * 5) * dt, w);   // pull in + spin around
         this.chill(e, 0.4, 0.3);
         e.hp -= s.dps * dt; e.flash = Math.max(e.flash || 0, 0.04);
@@ -1894,7 +2124,7 @@ export class Game {
     if (e.stun > 0) { e.stun -= dt; return; }
     // traps
     for (const tr of this.traps) {
-      if (tr.uses > 0 && !e.slipped.has(tr.id) && Math.hypot(e.x - tr.x, e.y - tr.y) < 0.5) {
+      if (e.bk !== 'motoduo' && tr.uses > 0 && !e.slipped.has(tr.id) && Math.hypot(e.x - tr.x, e.y - tr.y) < 0.5) {
         e.slipped.add(tr.id); tr.uses--; e.stun = 0.8 + this.mods.mopStun;
         e.dash = null; e.wind = 0; e.pending = null;
         this.emit('slip', { enemy: e, trap: tr });
@@ -1903,9 +2133,10 @@ export class Game {
         return;
       }
     }
+    if (e.bk && this.bossAct(e, dt)) return;
     if (e.wind > 0) { e.wind -= dt; if (e.wind <= 0) this.doTrick(e); return; }   // winding up a bomb throw / dash
     if (e.dash) { this.dashStep(e, dt); return; }
-    e.pushing = null;
+    const wasPush = e.pushing; e.pushing = null; if (!wasPush) e.gunFor = null;
     const fleeing = e.flee > 0;
     let move = e.speed * (e.slow > 0 ? 1 - e.slowF : 1) * (fleeing ? 1.45 : 1) * dt;
     let guard = 0;
@@ -1932,6 +2163,7 @@ export class Game {
       }
       if (!best) { if (fleeing) { e.flee = 0; continue; } return; }   // cornered panic -> calm down
       const sh = this.blocked[idx(best[0], best[1])] === 3 ? this.shelfAt(best[0], best[1]) : null;
+      if (sh && e.bk === 'gunslinger') { this.gunslingerBlast(e, sh, dt); return; }   // he doesn't shove: he shoots it
       if (sh) {   // nowhere else to go: shove the shelf until it breaks
         e.pushing = sh; e.angle = Math.atan2(best[0] - cx, best[1] - cy);
         sh.hp -= e.push * dt; sh.hit = 0.12;
@@ -1978,7 +2210,7 @@ export class Game {
     this.room = s.room; setRoom(s.room);
     this.permit = s.permit ?? (s.room ? PERMIT_FOR_RENO[s.room - 1] : 1);   // older saves: just enough permit for the size they already have
     if (!o.retry) { this.seed = s.seed; this.rng = mulberry32(s.seed); this.rng.set(s.rng); this.paidOut = s.paidOut; }
-    this.wave = s.wave; this.cash = s.cash; this.lives = s.lives; this.maxLives = s.maxLives;
+    this.wave = s.wave; this.cash = s.cash; this.maxLives = 1; this.lives = Math.min(1, s.lives);   // older saves had a stack of Till: it is one life now
     this.kills = s.kills; this.served = s.served; this.sales = s.sales; this.rerolls = s.rerolls;
     this.unlocked = new Set(s.unlocked); this.mods = c(s.mods); this.nextId = Math.max(this.nextId, s.nextId);
     {   // saves made before the Bubblegum / Cola / ATM machines don't have their modifiers yet
@@ -1991,7 +2223,7 @@ export class Game {
     this.blocked = new Uint8Array(COLS * ROWS);
     for (const sh of this.shelves) for (const [cx, cy] of this.cellsOf(sh)) this.blocked[idx(cx, cy)] = 3;
     for (const t of this.towers) this.blocked[idx(t.x, t.y)] = 2;
-    this.enemies = []; this.projectiles = []; this.fires = []; this.bombs = []; this.ice = []; this.swirls = []; this.skills = []; this.fruits = []; this.donuts = []; this.rolls = []; this.customers = []; this.walkers = [];
+    this.enemies = []; this.projectiles = []; this.fires = []; this.bombs = []; this.ice = []; this.swirls = []; this.skills = []; this.fruits = []; this.donuts = []; this.rolls = []; this.tornados = []; this.customers = []; this.walkers = [];
     this.spawnQueue = []; this.gapT = 0; this.subWave = 1; this.subWaves = 1; this.dayQueue = []; this.waveTime = 0; this.dayTime = 0; this.waveTotal = 0; this.nightIn = 0;
     this.phase = s.phase; this.daySnap = null;
     this.choices = (s.choices || []).map(id => UPGRADES.find(u => u.id === id)).filter(Boolean);
@@ -2005,7 +2237,7 @@ export class Game {
     if (this.phase !== 'lost') return false;
     if (this.daySnap) this.restore(this.daySnap, { retry: true });
     else {
-      this.enemies = []; this.projectiles = []; this.fires = []; this.bombs = []; this.ice = []; this.swirls = []; this.skills = []; this.fruits = []; this.donuts = []; this.rolls = []; this.customers = []; this.walkers = [];
+      this.enemies = []; this.projectiles = []; this.fires = []; this.bombs = []; this.ice = []; this.swirls = []; this.skills = []; this.fruits = []; this.donuts = []; this.rolls = []; this.tornados = []; this.customers = []; this.walkers = [];
       this.spawnQueue = []; this.gapT = 0; this.subWave = 1; this.subWaves = 1; this.dayQueue = []; this.waveTime = 0; this.dayTime = 0; this.phase = 'prep';
     }
     this.lives = this.maxLives;
