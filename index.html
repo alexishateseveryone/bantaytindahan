@@ -94,7 +94,6 @@
   #pauseMenu .pxb { padding:16px; font-size:18px; }
   @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
   #hud { z-index:7; }
-  #subTabs { margin:-2px 0 10px; } #tray #subTabs .tab { padding:8px 18px; font-size:13px; }
   #skillSlots { position:absolute; left:max(12px, env(safe-area-inset-left)); bottom:max(12px, env(safe-area-inset-bottom)); display:flex; gap:8px; z-index:5; }
   #skillSlots .slot { width:64px; height:64px; position:relative; border-radius:14px; background:rgba(34,24,18,.85); border:2px solid rgba(255,255,255,.18); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; cursor:pointer; color:#fff; font:700 12px/1 var(--cf); padding:0; box-shadow:0 3px 0 rgba(0,0,0,.5); touch-action:manipulation; }
   #skillSlots .slot img { width:36px; height:36px; image-rendering:pixelated; }
@@ -116,25 +115,9 @@
   @keyframes titlePop { 0% { transform:translateY(-50%) scale(1); opacity:1; } 100% { transform:translateY(-50%) scale(1.6); opacity:0; } }
   #pause.on { background:linear-gradient(180deg,#ffe98a,#ffc233); color:#5a3a00; box-shadow:0 4px 0 #d9962a; }
   #go { padding:16px 14px; min-width:150px; font-size:9px; line-height:1.6; }
-  #buildBtn { width:68px; height:68px; padding:0; display:grid; place-items:center; position:relative; }
-  #buildBtn img { width:44px; height:44px; image-rendering:pixelated; }
-  #buildBtn img.pxe { width:36px; height:36px; margin:0; }
-  #buildBtn kbd { position:absolute; right:7px; bottom:5px; font:400 7px/1 var(--pf); color:#5a3b00; }
 
-  /* ---- build menu: a centered modal with tabs, smooth pop in / out ---- */
-  #trayBack { position:absolute; inset:0; background:rgba(10,6,3,.5); z-index:4; opacity:1; transition:opacity .25s ease; }
-  #tray { position:absolute; left:50%; top:50%; width:min(580px, calc(100% - 24px)); max-height:calc(100% - 28px); overflow:auto; z-index:5; --c:rgba(30,21,16,.97); padding:14px;
-    transform:translate(-50%,-50%) scale(1); opacity:1; transition:transform .32s cubic-bezier(.2,.9,.3,1.15), opacity .22s ease; will-change:transform, opacity; }
-  #tray.hide { opacity:0; transform:translate(-50%,-44%) scale(.88); pointer-events:none; }
-  #trayBack.hide { opacity:0; pointer-events:none; }
-  #tray .hd { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:12px; }
   .tabs { display:flex; gap:8px; }
   .tab { padding:10px 14px; opacity:.7; transition:opacity .15s, filter .15s; } .tab.on { --c:var(--gold); color:#2a1d00; opacity:1; }
-  #trayGrid { display:flex; gap:10px; overflow-x:auto; overflow-y:hidden; scroll-snap-type:x proximity; padding:2px 2px 10px; -webkit-overflow-scrolling:touch; scrollbar-width:thin; scrollbar-color:#a8703f #120c08; }
-  #trayGrid::-webkit-scrollbar { height:10px; } #trayGrid::-webkit-scrollbar-track { background:#120c08; } #trayGrid::-webkit-scrollbar-thumb { background:#a8703f; }
-  #renoPane { padding:6px 4px 2px; } #renoPane .big { font:400 18px/1.3 var(--pf); color:var(--gold); margin:6px 0 4px; } #renoPane p { margin:6px 0; font-size:21px; color:#efe4d3; }
-  #renoPane .grid { display:flex; gap:6px; margin:10px 0; } #renoPane .cell { width:16px; height:16px; background:#4c3a2e; } #renoPane .cell.on { background:var(--green); }
-  #renoPane .pxb { width:100%; padding:14px; font-size:10px; margin-top:8px; }
   .card { flex:0 0 205px; scroll-snap-align:start; display:flex; flex-direction:column; align-items:stretch; gap:8px; padding:12px; text-align:left; --c:var(--card2); }
   .card img { width:72px; height:72px; image-rendering:pixelated; align-self:center; }
   .card .nm { font:400 9px/1.5 var(--pf); color:var(--gold); } .card .k { color:var(--dim); font:400 7px/1 var(--pf); margin-left:6px; }
@@ -169,25 +152,11 @@
   @media (orientation:portrait) { #rotate { display:flex; } }
   @media (max-height:430px) {
     #title { padding:14px 16px; } #title p, #title .stats { display:none; } #title .btns { margin-top:10px; }
-    #buildBtn { width:56px; height:56px; } #buildBtn img { width:36px; height:36px; } #go { padding:12px 10px; min-width:120px; }
+    #go { padding:12px 10px; min-width:120px; }
     .card img { width:32px; height:32px; } .card { gap:8px; padding:6px 8px; }
     #info .d { font-size:17px; }
   }
 
-  /* ---- build menu: premium cartoony style (smooth, rounded, not pixelated) ---- */
-  #tray, #tray .pxb, #tray .card { clip-path:none; -webkit-font-smoothing:antialiased; font-smooth:auto; }
-  #tray { border-radius:32px; padding:16px 16px 12px; font-family:var(--cf);
-    background:linear-gradient(160deg,#6a4a38 0%,#43302a 55%,#2b1d17 100%); border:3px solid rgba(255,255,255,.2);
-    box-shadow:0 22px 60px rgba(0,0,0,.6), inset 0 3px 0 rgba(255,255,255,.2), inset 0 -6px 0 rgba(0,0,0,.18); }
-  #tray .hd { margin-bottom:14px; }
-  #tray .tab { font:600 15px/1 var(--cf); letter-spacing:.6px; border-radius:999px; padding:12px 22px; background:rgba(255,255,255,.12); color:#e9e3ff; box-shadow:none; opacity:1; }
-  #tray .tab:hover:not(.on) { background:rgba(255,255,255,.2); }
-  #tray .tab.on { background:linear-gradient(180deg,#ffe98a,#ffc233); color:#5a3a00; box-shadow:0 4px 0 #d9962a, 0 8px 16px rgba(255,194,51,.35); }
-  #tray #trayClose { border-radius:50%; width:38px !important; height:38px !important; font:700 17px/1 var(--cf); background:rgba(255,255,255,.14); box-shadow:none; }
-  #tray #trayClose:hover { background:#ff7a2e; }
-  #trayGrid { gap:14px; padding:6px 6px 16px; scrollbar-color:#ffb36b rgba(255,255,255,.1); }
-  #trayGrid::-webkit-scrollbar { height:12px; } #trayGrid::-webkit-scrollbar-track { background:rgba(255,255,255,.1); border-radius:99px; }
-  #trayGrid::-webkit-scrollbar-thumb { background:linear-gradient(90deg,#ffb36b,#ff9a3c); border-radius:99px; border:2px solid transparent; background-clip:padding-box; }
 
   .card { flex:0 0 218px; border-radius:28px; padding:16px 14px 14px; gap:10px; color:#7a5a40;
     background:linear-gradient(180deg,#fffaf0 0%,#ffe9cf 100%); border:3px solid #fff;
@@ -213,7 +182,6 @@
   #renoPane .big { font:700 26px/1.2 var(--cf); color:#ffd23f; }
   #renoPane p { font:500 17px/1.35 var(--cf); color:#f6ecdc; }
   #renoPane .cell { border-radius:6px; width:22px; height:22px; background:rgba(255,255,255,.15); } #renoPane .cell.on { background:linear-gradient(180deg,#8cf0c3,#35cf92); }
-  #renoPane .pxb { border-radius:99px; font:700 17px/1 var(--cf); padding:16px; color:#fff; background:linear-gradient(180deg,#ffb36b,#ff7a2e); box-shadow:0 5px 0 #c25a14; text-shadow:0 2px 0 rgba(110,40,0,.35); }
   #renoPane .pxb.gold { background:linear-gradient(180deg,#ffe58a,#ffbe2e); color:#5a3a00; text-shadow:none; box-shadow:0 5px 0 #d6932a; }
   #renoPane .pxb:disabled { opacity:.5; }
   @media (max-height:430px) {
@@ -251,8 +219,6 @@
   .bar i { border-radius:99px; background-image:none; }
 
   #go { font:700 17px/1.2 var(--cf); padding:16px 22px; min-width:156px; border-radius:26px; }
-  #buildBtn { border-radius:26px; }
-  #buildBtn img { image-rendering:pixelated; }
 
   .float { font:700 17px/1 var(--cf); text-shadow:0 2px 0 rgba(0,0,0,.7), 0 0 6px rgba(0,0,0,.5); animation:up .95s ease-out forwards; }
   #banner { font:700 clamp(18px,3vw,30px)/1.3 var(--cf); text-shadow:0 3px 0 rgba(0,0,0,.6), 0 0 14px rgba(0,0,0,.5); letter-spacing:.5px; }
@@ -277,16 +243,10 @@
   .pxb { box-shadow:0 4px 0 rgba(0,0,0,.35); backdrop-filter:none; }
   .pxb.gold { box-shadow:0 4px 0 #d9962a; } .pxb.red { box-shadow:0 4px 0 #c7343c; } .pxb.green { box-shadow:0 4px 0 #209a6b; }
   .pxb:active:not(:disabled) { box-shadow:0 1px 0 rgba(0,0,0,.35); }
-  #tray .tab { box-shadow:none; } #tray .tab.on { box-shadow:0 4px 0 #d9962a; } #tray #trayClose { box-shadow:none; }
   .card .pxb { box-shadow:0 5px 0 #c25a14; } .card .pxb.gold { box-shadow:0 5px 0 #d6932a; } .card .pxb.green { box-shadow:0 5px 0 #209a6b; }
   .card .pxb:active:not(:disabled) { box-shadow:0 1px 0 rgba(0,0,0,.25); }
-  #renoPane .pxb { box-shadow:0 5px 0 #c25a14; } #renoPane .pxb.gold { box-shadow:0 5px 0 #d6932a; }
   /* ---- paycheck shop tab + frameless title (no container, no paycheck button on the main screen) ---- */
   .tabs { flex-wrap:wrap; }
-  #tray .tab { padding:12px 18px; }
-  #shopPane { font-family:var(--cf); padding:2px 2px 6px; }
-  #shopPane .sub { color:#f0e5d4; }
-  #shopPane .choice { color:#fff7e0; }
   #title, #title.px { background:none !important; border:0 !important; box-shadow:none !important; border-radius:0 !important; padding:0 !important; clip-path:none !important; backdrop-filter:none; }
   #title h1 { text-shadow:0 4px 0 rgba(0,0,0,.65), 0 0 18px rgba(0,0,0,.65); }
   #title h2, #title p, #title .stats { color:#fff3dc; text-shadow:0 2px 0 rgba(0,0,0,.7), 0 0 10px rgba(0,0,0,.7); }
@@ -312,7 +272,6 @@
     #restockAll { padding:8px 12px; font-size:13px; }
     #dock { gap:6px; } #dockTop, #dockBot { gap:6px; }
     #go { padding:10px 12px; min-width:112px; font-size:14px; border-radius:20px; }
-    #buildBtn { width:54px; height:54px; border-radius:20px; } #buildBtn img { width:34px; height:34px; } #buildBtn img.pxe { width:28px; height:28px; } #buildBtn kbd { display:none; }
     #skillSlots { gap:6px; }
     #skillSlots .slot { width:50px; height:50px; border-radius:12px; font-size:11px; } #skillSlots .slot img { width:28px; height:28px; }
     #banner { top:12%; font-size:clamp(16px,4.2vh,24px); }
@@ -325,8 +284,15 @@
     #pop .pi { min-width:48px; min-height:48px; }
     #rotate { font-size:16px; }
   }
-  @media (max-height:520px) and (pointer:coarse) { #tray .tHome { touch-action:manipulation; } }
   @media (max-width:640px) and (orientation:landscape) { .chip { padding:5px 9px; font-size:13px; } #clock small { display:none; } }
+
+  /* CDN icons are vector: never pixelate them */
+  .pxe { image-rendering:pixelated !important; }
+  /* restock + game speed sit right beside OPEN STORE, in one row */
+  #dock { flex-direction:row; align-items:stretch; gap:10px; }
+  #dockTop, #dockBot { align-items:stretch; gap:10px; }
+  #dock #restockAll { flex:none; padding:10px 16px; }
+  #dock .pxb.sq { width:auto !important; height:auto !important; min-width:52px; padding:0 14px; border-radius:99px; font-size:17px; }
 </style>
 </head>
 <body>
@@ -341,14 +307,7 @@
       <button class="pxb sq" id="pause" title="Pause (P)">❚❚</button>
     </div>
     <div id="info" class="px off"></div>
-    <div id="trayBack" class="off hide"></div>
-    <div id="tray" class="px off hide">
-      <div class="hd"><div class="tabs"><button class="pxb tab on" id="tabStocks">STOCKS</button><button class="pxb tab" id="tabReno">RENOVATE</button><button class="pxb tab" id="tabShop">PAYCHECK SHOP</button></div><button class="pxb sq" id="trayClose" style="width:30px;height:30px">X</button></div>
-      <div id="subTabs" class="tabs"><button class="pxb tab on" id="subSell">SELLABLES</button><button class="pxb tab" id="subSkill">SKILL ITEMS</button></div>
-      <div id="trayGrid"></div>
-      <div id="renoPane" class="off"></div>
-      <div id="shopPane" class="off"></div>
-    </div>
+    <div id="tray" class="off"></div>
     <div id="skillSlots" class="off"></div>
     <div id="dock" class="off">
       <div id="dockTop">
@@ -357,7 +316,6 @@
       </div>
       <div id="dockBot">
         <button id="go" class="pxb gold">OPEN STORE</button>
-        <button id="buildBtn" class="pxb gold" title="Build (B)"><img id="buildIcon" alt=""><kbd>B</kbd></button>
       </div>
     </div>
     <div id="pauseMenu" class="off">
