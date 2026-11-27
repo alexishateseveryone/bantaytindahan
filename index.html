@@ -60,7 +60,7 @@
   .float { position:absolute; transform:translate(-50%,-50%); font:400 9px/1 var(--pf); color:var(--gold); text-shadow:2px 2px 0 #000; animation:up .9s steps(9) forwards; white-space:nowrap; }
   .float.bad { color:var(--red); } .float.sale { color:#fff2a0; } .float.good { color:var(--green); }
   @keyframes up { to { transform:translate(-50%,-260%); opacity:0; } }
-  #banner { position:absolute; left:0; right:0; top:16%; text-align:center; pointer-events:none; font:400 clamp(12px,2.6vw,22px)/1.4 var(--pf); color:var(--gold); text-shadow:3px 3px 0 #000; opacity:0; }
+  #banner { position:fixed; z-index:9999; left:0; right:0; top:max(64px, 16%); padding:0 12px; text-align:center; pointer-events:none; font:400 clamp(12px,2.6vw,22px)/1.4 var(--pf); color:var(--gold); text-shadow:3px 3px 0 #000; opacity:0; }
   #banner.show { animation:ban 1.8s steps(12); }
   @keyframes ban { 0% { opacity:0; transform:scale(.7);} 15%,70% { opacity:1; transform:scale(1);} 100% { opacity:0; } }
 
