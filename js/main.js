@@ -1,7 +1,7 @@
 // UI, input, save data, audio and the main loop
-import { Game, ITEMS, BUILD_ORDER, SKILLS, META, ROOM_UPGRADE, UNLOCKS, MAX_LEVEL, MAX_STOCK, MAX_ROOM, ROOM_BASE, ROOM_STEP, RENO_COST, STATUE_RANGE, MAX_PERMIT, PERMIT_FOR_RENO, ITEM_LIMITS, UNLOCK_DAY } from './game.js';
+import { Game, ITEMS, BUILD_ORDER, SKILLS, META, ROOM_UPGRADE, UNLOCKS, MAX_LEVEL, MAX_STOCK, MAX_ROOM, ROOM_BASE, ROOM_STEP, RENO_COST, STATUE_RANGE, MAX_PERMIT, PERMIT_FOR_RENO, ITEM_LIMITS, UNLOCK_DAY, BOSS_INFO } from './game.js';
 import { View } from './view.js';
-import { pxText, setHTML, pxEmoji, pxifyStatic } from './ui/pixel.js';
+import { pxText, setHTML, pxEmoji, pxifyStatic } from './ui/icons.js';
 import { loader } from './loadingscreen.js';   // install screen on phones, loading screen otherwise
 
 const $ = id => document.getElementById(id);
@@ -119,6 +119,16 @@ const sfx = {
   boom: () => { noise(0.65, 0.16, { f: 700, type: 'lowpass', q: 0.7, slide: -550 }); tone(62, 0.55, 'sine', 0.17, -36); tone(40, 0.4, 'square', 0.06, -10, 0.03); },
   dash: () => { noise(0.2, 0.05, { f: 700, q: 1.5, slide: 1800 }); tone(180, 0.16, 'sawtooth', 0.04, 500); },
   tick: () => tone(1250, 0.04, 'square', 0.025),
+  // --- bosses ---
+  bossHorn: () => { tone(98, 0.9, 'sawtooth', 0.08, -20); tone(147, 0.9, 'square', 0.05, -30, 0.02); tone(73, 1.1, 'sawtooth', 0.07, -10, 0.25); noise(0.6, 0.05, { f: 400, type: 'lowpass', delay: 0.1 }); },
+  shotgun: () => { noise(0.35, 0.16, { f: 1100, q: 0.5, type: 'lowpass', slide: -800 }); tone(70, 0.3, 'sawtooth', 0.12, -40); tone(2200, 0.05, 'square', 0.04, -1500); noise(0.12, 0.06, { f: 4000, type: 'highpass', delay: 0.32 }); tone(480, 0.05, 'square', 0.03, -200, 0.4); },   // BOOM... chk-chk
+  gunShot: () => { if (gate('gunShot', 60)) { noise(0.08, 0.07, { f: 1800, q: 0.7, slide: -1200 }); tone(300, 0.07, 'square', 0.05, -220); } },
+  summon: () => { arp([392, 330, 262], 0.09, 0.18, 'sawtooth', 0.04); noise(0.3, 0.04, { f: 1500, q: 1, slide: 1500 }); },
+  slamWarn: () => { tone(110, 0.8, 'sawtooth', 0.04, 90); arp([330, 330, 330], 0.2, 0.08, 'square', 0.03, false); },
+  slam: () => { noise(0.7, 0.18, { f: 500, type: 'lowpass', q: 0.7, slide: -380 }); tone(48, 0.7, 'sine', 0.2, -22); tone(95, 0.3, 'square', 0.1, -60); noise(0.2, 0.08, { f: 1500, delay: 0.02 }); },
+  clink: () => { if (gate('clink', 60)) { tone(1700, 0.05, 'square', 0.035, -300); tone(2400, 0.07, 'triangle', 0.025, -400, 0.02); noise(0.03, 0.03, { f: 5000, type: 'highpass' }); } },
+  engine: () => { if (gate('engine', 250)) { tone(70, 0.3, 'sawtooth', 0.05, 40); tone(105, 0.3, 'square', 0.025, 50); } },
+  whirl: () => { noise(0.8, 0.07, { f: 500, q: 1.3, slide: 1800 }); tone(220, 0.8, 'triangle', 0.04, 500, 0, true); },
   thud: () => { tone(105, 0.13, 'square', 0.07, -55); noise(0.05, 0.04, { f: 500, type: 'lowpass' }); },
   warn: () => { tone(740, 0.08, 'square', 0.04); tone(740, 0.08, 'square', 0.04, 0, 0.12); },
   wave: () => { for (let i = 0; i < 2; i++) { tone(660, 0.17, 'square', 0.045, 0, i * 0.4); tone(880, 0.17, 'square', 0.045, 0, i * 0.4 + 0.19); } tone(110, 0.8, 'sawtooth', 0.04, -30); },
@@ -192,7 +202,7 @@ function newStore(fresh = false) {
   running = false; selected = null; pickedTower = null; preview = null; speed = 1;
   $('speed').textContent = '1x'; setPaused(false);
   $('hud').classList.add('off'); $('info').classList.add('off'); $('dock').classList.add('off'); $('skillSlots').classList.add('off'); closeTray(); setTab('stocks'); $('title').classList.remove('off', 'pop'); $('stage').classList.add('menu'); $('t-restart').classList.toggle('off', !save.run);
-  closeModal(); hideTarot(); buildCards(); refresh(); tutStop();
+  closeModal(); hideTarot(); buildCards(); refresh(); tutStop(); hideBossBanner(true);
 }
 
 function startRun() {
@@ -253,6 +263,48 @@ function shootOne(x, y) {
 }
 function banner(t) { const b = $('banner'); b.innerHTML = pxText(t); b.classList.remove('show'); void b.offsetWidth; b.classList.add('show'); }
 
+
+// ---------- boss banner: just the boss name and its health bar, bottom centre. No plate, no warning, no subtitle ----------
+const bbCss = document.createElement('style');
+bbCss.textContent = `
+#bossBanner{position:fixed;bottom:calc(14px + env(safe-area-inset-bottom));left:50%;z-index:40;pointer-events:none;display:none;transform:translateX(-50%);width:min(340px,64vw);text-align:center;image-rendering:pixelated;font-family:var(--cf)}
+#bossBanner.on{display:block;animation:bbIn .25s steps(4) both}
+#bossBanner.out{animation:bbOut .25s steps(4) both}
+@keyframes bbIn{from{transform:translate(-50%,160%)}to{transform:translate(-50%,0)}}
+@keyframes bbOut{from{transform:translate(-50%,0)}to{transform:translate(-50%,160%)}}
+#bossBanner .bbName{font-size:clamp(12px,3vw,17px);color:#fff;line-height:1.1;margin-bottom:7px;text-shadow:2px 0 #0d0b1d,-2px 0 #0d0b1d,0 2px #0d0b1d,0 -2px #0d0b1d,2px 2px #0d0b1d,-2px -2px #0d0b1d,2px -2px #0d0b1d,-2px 2px #0d0b1d}
+#bossBanner .bbBar{height:12px;background:#3a0f16;box-shadow:0 0 0 3px #0d0b1d}
+#bossBanner .bbFill{height:100%;width:100%;background:#ff3b3b;transition:width .25s steps(6)}
+#bossBanner .bbShield{height:5px;margin-top:6px;background:#222;box-shadow:0 0 0 3px #0d0b1d;display:none}
+#bossBanner .bbShield i{display:block;height:100%;width:100%;background:#9ad7ff;transition:width .2s steps(5)}`;
+document.head.appendChild(bbCss);
+const bossBanner = document.createElement('div'); bossBanner.id = 'bossBanner';
+bossBanner.innerHTML = '<div class="bbName"></div><div class="bbBar"><div class="bbFill"></div></div><div class="bbShield"><i></i></div>';
+document.body.appendChild(bossBanner);
+const bb = { ref: null, timer: null, hide: null, hp: -1, sh: -1 };
+function showBossBanner(e, info) {
+  if (!info) return;
+  clearTimeout(bb.timer); clearTimeout(bb.hide);
+  bb.ref = e; bb.hp = bb.sh = -1;
+  const q = s => bossBanner.querySelector(s);
+  q('.bbName').innerHTML = pxText(info.icon + ' ' + info.title);
+  q('.bbShield').style.display = e.shield > 0 ? 'block' : 'none';
+  bossBanner.classList.remove('out', 'on'); void bossBanner.offsetWidth; bossBanner.classList.add('on');
+}
+function hideBossBanner(now = false) {
+  clearTimeout(bb.timer); clearTimeout(bb.hide); bb.ref = null;
+  if (!bossBanner.classList.contains('on')) return;
+  if (now) { bossBanner.classList.remove('on', 'out'); return; }
+  bossBanner.classList.add('out'); bb.hide = setTimeout(() => bossBanner.classList.remove('on', 'out'), 460);
+}
+function bossBannerTick() {
+  const e = bb.ref; if (!e) return;
+  if (!game || e.dead || !game.enemies.includes(e) || game.phase === 'lost') { hideBossBanner(); return; }
+  const hp = Math.round(Math.max(0, e.hp / e.maxhp) * 100), sh = e.shieldMax ? Math.round(Math.max(0, e.shield / e.shieldMax) * 100) : -1;
+  if (hp !== bb.hp) { bb.hp = hp; bossBanner.querySelector('.bbFill').style.width = hp + '%'; }
+  if (sh !== bb.sh) { bb.sh = sh; const row = bossBanner.querySelector('.bbShield'); row.style.display = sh > 0 ? 'block' : 'none'; row.firstChild.style.width = Math.max(0, sh) + '%'; }
+}
+
 function onEvent(type, d) {
   view.onEvent(type, d);
   switch (type) {
@@ -289,20 +341,33 @@ function onEvent(type, d) {
     case 'newDay': banner(`☀ Day ${d.n} — restock and open up`); break;
     case 'shelfBreak': sfx.crash(); floatText(d.shelf.x, d.shelf.y, 'Shelf smashed!', 'bad', 1.4); break;
     case 'shoot': sfx.shoot(d.tower.type); break;
-    case 'kill': sfx.kill(); floatText(d.enemy.x, d.enemy.y, '+$' + d.cash); break;
-    case 'leak': sfx.leak(); floatText(d.enemy.x, d.enemy.y, '-' + d.enemy.steal + ' 🧾', 'bad'); break;
+    case 'kill': sfx.kill(); floatText(d.enemy.x, d.enemy.y, '+$' + d.cash); if (d.enemy === bb.ref) { floatText(d.enemy.x, d.enemy.y, 'BOSS DOWN!', 'good', 2.4); sfx.win(); hideBossBanner(); } break;
+    case 'bossSpawn': sfx.bossHorn(); showBossBanner(d.enemy, d.info); break;
+    case 'aim': sfx.tick(); floatText(d.x, d.y, '🎯', 'bad', 1.3); break;
+    case 'shotgun': sfx.shotgun(); break;
+    case 'gunShot': sfx.gunShot(); break;
+    case 'summon': sfx.summon(); floatText(d.x, d.y, d.label, 'bad', 2.4); break;
+    case 'slamWarn': sfx.slamWarn(); break;
+    case 'slam': sfx.slam(); floatText(d.x, d.y, 'SLAM!', 'bad', 1.9); break;
+    case 'shieldHit': sfx.clink(); break;
+    case 'shieldBreak': sfx.crash(); floatText(d.x, d.y, 'Shield broken!', 'good', 2.4); break;
+    case 'park': sfx.engine(); floatText(d.x, d.y, '🏍️ parked', 'bad', 2.2); break;
+    case 'spinStart': sfx.whirl(); floatText(d.x, d.y, '🌪️ !', 'bad', 2.2); break;
+    case 'tornado': sfx.swirl(); break;
+    case 'bossSmash': sfx.crash(); sfx.thud(); break;
+    case 'leak': if (d.enemy === bb.ref) hideBossBanner(); sfx.leak(); floatText(d.enemy.x, d.enemy.y, '-' + d.enemy.steal + ' 🧾', 'bad'); break;
     case 'pulse': sfx.pulse(); break;
     case 'sauceSplash': sfx.splat(); break;
-    case 'panic': floatText(d.enemy.x, d.enemy.y, 'Aaah!', 'bad', 1.5); break;
+    case 'panic': break;
     case 'windup': sfx.tick(); break;
     case 'throw': sfx.whistle(); floatText(d.enemy.x, d.enemy.y, d.kind === 'molo' ? '🔥 !' : '💣 !', 'bad', 1.4); break;
-    case 'molotovSplash': sfx.splat(); if (d.fueled) floatText(d.x, d.y, '🔥 Spreading!', 'bad', 1.6); break;
+    case 'molotovSplash': sfx.splat(); break;
     case 'doorCrash': sfx.crash(); floatText(d.x, d.y, '🏍️ CRASH!', 'bad', 1.8); break;
     case 'motoCrash': sfx.crash(); if (d.kind >= 2) sfx.thud(); break;
     case 'riders': floatText(d.x, d.y, '2 robbers!', 'bad', 1.6); break;
     case 'smash': sfx.thud(); break;
-    case 'deflect': sfx.bounce(); floatText(d.x, d.y, 'Deflected!', 'bad', 1.4); break;
-    case 'immune': floatText(d.enemy.x, d.enemy.y, 'Immune!', 'bad', 1.2); break;
+    case 'deflect': sfx.bounce(); break;
+    case 'immune': break;
     case 'dash': sfx.dash(); break;
     case 'dashHit': if (d.kind >= 2) sfx.thud(); break;
     case 'explode': sfx.boom(); break;
@@ -316,12 +381,12 @@ function onEvent(type, d) {
     case 'waveStart': sfx.wave(); banner(d.subs > 1 ? `🌙 Night ${d.n} — wave 1/${d.subs}` : `🌙 Night ${d.n} — burglars!`); break;
     case 'subClear': sfx.win(); banner(`Wave ${d.sub}/${d.subs} cleared — next one in ${d.gap}s`); break;
     case 'subWave': sfx.wave(); banner(d.sub === d.subs ? `🌙 Final wave ${d.sub}/${d.subs}!` : `🌙 Wave ${d.sub}/${d.subs}`); break;
-    case 'waveClear': bankProgress(); sfx.win(); banner('Clear! +$' + d.bonus); break;
-    case 'freeze': sfx.freeze(); floatText(d.enemy.x, d.enemy.y, '🧊 Frozen!', 'good', 1.5); break;
+    case 'waveClear': hideBossBanner(); bankProgress(); sfx.win(); banner('Clear! +$' + d.bonus); break;
+    case 'freeze': sfx.freeze(); break;
     case 'bounce': sfx.bounce(); break;
-    case 'retry': banner(`☀ Day ${d.n} again — you've got this`); break;
+    case 'retry': hideBossBanner(true); banner(`☀ Day ${d.n} again — you've got this`); break;
     case 'restock': setTimeout(showRestock, 900); break;
-    case 'lost': sfx.lost(); setTimeout(showLost, 700); break;
+    case 'lost': hideBossBanner(); sfx.lost(); setTimeout(showLost, 700); break;
   }
   if (SAVE_EVENTS.has(type)) saveRun();
   refresh();
@@ -333,147 +398,139 @@ const available = () => BUILD_ORDER.filter(id => game.isUnlocked(id));   // shel
 // ---------- build menu: a fixed-size card. LEFT = detail card of the focused item, RIGHT = tabs + 5x5 item grid ----------
 const trayCss = document.createElement('style');
 trayCss.textContent = `
-/* ===== the build menu is a 3D landscape tablet (old iPad with a home button). #tray = the scene, .tabletBody = the 3D slab ===== */
-#tray{--tw:min(960px,96vw,calc(92vh*1.36));--td:calc(var(--tw)*.026);width:var(--tw)!important;height:calc(var(--tw)/1.36)!important;max-width:none!important;max-height:none!important;padding:0!important;overflow:visible!important;
-  background:none!important;border:0!important;box-shadow:none!important;border-radius:0!important;perspective:2200px}
+/* ===== the build card: a rounded RECEIPT with a hard pixel shadow, pinned on the right above the whole dock (restock / speed / OPEN STORE). always on screen ===== */
+#tray{position:fixed;left:auto;top:auto;right:var(--r,8px);bottom:var(--b,90px);z-index:5;width:var(--w,340px);height:var(--h,600px);animation:bpDrop .3s steps(5)}
+@keyframes bpDrop{from{opacity:0;translate:0 14px}}
+#tray.off{display:none!important}
 #tray,#tray *,#modal,#card{scrollbar-width:none;-ms-overflow-style:none}
 #tray::-webkit-scrollbar,#tray *::-webkit-scrollbar,#modal::-webkit-scrollbar,#card::-webkit-scrollbar{display:none;width:0;height:0}
 #skillSlots.dayHide{display:none!important}
-#tray .tShadow{position:absolute;left:5%;right:5%;bottom:-5%;height:9%;background:radial-gradient(ellipse at center,rgba(0,0,0,.6),rgba(0,0,0,0) 70%);filter:blur(10px);pointer-events:none}
-#tray .tabletBody{position:absolute;inset:0;transform-style:preserve-3d;transform:translateY(var(--ty,0)) scale(var(--s,1)) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg));transition:transform .3s cubic-bezier(.2,.85,.3,1)}
-#tray.hide .tabletBody{--ty:60px;--s:.88;transition:transform .3s cubic-bezier(.4,0,.8,.6)}
-#tray .tFace{position:absolute;backface-visibility:hidden}
-#tray .tFront{inset:0;border-radius:calc(var(--tw)*.04);background:linear-gradient(145deg,#2c2c31 0%,#0e0e11 55%,#1d1d22 100%);box-shadow:inset 0 0 0 2px #46464d,inset 0 0 0 calc(var(--tw)*.005) #050506;transform:translateZ(calc(var(--td)/2))}
-#tray .tBack{inset:0;border-radius:calc(var(--tw)*.04);background:linear-gradient(145deg,#e4e7ec,#aab0ba 60%,#c9cdd5);transform:translateZ(calc(var(--td)/-2)) rotateY(180deg)}
-#tray .tEdge{background:linear-gradient(90deg,#8d939d,#dfe2e8 45%,#a6acb6)}
-#tray .tTop,#tray .tBottom{left:calc(var(--tw)*.04);right:calc(var(--tw)*.04);height:var(--td)}
-#tray .tTop{top:0;transform:translateY(calc(var(--td)/-2)) rotateX(90deg)}
-#tray .tBottom{bottom:0;transform:translateY(calc(var(--td)/2)) rotateX(-90deg)}
-#tray .tLeft,#tray .tRight{top:calc(var(--tw)*.04);bottom:calc(var(--tw)*.04);width:var(--td)}
-#tray .tLeft{left:0;transform:translateX(calc(var(--td)/-2)) rotateY(-90deg)}
-#tray .tRight{right:0;transform:translateX(calc(var(--td)/2)) rotateY(90deg)}
-#tray .tCam{position:absolute;left:2.4%;top:50%;width:calc(var(--tw)*.009);height:calc(var(--tw)*.009);margin-top:calc(var(--tw)*-.0045);border-radius:50%;background:radial-gradient(circle at 35% 35%,#3a4a66,#06080c 70%);box-shadow:0 0 0 2px #1b1b20}
-#tray #trayClose.tHome{position:absolute!important;right:calc(5.2% - var(--tw)*.027);top:50%;width:calc(var(--tw)*.054)!important;height:calc(var(--tw)*.054)!important;margin-top:calc(var(--tw)*-.027);padding:0!important;border-radius:50%!important;font-size:0!important;
-  background:radial-gradient(circle at 40% 30%,#2e2e34,#0b0b0d 75%)!important;border:2px solid #4a4a52!important;box-shadow:inset 0 2px 3px rgba(255,255,255,.12),0 1px 0 rgba(255,255,255,.05)!important;cursor:pointer;transition:box-shadow .15s,transform .1s}
-#tray #trayClose.tHome:hover{box-shadow:inset 0 2px 3px rgba(255,255,255,.12),0 0 0 3px rgba(255,210,63,.45)!important}
-#tray #trayClose.tHome:active{transform:scale(.94)}
-#tray .tScreen{position:absolute;left:5%;top:7%;width:84.5%;height:86%;overflow:hidden;border-radius:4px;background:#1c1411;box-shadow:0 0 0 2px #000,0 0 24px rgba(255,214,140,.12)}
-#tray .tGlare{position:absolute;inset:0;pointer-events:none;z-index:9;background:linear-gradient(115deg,rgba(255,255,255,.13) 0%,rgba(255,255,255,.03) 32%,rgba(255,255,255,0) 33%)}
-#tray .tUI{position:absolute;left:0;top:0;width:700px;height:525px;transform-origin:0 0;transform:scale(var(--k,1));display:flex;flex-direction:column;font-family:var(--cf);color:#1c1c1e;background:#f2f2f7}
-#tray .tStat{flex:none;height:24px;display:flex;align-items:center;justify-content:space-between;padding:0 14px;font:700 12px/1 var(--cf);color:#1c1c1e;background:rgba(249,249,252,.97);box-shadow:0 1px 0 rgba(60,60,67,.18)}
-#tray .tApp{flex:1;min-height:0;display:grid;grid-template-columns:132px minmax(0,1fr)}
-#tray .tSide{display:flex;flex-direction:column;gap:4px;padding:14px 10px;background:#fbfbfd;box-shadow:inset -1px 0 0 rgba(60,60,67,.18)}
-#tray .tSide .tSideHd{font:700 11px/1 var(--cf);letter-spacing:1.2px;color:#8e8e93;padding:2px 8px 8px}
-#tray .tSide .tab{display:block;width:100%;text-align:left;border-radius:10px;padding:10px 12px;font:600 14px/1.15 var(--cf);letter-spacing:0;background:transparent;color:#1c1c1e;box-shadow:none!important;opacity:1;backdrop-filter:none;text-shadow:none}
-#tray .tSide .tab:hover:not(.on){background:rgba(0,0,0,.05);filter:none}
-#tray .tSide .tab.on{background:#007aff;color:#fff}
-#tray .tSide #subTabs{display:flex;flex-direction:column;gap:2px;margin:0 0 4px 10px;padding-left:8px;border-left:2px solid rgba(60,60,67,.18)}
-#tray .tSide #subTabs .tab{padding:7px 10px;font-size:12.5px;border-radius:8px;color:#3c3c43}
-#tray .tSide #subTabs .tab.on{background:rgba(0,122,255,.14);color:#007aff}
-#tray .tSide .tSideFoot{margin-top:auto;padding:8px 8px 2px;font:500 11px/1.3 var(--cf);color:#8e8e93}
-#tray .tMain{position:relative;min-width:0;min-height:0}
-#tray .tBody{position:absolute;inset:14px}
+/* dock buttons (restock / speed / OPEN STORE): squarer corners + hard pixel shadow, matching the receipt card */
+#dock #restockAll,#dock #speed,#dock #go{border-radius:14px;box-shadow:4px 4px 0 rgba(0,0,0,.65);white-space:nowrap;transition:transform .1s,box-shadow .1s,filter .15s}
+#dock #go{padding:14px 22px;min-width:0}
+#dock #restockAll:active:not(:disabled),#dock #speed:active:not(:disabled),#dock #go:active:not(:disabled){transform:translate(3px,3px);box-shadow:1px 1px 0 rgba(0,0,0,.65)}
+/* defeat screen: centred text on top of everything, gameplay dims + blurs in behind it, no container */
+body.lostOpen #modal{z-index:45;background:rgba(8,5,16,.62);-webkit-backdrop-filter:blur(7px);backdrop-filter:blur(7px);animation:lostFade .7s ease-out both}
+body.lostOpen #card{background:none!important;border:0!important;box-shadow:none!important;clip-path:none!important;border-radius:0!important;padding:0!important;max-width:min(640px,92vw);text-align:center;overflow:visible;animation:lostText .7s .3s cubic-bezier(.2,.8,.3,1) both}
+body.lostOpen #card::before,body.lostOpen #card::after{display:none!important}
+body.lostOpen #card h1{font-size:clamp(20px,4.2vw,34px);line-height:1.3;margin:0 0 14px;color:#ff5a4a;text-shadow:4px 4px 0 #000}
+body.lostOpen #card .sub,body.lostOpen #card p{text-shadow:2px 2px 0 #000}
+body.lostOpen #card .row{justify-content:center;max-width:440px;margin-left:auto;margin-right:auto}
+@keyframes lostFade{from{opacity:0;-webkit-backdrop-filter:blur(0);backdrop-filter:blur(0)}to{opacity:1;-webkit-backdrop-filter:blur(7px);backdrop-filter:blur(7px)}}
+@keyframes lostText{from{opacity:0;transform:translateY(14px) scale(.96)}to{opacity:1;transform:none}}
+#tray .pxb,#tray .choice{clip-path:none}
+#tray .bp{position:absolute;left:0;top:0;width:400px;height:620px;transform-origin:0 0;transform:scale(var(--k,1));box-sizing:border-box;border-radius:22px;color:#2a2622;font-family:var(--cf);
+  background:linear-gradient(180deg,#fffdf4,#f5efdc);
+  box-shadow:6px 6px 0 rgba(0,0,0,.65),10px 10px 0 rgba(0,0,0,.25)}
+#tray .bpIn{position:absolute;inset:20px 20px 18px;display:flex;flex-direction:column;gap:10px}
+/* buttons: wipe the page's button styles, then paint them receipt-style */
+#tray .bpTab,#tray .sc,#tray .rc,#tray #dAct,#tray #renoPane .pxb{all:unset;box-sizing:border-box;cursor:pointer;-webkit-tap-highlight-color:transparent}
+/* bookmark tabs: on the receipt's left side, tucked UNDER the sheet (no cutout), hard pixel shadow, ease-out-back pop when clicked */
+#tray .bpTabs{position:absolute;left:0;top:0;width:64px;height:620px;transform-origin:0 0;transform:scale(var(--k,1)) translateX(-50px);display:flex;flex-direction:column;gap:10px;padding-top:40px;box-sizing:border-box}
+#tray .bpTab{width:64px;height:124px;padding-right:14px;display:flex;flex-direction:column-reverse;align-items:center;justify-content:center;gap:8px;border-radius:14px 0 0 14px;
+  background:var(--tc,#ff9a4a);color:#fff;text-shadow:0 2px 0 rgba(0,0,0,.3);font:600 16px/1 var(--cf);letter-spacing:.5px;white-space:nowrap;filter:brightness(.86) saturate(.85);
+  box-shadow:-4px 4px 0 rgba(0,0,0,.65);transform-origin:100% 50%;
+  transition:transform .22s cubic-bezier(.3,1.15,.5,1),filter .2s,box-shadow .22s cubic-bezier(.3,1.15,.5,1)}
+#tray .bpTab .pxe{width:24px;height:24px;margin:0;vertical-align:0;filter:brightness(0) invert(1) drop-shadow(0 2px 0 rgba(0,0,0,.3))}
+#tray .bpTab .tl{writing-mode:vertical-rl;transform:rotate(180deg)}
+#tray .bpTab:hover:not(.on){transform:translateX(-4px);filter:none}
+#tray .bpTab.on{transform:translateX(-9px);filter:none;box-shadow:-6px 5px 0 rgba(0,0,0,.65)}
+#tray .bpTab:active{transform:translateX(-5px) scale(.98)}
+#tray .bpTab.pop{animation:tabPop .28s ease-out}
+@keyframes tabPop{0%{transform:translateX(-6px) scale(.98)}60%{transform:translateX(-10px) scale(1.015)}100%{transform:translateX(-9px) scale(1)}}
+#tray .bpBody{position:relative;flex:1;min-height:0}
 #tray .tPane{position:absolute;inset:0;overflow:auto}
-#tray #stocksPane{display:grid;grid-template-columns:minmax(0,.82fr) minmax(0,1.3fr);gap:14px;overflow:hidden}
-#tray .lCol{min-height:0;display:flex;flex-direction:column;gap:12px}
-#tray .dCard{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px 14px 14px;border-radius:22px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.12);text-align:center;color:#1c1c1e}
-#tray .dCard .pic{flex:none;width:96px;height:96px;border-radius:26%;display:grid;place-items:center;background:#f2f2f7}
-#tray .dCard .pic img{width:80%;height:80%;object-fit:contain;image-rendering:pixelated}
-#tray .dCard .nm{flex:none;font:700 17px/1.2 var(--cf);color:#1c1c1e;text-align:center}
-#tray .dCard .ds{flex:1;min-height:0;overflow:auto;font:500 13.5px/1.35 var(--cf);color:#636366;text-align:center}
-#tray .dCard.lock .pic img{filter:grayscale(1) opacity(.6)} #tray .dCard.lock .nm{color:#8e8e93}
-#tray .rcBox{flex:none;padding:10px 12px 12px;border-radius:18px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.12)}
-#tray .rcHd{font:700 11px/1 var(--cf);letter-spacing:1.2px;color:#8e8e93;margin-bottom:8px}
-#tray #recentRow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;min-height:46px}
-#tray .rc{width:100%;aspect-ratio:1/1;min-width:0;padding:0;border-radius:26%;border:2px solid transparent;background:#f2f2f7;display:grid;place-items:center;cursor:pointer;box-shadow:none}
-#tray .rc img{width:74%;height:74%;object-fit:contain;image-rendering:pixelated}
-#tray .rc.foc{border-color:#007aff;background:#fff}
-#tray .rcEmpty{grid-column:1/-1;font:500 12px/1.3 var(--cf);color:#8e8e93;align-self:center}
-#tray .gCol{min-height:0;display:flex;flex-direction:column;gap:12px}
-#tray #trayGrid{flex:1;min-height:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-auto-rows:auto;align-content:start;gap:10px;padding:12px;border-radius:22px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.12);overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:rgba(60,60,67,.3) transparent}
-#tray .sc{aspect-ratio:1/1;position:relative;min-width:0;min-height:0;padding:0;border-radius:26%;border:3px solid transparent;background:#f2f2f7;display:grid;place-items:center;cursor:pointer;overflow:hidden;font:inherit;box-shadow:none}
-#tray .sc:active{transform:scale(.95)}
-#tray .sc img{width:62%;height:62%;object-fit:contain;image-rendering:pixelated;margin-bottom:8px}
-#tray .sc.empty{background:#f7f7fa;border:2px dashed rgba(60,60,67,.14);cursor:default}
-#tray .sc.foc{border-color:#007aff;background:#fff;box-shadow:0 0 0 3px rgba(0,122,255,.18)}
-#tray .sc.sel:not(.foc){border-color:#34c759}
-#tray .sc.lock{background:#ececf0}
-#tray .sc.lock img{filter:grayscale(1) opacity(.55)}
-#tray .sc-k{position:absolute;left:6px;top:4px;font:700 11px/1 var(--cf);color:#8e8e93}
-#tray .sc-lk{position:absolute;right:5px;top:3px;font-size:11px;display:none}
+#tray .tPane.off{display:none!important}
+#tray [data-tut]{outline:3px solid #e0891a!important;outline-offset:-3px!important;animation:tutPulseIn .7s ease-in-out infinite alternate}
+@keyframes tutPulseIn{to{outline-color:#ffd23f;outline-offset:-1px}}
+#tray #stocksPane{display:flex;flex-direction:column;gap:10px;overflow:hidden}
+#tray .pv{flex:none;height:112px;display:flex;gap:12px}
+#tray .pv .pic{flex:none;width:104px;height:104px;border-radius:12px;display:grid;place-items:center;background:rgba(42,38,34,.07)}
+#tray .pv .pic img{width:80%;height:80%;object-fit:contain;image-rendering:pixelated}
+#tray .pv .pvTx{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+#tray .pv .pvTop{flex:none;display:flex;align-items:center;gap:6px;min-height:26px}
+#tray .pv .nm{flex:1;min-width:0;font:600 21px/1 var(--cf);letter-spacing:.6px;text-transform:uppercase;color:#2a2622;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#tray .pv .ds{flex:1;min-height:0;overflow:auto;font:600 14px/1.05 var(--cf);color:#5b534a}
+#tray .pv.lock .pic img{filter:grayscale(1) opacity(.55)} #tray .pv.lock .nm{color:#8b8277}
+#tray #recentRow{flex:none;display:flex;gap:4px}
+#tray .rc{width:24px;height:24px;border-radius:7px;display:grid;place-items:center;background:rgba(42,38,34,.08)}
+#tray .rc img{width:80%;height:80%;object-fit:contain;image-rendering:pixelated}
+#tray .rc.foc{background:rgba(212,69,42,.28)}
+#tray #trayGrid{flex:1;min-height:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-auto-rows:112px;align-content:start;gap:8px;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain}
+#tray .sc{height:112px;position:relative;min-width:0;border-radius:10px;background:rgba(42,38,34,.07);display:grid;place-items:center;overflow:hidden}
+#tray .sc:hover:not(.empty):not(.foc){background:rgba(42,38,34,.15)}
+#tray .sc:active:not(.empty){transform:translate(1px,1px)}
+#tray .sc>img:first-child{width:58px;height:58px;object-fit:contain;image-rendering:pixelated;margin-bottom:14px}
+#tray .sc.empty{background:rgba(42,38,34,.035);cursor:default}
+#tray .sc.foc{background:rgba(212,69,42,.24)}
+#tray .sc.sel:not(.foc){background:rgba(63,138,74,.3)}
+#tray .sc.lock{background:rgba(42,38,34,.13)}
+#tray .sc.lock>img:first-child{filter:grayscale(1) opacity(.5)}
+#tray .sc-k{position:absolute;left:6px;top:3px;font:600 12px/1 var(--cf);color:#8b8277}
+#tray .sc-lk{position:absolute;right:6px;top:5px;font-size:0;display:none} #tray .sc-lk .pxe{width:16px;height:16px;margin:0;vertical-align:0}
 #tray .sc.lock .sc-lk{display:block}
-#tray .sc-pr{position:absolute;left:0;right:0;bottom:4px;text-align:center;font:700 11px/1 var(--cf);color:#3c3c43}
-#tray .gBar{flex:none;margin-top:auto;display:flex;align-items:center;justify-content:space-between;gap:10px}
-#tray .gInfo{min-width:0;font:600 12.5px/1.25 var(--cf);color:#636366}
-#tray .gInfo b{display:block;font-size:15px;color:#1c1c1e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#tray #dAct{flex:none;min-width:150px;padding:14px 22px;border-radius:99px;border:0;font:700 15px/1 var(--cf);letter-spacing:0;color:#fff;background:#007aff;box-shadow:0 2px 6px rgba(0,122,255,.35);text-shadow:none}
-#tray #dAct.gold{background:#ff9f0a;color:#fff;box-shadow:0 2px 6px rgba(255,159,10,.35)}
-#tray #dAct.green{background:#34c759;color:#fff;box-shadow:0 2px 6px rgba(52,199,89,.35)}
-#tray #dAct:disabled{background:#c7c7cc;color:#fff;box-shadow:none;opacity:1}
-#tray #renoPane{display:block;padding:0 2px 8px;text-align:left}
-#tray #renoPane .stHd{font:700 11px/1 var(--cf);letter-spacing:1.2px;color:#8e8e93;margin:4px 4px 6px}
-#tray #renoPane .stCard{background:#fff;border-radius:18px;box-shadow:0 1px 4px rgba(0,0,0,.12);padding:12px 14px;margin-bottom:12px}
-#tray #renoPane .stRow{display:flex;align-items:center;justify-content:space-between;gap:12px}
-#tray #renoPane .stRow b{display:block;font:700 18px/1.2 var(--cf);color:#1c1c1e}
-#tray #renoPane .stRow span{font:500 12.5px/1.3 var(--cf);color:#8e8e93}
-#tray #renoPane .dots{display:flex;gap:4px;margin:10px 0 6px}
-#tray #renoPane .dot{flex:1;height:8px;border-radius:99px;background:#d1d1d6} #tray #renoPane .dot.on{background:#34c759}
-#tray #renoPane p{margin:4px 0 0;font:500 12.5px/1.35 var(--cf);color:#636366} #tray #renoPane p.warn{color:#ff3b30} #tray #renoPane p.ok{color:#34a853}
-#tray #renoPane .pxb{flex:none;min-width:136px;padding:12px 16px;border-radius:99px;border:0;font:700 14px/1 var(--cf);letter-spacing:0;color:#fff;background:#007aff;box-shadow:0 2px 6px rgba(0,122,255,.35);text-shadow:none}
-#tray #renoPane .pxb:disabled{background:#c7c7cc;box-shadow:none;opacity:1}
-#tray #renoPane .lim{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px}
-#tray #renoPane .lr{display:flex;align-items:center;gap:8px;min-width:0}
-#tray #renoPane .lr img{width:28px;height:28px;image-rendering:pixelated;flex:none;object-fit:contain}
+#tray .sc-ct{position:absolute;right:6px;top:3px;font:600 12px/1 var(--cf);color:#8b8277} #tray .sc.lock .sc-ct{display:none} #tray .sc-ct.full{color:#c4570f}
+#tray .sc-pr{position:absolute;left:0;right:0;bottom:5px;text-align:center;font:600 14px/1 var(--cf);color:#2a2622}
+#tray .gBar{flex:none;display:flex;align-items:center;justify-content:space-between;gap:10px;height:56px;padding-top:10px;border-top:2px dashed rgba(42,38,34,.3)}
+#tray .gInfo{min-width:0;font:600 11px/1.1 var(--cf);color:#6b6258}
+#tray .gInfo b{display:block;font:600 16px/1 var(--cf);letter-spacing:.5px;text-transform:uppercase;color:#2a2622;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#tray #dAct{flex:none;min-width:118px;text-align:center;padding:11px 14px 9px;border-radius:10px;font:600 16px/1 var(--cf);letter-spacing:.6px;text-transform:uppercase;color:#fffdf4;background:#d4452a;box-shadow:3px 3px 0 rgba(0,0,0,.6)}
+#tray #dAct:active:not(:disabled){transform:translate(2px,2px);box-shadow:1px 1px 0 rgba(0,0,0,.6)}
+#tray #dAct.gold{background:#d99a14} #tray #dAct.green{background:#3f8a4a}
+#tray #dAct:disabled{background:rgba(42,38,34,.18);color:#8b8277;box-shadow:none;cursor:default}
+#tray .bpBar{flex:none;height:14px;opacity:.8;background:repeating-linear-gradient(90deg,#2a2622 0 2px,transparent 2px 4px,#2a2622 4px 5px,transparent 5px 8px,#2a2622 8px 11px,transparent 11px 12px,#2a2622 12px 13px,transparent 13px 17px)}
+/* STATUS tab */
+#tray #renoPane{display:block;padding:0 0 8px;text-align:left}
+#tray #renoPane .stHd{font:600 12px/1 var(--cf);letter-spacing:1.5px;color:#8b8277;margin:2px 2px 6px}
+#tray #renoPane .stCard{background:rgba(42,38,34,.07);border-radius:12px;padding:11px 12px;margin-bottom:11px}
+#tray #renoPane .stRow{display:flex;align-items:center;justify-content:space-between;gap:10px}
+#tray #renoPane .stRow b{display:block;font:600 17px/1.05 var(--cf);text-transform:uppercase;color:#2a2622}
+#tray #renoPane .stRow span{font:600 12px/1.1 var(--cf);color:#6b6258}
+#tray #renoPane .dots{display:flex;gap:3px;margin:9px 0 6px}
+#tray #renoPane .dot{flex:1;height:8px;border-radius:2px;background:rgba(42,38,34,.16)} #tray #renoPane .dot.on{background:#3f8a4a}
+#tray #renoPane p{margin:4px 0 0;font:600 12px/1.1 var(--cf);color:#5b534a} #tray #renoPane p.warn{color:#c8321f} #tray #renoPane p.ok{color:#3f8a4a}
+#tray #renoPane .pxb{flex:none;min-width:112px;text-align:center;padding:10px 12px 8px;border-radius:10px;font:600 14px/1 var(--cf);letter-spacing:.5px;text-transform:uppercase;color:#fffdf4;background:#d4452a;box-shadow:3px 3px 0 rgba(0,0,0,.6);white-space:nowrap}
+#tray #renoPane .pxb:active:not(:disabled){transform:translate(2px,2px);box-shadow:1px 1px 0 rgba(0,0,0,.6)}
+#tray #renoPane .pxb:disabled{background:rgba(42,38,34,.18);color:#8b8277;box-shadow:none;cursor:default}
+#tray #renoPane .lim{display:grid;grid-template-columns:1fr 1fr;gap:9px 12px}
+#tray #renoPane .lr{display:flex;align-items:center;gap:7px;min-width:0}
+#tray #renoPane .lr img{width:24px;height:24px;image-rendering:pixelated;flex:none;object-fit:contain}
 #tray #renoPane .lr .t{flex:1;min-width:0}
-#tray #renoPane .lr .n{display:flex;justify-content:space-between;gap:6px;font:600 12.5px/1.2 var(--cf);color:#1c1c1e}
-#tray #renoPane .lr .n i{font-style:normal;font-weight:700;color:#636366}
-#tray #renoPane .lr .bar{height:5px;border-radius:99px;background:#e5e5ea;margin-top:4px;overflow:hidden}
-#tray #renoPane .lr .bar u{display:block;height:100%;background:#007aff;text-decoration:none}
-#tray #renoPane .lr.full .bar u{background:#ff9500} #tray #renoPane .lr.full .n i{color:#ff9500}
-#tray .pxb,#tray .pxb:active:not(:disabled){box-shadow:none!important}
-#tray #renoPane .pxb{width:auto;margin:0;white-space:nowrap}
-#tray .sc.foc{box-shadow:none}
-#tray #trayClose.tHome:hover{box-shadow:inset 0 2px 3px rgba(255,255,255,.12),0 1px 0 rgba(255,255,255,.05)!important;border-color:#6a6a74!important}
-#tray .sc-ct{position:absolute;right:6px;top:4px;font:700 10px/1 var(--cf);color:#8e8e93} #tray .sc-ct.full{color:#ff9500}
-#tray #shopPane{padding:2px 2px 8px}
-#tray #shopPane .sub{color:#636366!important;font:600 13px/1.3 var(--cf)}
-#tray #shopPane .choice{background:#fff;color:#1c1c1e;border:0;border-radius:16px;box-shadow:0 1px 4px rgba(0,0,0,.1);backdrop-filter:none}
-#tray #shopPane .choice .nm{color:#1c1c1e} #tray #shopPane .choice .ds{color:#636366} #tray #shopPane .lvl{color:#8e8e93}
-#tray #shopPane .choice>span:last-child{color:#ff9500!important}
+#tray #renoPane .lr .n{display:flex;justify-content:space-between;gap:5px;font:600 11px/1.1 var(--cf);color:#2a2622}
+#tray #renoPane .lr .n i{font-style:normal;color:#6b6258}
+#tray #renoPane .lr .bar{height:6px;border-radius:2px;background:rgba(42,38,34,.16);margin-top:3px;overflow:hidden}
+#tray #renoPane .lr .bar u{display:block;height:100%;background:#3f8a4a;text-decoration:none}
+#tray #renoPane .lr.full .bar u{background:#c4570f} #tray #renoPane .lr.full .n i{color:#c4570f}
+/* PAYCHECK SHOP tab */
+#tray #shopPane{padding:0 0 8px}
+#tray #shopPane .sub{color:#5b534a!important;font:600 13px/1.1 var(--cf)}
+#tray #shopPane .choice{background:rgba(42,38,34,.07);color:#2a2622;border:0;border-radius:12px;box-shadow:none;backdrop-filter:none}
+#tray #shopPane .choice .nm{color:#2a2622;font:600 16px/1.05 var(--cf);text-transform:uppercase;letter-spacing:.4px} #tray #shopPane .choice .ds{color:#5b534a;font:600 12px/1.05 var(--cf)} #tray #shopPane .lvl{color:#8b8277}
+#tray #shopPane .choice>span:last-child{color:#c4570f!important}
 #tray #shopPane .choice:disabled{opacity:.5}
 `;
 document.head.appendChild(trayCss);
-$('tray').innerHTML = `<div class="tShadow"></div>
-<div class="tabletBody">
-  <div class="tFace tEdge tTop"></div><div class="tFace tEdge tBottom"></div><div class="tFace tEdge tLeft"></div><div class="tFace tEdge tRight"></div>
-  <div class="tFace tBack"></div>
-  <div class="tFace tFront">
-    <div class="tCam"></div>
-    <div class="tScreen"><div class="tUI">
-      <div class="tStat"><span>📶 Tindang Sara</span><span id="tStatTime">9:41 AM</span><span>💰 $<span id="tStatCash">0</span> &nbsp;🔋</span></div>
-      <div class="tApp">
-        <nav class="tSide">
-          <div class="tSideHd">BUILD MENU</div>
-          <button class="pxb tab on" id="tabStocks">STOCKS</button>
-          <div id="subTabs" class="tabs"><button class="pxb tab on" id="subSell">SELLABLES</button><button class="pxb tab" id="subSkill">SKILL ITEMS</button></div>
-          <button class="pxb tab" id="tabReno">STATUS</button>
-          <button class="pxb tab" id="tabShop">PAYCHECK SHOP</button>
-          <div class="tSideFoot">Tap the home button to close.</div>
-        </nav>
-        <div class="tMain"><div class="tBody">
-          <div class="tPane" id="stocksPane">
-            <div class="lCol">
-              <div class="dCard" id="dCard"><div class="pic"><img id="dImg" alt=""></div><div class="nm" id="dNm"></div><div class="ds" id="dDs"></div></div>
-              <div class="rcBox"><div class="rcHd">RECENT</div><div id="recentRow"></div></div>
-            </div>
-            <div class="gCol"><div id="trayGrid"></div><div class="gBar"><div class="gInfo" id="gInfo"></div><button class="pxb" id="dAct"></button></div></div>
-          </div>
-          <div class="tPane off" id="renoPane"></div>
-          <div class="tPane off" id="shopPane"></div>
-        </div></div>
+$('tray').innerHTML = `<nav class="bpTabs">
+    <button class="bpTab on" id="subSell" style="--tc:#ff9a4a" title="Shelves and turrets"><span>🛒</span><span class="tl">ITEMS</span></button>
+    <button class="bpTab" id="subSkill" style="--tc:#8fc2ff" title="Skill items: mop, shaken cola, cigarettes"><span>⚡</span><span class="tl">SKILLS</span></button>
+    <button class="bpTab" id="tabReno" style="--tc:#6fe3a8" title="Permit, store size and item limits"><span>📜</span><span class="tl">STATUS</span></button>
+    <button class="bpTab" id="tabShop" style="--tc:#ffd23f" title="Paycheck Shop"><span>💰</span><span class="tl">SHOP</span></button>
+  </nav>
+<div class="bp" id="bpSheet">
+  <div class="bpIn">
+    <div class="bpBody">
+      <div class="tPane" id="stocksPane">
+        <div class="pv" id="dCard">
+          <div class="pic"><img id="dImg" alt=""></div>
+          <div class="pvTx"><div class="pvTop"><div class="nm" id="dNm"></div><div id="recentRow"></div></div><div class="ds" id="dDs"></div></div>
+        </div>
+        <div id="trayGrid"></div>
+        <div class="gBar"><div class="gInfo" id="gInfo"></div><button id="dAct"></button></div>
       </div>
-    </div><div class="tGlare"></div></div>
-    <button class="tHome" id="trayClose" aria-label="Home button: close the build menu"></button>
+      <div class="tPane off" id="renoPane"></div>
+      <div class="tPane off" id="shopPane"></div>
+    </div>
+    <div class="bpBar"></div>
   </div>
 </div>`;
 
@@ -488,20 +545,25 @@ function buildCards() {
     c.onclick = () => { focusId = id; refresh(); };
     cells.set(id, c);
   });
-  $('buildIcon').src = pxEmoji('🔨', 16);
   applySub();
 }
 // the STOCKS tab has two sub-tabs: SELLABLES (shelves + turrets) and SKILL ITEMS (mop, shaken cola, cigarettes)
 let subTab = 'sell';
 function applySub() {
-  $('subSell').classList.toggle('on', subTab === 'sell'); $('subSkill').classList.toggle('on', subTab === 'skill');
+  syncTabs();
   const box = $('trayGrid'), ids = BUILD_ORDER.filter(id => (SKILLS.includes(id) ? 'skill' : 'sell') === subTab);
   box.innerHTML = '';
   if (!ids.includes(focusId)) focusId = ids[0];
   ids.forEach(id => box.appendChild(cells.get(id)));
-  const total = Math.max(16, Math.ceil(ids.length / 4) * 4);
-  for (let i = ids.length; i < total; i++) { const e = document.createElement('div'); e.className = 'sc empty'; box.appendChild(e); }   // always a full 4x4 grid (more rows if there are more items)
+  const total = Math.max(12, Math.ceil(ids.length / 3) * 3);
+  for (let i = ids.length; i < total; i++) { const e = document.createElement('div'); e.className = 'sc empty'; box.appendChild(e); }   // always full rows of 3
   if (game) refresh();
+}
+// the four tabs on top of the card: SELLABLES + SKILLS (both item grids), STATUS, SHOP
+function syncTabs() {
+  $('subSell').classList.toggle('on', trayTab === 'stocks' && subTab === 'sell');
+  $('subSkill').classList.toggle('on', trayTab === 'stocks' && subTab === 'skill');
+  $('tabReno').classList.toggle('on', trayTab === 'reno'); $('tabShop').classList.toggle('on', trayTab === 'shop');
 }
 // left card: icon, name, description, stats and the build / unlock button
 let detailKey = '';
@@ -518,7 +580,7 @@ function renderDetail() {
   const lm = game.limitOf(id), cn = game.countOf(id), full = !locked && lm !== Infinity && cn >= lm;
   act.disabled = locked ? (!reach || game.cash < uc) : (cost > game.cash || (full && selected !== id));
   const txt = locked ? (reach ? `Unlock  $${uc}` : `🔒 Day ${ud}`) : selected === id ? 'Selected ✓' : full ? 'Limit reached' : `Build  $${cost}`;
-  if (act.textContent !== txt) act.textContent = txt;
+  if (act.dataset.t !== txt) { act.dataset.t = txt; act.textContent = txt; }
   const info = locked ? `<b>${def.name}</b>${reach ? 'Locked · buy it to use it' : 'Unlocks on day ' + ud}` : `<b>${def.name}</b>${selected === id ? 'Tap the store to place it' : 'Cost $' + cost}${lm === Infinity ? '' : ' · Placed ' + cn + '/' + lm}`;
   if ($('gInfo').dataset.k !== info) { $('gInfo').dataset.k = info; $('gInfo').innerHTML = info; }
   renderRecent();
@@ -537,7 +599,7 @@ function renderRecent() {
   const ids = recentItems.filter(id => game.isUnlocked(id)).slice(0, 3), key = ids.join(',') + '|' + focusId;
   if (key === recentKey) return; recentKey = key;
   const row = $('recentRow');
-  row.innerHTML = ids.length ? ids.map(id => `<button class="rc ${id === focusId ? 'foc' : ''}" data-id="${id}" title="${ITEMS[id].name}"><img alt="" src="${icons[id] || ''}"></button>`).join('') : '<div class="rcEmpty">Things you build or unlock show up here.</div>';
+  row.innerHTML = ids.length ? ids.map(id => `<button class="rc ${id === focusId ? 'foc' : ''}" data-id="${id}" title="${ITEMS[id].name}"><img alt="" src="${icons[id] || ''}"></button>`).join('') : '';
   row.querySelectorAll('.rc').forEach(b => b.onclick = () => { focusId = b.dataset.id; subTab = SKILLS.includes(focusId) ? 'skill' : 'sell'; applySub(); });
 }
 $('dAct').onclick = () => {
@@ -545,8 +607,8 @@ $('dAct').onclick = () => {
   if (!game.isUnlocked(id)) { if (!game.canUnlock(id)) { sfx.bad(); banner(`🔒 ${ITEMS[id].name} unlocks on day ${UNLOCK_DAY[id]}`); return; } if (!game.unlock(id)) { sfx.bad(); banner(`Need $${UNLOCKS[id]} to unlock ${ITEMS[id].name}`); } else { noteSkill(id, true); noteRecent(id); } return; }   // unlocking costs store profit
   selected = selected === id ? null : id; if (selected) noteSkill(id, true); pickedTower = null; preview = null; view.setCursor(null); closeTray(); refresh();
 };
-$('subSell').onclick = () => { subTab = 'sell'; applySub(); };
-$('subSkill').onclick = () => { subTab = 'skill'; applySub(); };
+$('subSell').onclick = () => { subTab = 'sell'; setTab('stocks'); applySub(); };
+$('subSkill').onclick = () => { subTab = 'skill'; setTab('stocks'); applySub(); };
 // the 3 most recently bought / selected skill items sit in slots at the bottom-left
 const RECENT_KEY = 'shelfDefenseRecentSkills';
 let recentSkills = []; try { recentSkills = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]').filter(id => SKILLS.includes(id)).slice(0, 3); } catch (e) { /* no storage */ }
@@ -575,28 +637,14 @@ $('skillSlots').addEventListener('click', e => {
   const id = b.dataset.id;
   selected = selected === id ? null : id; pickedTower = null; preview = null; view.setCursor(null); closeTray(); refresh();
 });
-// the build menu is a centered modal with two tabs: STOCKS (things to build) and RENOVATE (grow the store)
-let trayTab = 'stocks';
-const trayOpen = () => { const t = $('tray'); return !t.classList.contains('off') && !t.classList.contains('hide'); };
-function openTray() {
-  const t = $('tray'), bk = $('trayBack');
-  clearTimeout(openTray.timer);
-  t.classList.remove('off'); bk.classList.remove('off'); t.classList.add('hide'); bk.classList.add('hide');
-  fitTablet(); void t.offsetWidth;                                   // let the browser register the start state so the pop animates
-  requestAnimationFrame(() => { t.classList.remove('hide'); bk.classList.remove('hide'); });
-  refresh();
-}
-function closeTray() {
-  const t = $('tray'), bk = $('trayBack');
-  if (t.classList.contains('off') || t.classList.contains('hide')) return;
-  t.classList.add('hide'); bk.classList.add('hide');
-  clearTimeout(openTray.timer);
-  openTray.timer = setTimeout(() => { if (t.classList.contains('hide')) { t.classList.add('off'); bk.classList.add('off'); } }, 340);
-}
+// the build card is always on the right side (above OPEN STORE), so it's never a modal: no open / close, just tabs.
+let trayTab = 'stocks', panelFolded = false, panelTouched = false;
+const trayOpen = () => false;   // kept for the popups / tutorial: the card never blocks the store, so it never counts as "open"
+function openTray() { panelFolded = false; placeBuild(); refresh(); }
+function closeTray() { /* the card stays put: selecting an item leaves it in view */ }
 function setTab(tab) {
-  trayTab = tab;
-  $('tabStocks').classList.toggle('on', tab === 'stocks'); $('tabReno').classList.toggle('on', tab === 'reno'); $('tabShop').classList.toggle('on', tab === 'shop');
-  $('subTabs').classList.toggle('off', tab !== 'stocks'); $('stocksPane').classList.toggle('off', tab !== 'stocks'); $('renoPane').classList.toggle('off', tab !== 'reno'); $('shopPane').classList.toggle('off', tab !== 'shop');
+  trayTab = tab; syncTabs();
+  $('stocksPane').classList.toggle('off', tab !== 'stocks'); $('renoPane').classList.toggle('off', tab !== 'reno'); $('shopPane').classList.toggle('off', tab !== 'shop');
   renderReno(); renderShopTab();
 }
 // the STATUS tab: store permit, store size (renovation) and how many of every item you may place
@@ -633,16 +681,27 @@ function renderReno() {
     else { sfx.bad(); if (!rChk.ok) banner(rChk.reason); }
   };
 }
-$('tabStocks').onclick = () => setTab('stocks');
 $('tabReno').onclick = () => setTab('reno');
 $('tabShop').onclick = () => setTab('shop');
-$('buildBtn').onclick = () => { trayOpen() ? closeTray() : openTray(); };
-$('trayClose').onclick = closeTray;
-// the tablet's screen is a fixed 700x525 layout scaled to whatever size the 3D slab ends up
-function fitTablet() { const t = $('tray'); if (t.offsetWidth) t.style.setProperty('--k', (t.offsetWidth * 0.845 / 700).toFixed(4)); }
-window.addEventListener('resize', fitTablet);
-function renderTabletStatus() { if (!game) return; $('tStatTime').textContent = game.clock().text; $('tStatCash').textContent = game.cash; }
-$('trayBack').onclick = closeTray;
+// every click on a bookmark restarts its ease pop
+document.querySelectorAll('#tray .bpTab').forEach(b => b.addEventListener('click', () => { b.classList.remove('pop'); void b.offsetWidth; b.classList.add('pop'); }));
+$('tray').addEventListener('pointerdown', () => { panelTouched = true; });
+// pin the card to the right side, right above the OPEN STORE button, and shrink it to the room there is
+const BP_W = 400, BP_H = 620, TAB_W = 60;   // TAB_W = how far the bookmark tabs stick out to the left
+function placeBuild() {
+  const t = $('tray'), dock = $('dock');
+  const r = dock.getBoundingClientRect();   // anchored above the WHOLE dock, so it never covers restock / speed / OPEN STORE
+  const show = !!game && running && !dock.classList.contains('off') && r.width > 0 && !panelFolded;
+  t.classList.toggle('off', !show);
+  if (!show) { if (r.width) document.documentElement.style.setProperty('--bpx', Math.round(innerWidth - r.left + 14) + 'px'); return; }
+  const k = Math.max(0.4, Math.min(1, (r.top - 12 - 58) / BP_H, innerWidth * 0.62 / (BP_W + TAB_W)));
+  t.style.setProperty('--k', k.toFixed(4)); t.style.setProperty('--w', (BP_W * k).toFixed(1) + 'px'); t.style.setProperty('--h', (BP_H * k).toFixed(1) + 'px');
+  document.documentElement.style.setProperty('--bpx', Math.round((BP_W + TAB_W) * k + Math.max(6, innerWidth - r.right) + 14) + 'px');   // Sara stays left of the card
+  t.style.setProperty('--r', Math.max(6, innerWidth - r.right) + 'px'); t.style.setProperty('--b', Math.max(6, innerHeight - r.top + 10) + 'px');
+}
+window.addEventListener('resize', placeBuild);
+function renderTabletStatus() { placeBuild(); }
+
 
 function refresh() {
   if (!game) return;
@@ -663,9 +722,6 @@ function refresh() {
     ct.textContent = locked || lm === Infinity ? '' : cn + '/' + lm; ct.classList.toggle('full', cn >= lm);
   }
   renderDetail();
-  const bi = $('buildIcon');   // the build icon shows what you're holding
-  if (selected && icons[selected]) { if (bi.dataset.k !== selected) { bi.src = icons[selected]; bi.className = ''; bi.dataset.k = selected; } }
-  else if (bi.dataset.k !== 'hammer') { bi.src = pxEmoji('🔨', 16); bi.className = 'pxe'; bi.dataset.k = 'hammer'; }
   const go = $('go'), setGo = (cls, dis, txt) => { go.disabled = dis; go.className = 'pxb ' + cls; setHTML(go, txt); };
   if (game.phase === 'prep') { if (game.canOpen().ok) setGo('gold', false, '☀ OPEN<br>STORE'); else setGo('', false, '🔒 OPEN<br>STORE'); }   // an empty store can't open
   else if (game.phase === 'morning') setGo('', true, '🛒 STORE<br>OPEN');
@@ -814,7 +870,6 @@ window.addEventListener('keydown', e => {
   const i = parseInt(e.key, 10);
   const av = available();
   if (i >= 1 && i <= av.length) { selected = av[i - 1]; pickedTower = null; preview = null; closeTray(); refresh(); }
-  else if (e.key === 'b' || e.key === 'B') { trayOpen() ? closeTray() : openTray(); }
   else if (e.key === 'Escape') { selected = null; pickedTower = null; preview = null; view.setCursor(null); refresh(); }
   else if (e.key === ' ' && (game.phase === 'prep' || game.phase === 'evening')) { e.preventDefault(); $('go').click(); }
   else if (e.key === 'p' || e.key === 'P') $('pause').click();
@@ -873,8 +928,8 @@ $('mute').onclick = () => { muted = !muted; if (!muted) { musicOn = true; audio(
 
 // ---------- modals ----------
 const modal = $('modal'), card = $('card');
-const openModal = html => { card.innerHTML = pxText(html); modal.classList.add('on'); };
-function closeModal() { modal.classList.remove('on'); }
+const openModal = html => { card.innerHTML = pxText(html); modal.classList.add('on'); document.body.classList.toggle('lostOpen', !!game && game.phase === 'lost'); placeBuild(); };
+function closeModal() { modal.classList.remove('on'); document.body.classList.remove('lostOpen'); }
 
 function shopHTML() {
   const row = m => {
@@ -1006,59 +1061,61 @@ let lastPay = 0;
 function showLost(again = false) {
   if (!game || game.phase !== 'lost') return;
   if (!again) lastPay = bankProgress();
-  openModal(`<h1>THE TILL IS EMPTY</h1>
+  openModal(`<h1>YOU HAVE BEEN ROBBED!</h1>
     <div class="sub">They cleaned you out on night ${game.wave + 1}. The cops showed up, the store is yours again. Nothing is lost.</div>
     <p>Nights survived: <b>${game.wave}</b><br>Customers served: <b>${game.served}</b> ($${game.sales})<br>Burglars busted: <b>${game.kills}</b></p>
     <p style="font-size:18px;color:#ffcf4a">Paycheck: 💰 ${lastPay} <span class="lvl">(banked: ${save.bank})</span></p>
-    <div class="row"><button class="pxb gold" id="m-retry">▶ Retry day ${game.wave + 1}</button><button class="pxb" id="m-shop">💰 Shop</button></div>
+    <div class="row"><button class="pxb gold" id="m-retry">▶ Retry day ${game.wave + 1}</button></div>
     <div class="row" style="margin-top:8px"><button class="pxb" id="m-new">↻ Brand new store</button></div>`);
   $('m-retry').onclick = () => { game.retryDay(); view.setGame(game); pickedTower = null; preview = null; selected = null; view.setCursor(null); closeModal(); refresh(); };
-  $('m-shop').onclick = showShop;
   $('m-new').onclick = () => { save.shifts++; persist(); newStore(true); };
 }
 
 // ---------- Sara's tutorial (first run only) ----------
-const SARA_DIR = 'assets/sara/', FACE = { talk: SARA_DIR + 'talk.png', normal: SARA_DIR + 'normal.png', shh: SARA_DIR + 'shh.png' };
-const FACE_IMG = {};   // preloaded faces (drawn onto the pixel canvas)
-for (const k in FACE) { const im = new Image(); im.src = FACE[k]; FACE_IMG[k] = im; }
+const SARA_DIR = 'assets/sara/';   // Sara's pictures live here (see SARA_FILES)
 // which button / tab / cell to pulse so the player can find the item in the build menu
-function hintBuild(id) {
+function hintBuild(id, cellOnly) {
   if (selected === id) return null;
-  if (!trayOpen()) return '#buildBtn';
-  if (trayTab !== 'stocks') return '#tabStocks';
   const sk = SKILLS.includes(id) ? 'skill' : 'sell';
-  if (subTab !== sk) return sk === 'sell' ? '#subSell' : '#subSkill';
-  return focusId === id ? '#dAct' : `#trayGrid .sc[data-id="${id}"]`;
+  if (panelFolded) return null;
+  if (trayTab !== 'stocks' || subTab !== sk) return sk === 'sell' ? '#subSell' : '#subSkill';
+  return focusId === id && !cellOnly ? '#dAct' : `#trayGrid .sc[data-id="${id}"]`;
 }
 // say: [text, face?] lines with a NEXT button. task: Sara waits until done() is true.
 const TUT = [
   { id: 'hello', say: [
-    ['Uy, kamusta! Ikaw pala ang bago kong kasama dito sa tindahan! 😄', 'talk'],
+    ['Uy, kamusta! Ikaw pala ang bago kong kasama dito sa tindahan! 😄', 'point'],
     ['Ako nga pala si Sara. Ako muna ang bahala sa iyo ngayong unang araw.'],
     ['Sa umaga, mamimili ang mga customer. Pagdating ng gabi, papasok ang mga magnanakaw, at ang kaha natin ang target nila!'],
     ['Kaya simulan natin sa mga shelf. Doon kasi bumibili ang mga customer.'] ] },
-  { id: 'menu', task: () => 'Pindutin ang 🔨 sa kanang-ibaba para buksan ang build menu.',
-    done: () => trayOpen() || !!selected || game.shelves.length > 0, hint: () => hintBuild('shelf') },
-  { id: 'pick', task: () => 'Piliin ang Shelf, tapos pindutin ang "Build".',
+  { id: 'receipt', say: [
+    ['Nakikita mo ba ang resibo sa kanan, sa itaas ng OPEN STORE? 🧾', 'point'],
+    ['Diyan mo bibilhin ang lahat ng gamit sa tindahan. May apat na tab sa gilid nito: ITEMS, SKILLS, STATUS at SHOP.'],
+    ['Nasa ITEMS ang mga shelf at turret. Pumili ka lang sa grid, tapos pindutin ang BUILD sa ibaba ng resibo.'] ] },
+  { id: 'menu', task: () => 'Sa resibo, nasa ITEMS tab ang grid. Pindutin ang Shelf.',
+    done: () => panelTouched || !!selected || game.shelves.length > 0, hint: () => hintBuild('shelf', true) },
+  { id: 'pick', task: () => 'Pindutin ang BUILD sa ibaba ng resibo para kunin ang Shelf.',
     done: () => selected === 'shelf' || game.shelves.length > 0, hint: () => hintBuild('shelf') },
   { id: 'shelves', task: () => { const n = Math.min(5, game.shelves.length);
-      return selected === 'shelf' ? `I-tap ang sahig para maglagay ng shelf: ${n}/5. Mag-iwan ng daanan para sa mga customer!` : `Pindutin ulit ang 🔨 at piliin ang Shelf: ${n}/5.`; },
+      return selected === 'shelf' ? `I-tap ang sahig para maglagay ng shelf: ${n}/5. Mag-iwan ng daanan para sa mga customer!` : `Piliin ulit ang Shelf sa resibo at pindutin ang BUILD: ${n}/5.`; },
     done: () => game.shelves.length >= 5, hint: () => hintBuild('shelf') },
   { id: 'open', say: [
-    ['Ang galing mo! Kumpleto na ang mga shelf natin. 💪', 'talk'],
+    ['Ang galing mo! Kumpleto na ang mga shelf natin. 💪', 'point'],
     ['Buksan na natin ang tindahan para makapasok ang mga customer.'] ] },
   { id: 'go', task: () => 'Pindutin ang OPEN STORE sa kanang-ibaba!', done: () => game.phase !== 'prep', hint: () => '#go' },
   { id: 'watch', task: () => 'Panoorin mo muna silang mamili sa mga shelf at magbayad sa counter...', done: () => game.served > 0 },
   { id: 'vend', say: [
-    ['Tingnan mo, may kita na tayo! 💰', 'talk'],
+    ['Tingnan mo, may kita na tayo! 💰', 'point'],
     ['Pero mag-ingat, pagdating ng gabi ay may mga magnanakaw na papasok sa pinto.'],
+    ['Haay... Nakakadismaya na talaga. Lagi na lang nananakawan ang tindahan natin. Pagod na pagod na ako dito.', 'disappointed'],
+    ['Kaya ikaw na ang bahala ngayon! Bugbugin mo nang todo ang mga magnanakaw na yan, hanggang hindi na sila makabalik! Walang awa!', 'angry'],
     ['Maglagay ka ng Vending Machine malapit sa pinto, kung saan sila dadaan. Minarkahan ko na para sa iyo.'] ] },
   { id: 'vendTask', marks: true,
-    task: () => selected === 'cans' ? 'I-tap ang may markang sahig malapit sa pinto para ilagay ang Vending Machine.' : 'Buksan ang 🔨, piliin ang Vending Machine, at ilagay ito malapit sa pinto.',
+    task: () => selected === 'cans' ? 'I-tap ang may markang sahig malapit sa pinto para ilagay ang Vending Machine.' : 'Sa resibo, piliin ang Vending Machine sa grid at pindutin ang BUILD, tapos ilagay ito malapit sa pinto.',
     done: () => game.towers.some(t => t.type === 'cans'), hint: () => hintBuild('cans') },
   { id: 'bye', say: [
-    ['Shhh... Tahimik lang. Maririnig mo na sila, malapit na silang dumating.', 'shh'],
-    ['Ang vending machine na ang bahala sa kanila. Good luck, boss! Kaya mo yan! ✨', 'talk'] ] },
+    ['Tahimik lang. Maririnig mo na sila, malapit na silang dumating.'],
+    ['Ang vending machine na ang bahala sa kanila. Good luck, boss! Kaya mo yan! ✨', 'point'] ] },
 ];
 const TUT_OPEN = TUT.findIndex(s => s.id === 'open');
 const tut = { on: false, i: 0, li: 0, full: [], shown: 0, face: null, last: '', timer: null, marks: [] };
@@ -1072,13 +1129,17 @@ function tutBuildUI() {
   if (sara) return;
   const css = document.createElement('style');
   css.textContent = `
-#sara{position:fixed;left:50%;bottom:0;transform:translateX(-50%);width:min(620px,calc(100vw - 500px));min-width:360px;display:flex;align-items:flex-end;gap:6px;z-index:8;pointer-events:none;font-family:var(--cf)}
-#saraCv{flex:none;display:block;image-rendering:pixelated;image-rendering:crisp-edges;image-rendering:pixelated}
-#sara.big{width:min(1000px,96vw)}
+#sara{position:fixed;left:calc((100vw - var(--bpx,190px)) / 2);width:min(620px,calc(100vw - var(--bpx,190px)));transform:translateX(-50%);bottom:0;display:flex;align-items:flex-end;gap:6px;z-index:8;pointer-events:none;font-family:var(--cf);transition:left .45s cubic-bezier(.4,0,.2,1),width .45s cubic-bezier(.4,0,.2,1)}
+#saraCv{flex:none;display:block;transform-origin:50% 100%;transition:width .45s cubic-bezier(.4,0,.2,1),height .45s cubic-bezier(.4,0,.2,1);image-rendering:pixelated;image-rendering:crisp-edges;image-rendering:pixelated;filter:drop-shadow(3px 3px 0 rgba(8,6,24,.45))}
+#sara.big{left:50vw;width:min(1000px,96vw)}
 #sara.big #saraBox{font-size:clamp(16px,2.1vw,22px);margin-bottom:9vh;padding:22px 24px 12px;min-height:130px}
+#saraBox{transition:margin-bottom .45s cubic-bezier(.4,0,.2,1),padding .45s cubic-bezier(.4,0,.2,1),min-height .45s cubic-bezier(.4,0,.2,1),font-size .45s cubic-bezier(.4,0,.2,1)}
+#saraBox .sn{transition:top .45s cubic-bezier(.4,0,.2,1),font-size .45s cubic-bezier(.4,0,.2,1)}
 #sara.big #saraBox .sn{font-size:14px;top:-15px}
-#saraDim{position:fixed;inset:0;z-index:7;background:rgba(8,5,16,.55);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);visibility:hidden;opacity:0;transition:opacity .35s,visibility .35s}
-#saraDim.on{visibility:visible;opacity:1}
+@keyframes saraBoxPop{from{transform:scale(.6);opacity:0}to{transform:none;opacity:1}}
+#sara:not(.off) #saraBox{transform-origin:0 100%;animation:saraBoxPop .26s cubic-bezier(.34,1.56,.64,1)}
+#saraDim{position:fixed;inset:0;z-index:7;background:rgba(8,5,16,.55);backdrop-filter:blur(0);-webkit-backdrop-filter:blur(0);visibility:hidden;opacity:0;transition:opacity .45s cubic-bezier(.4,0,.2,1),backdrop-filter .45s cubic-bezier(.4,0,.2,1),-webkit-backdrop-filter .45s cubic-bezier(.4,0,.2,1),visibility .45s}
+#saraDim.on{visibility:visible;opacity:1;backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px)}
 #saraBox{pointer-events:auto;position:relative;flex:1;margin-bottom:clamp(12px,3vh,26px);padding:16px 16px 10px;border-radius:24px;background:linear-gradient(180deg,#fffaf0,#ffe9cf);border:3px solid #fff;box-shadow:0 6px 0 #d9b08a,0 14px 26px rgba(0,0,0,.35);color:#7a5a40;font:500 clamp(13px,1.9vw,16px)/1.35 var(--cf);min-height:84px;cursor:default}
 #saraBox::before{content:'';position:absolute;left:-10px;bottom:26px;border:9px solid transparent;border-left:0;border-right:10px solid #fff}
 #saraBox .sn{position:absolute;top:-13px;left:16px;background:#ff7a2e;color:#fff;font:700 12px/1 var(--cf);padding:5px 12px;border-radius:99px;letter-spacing:.12em;box-shadow:0 2px 0 #c25a14}
@@ -1107,75 +1168,158 @@ function tutBuildUI() {
 function tutPaint() {
   const s = TUT[tut.i]; if (!s || !sara) return;
   $('saraTxt').textContent = tut.full.slice(0, tut.shown).join('');
-  const face = tut.face || (tutTyping() ? 'talk' : 'normal');
-  if (tut.faceNow !== face) { tut.faceNow = face; tut.popAt = performance.now(); }   // every new picture pops in
+  const face = tut.face || 'normal';
+  if (tut.faceNow !== face) tut.faceNow = face;
   const isSay = !!s.say, last = isSay && tut.li === s.say.length - 1 && tut.i === TUT.length - 1;
   $('saraNext').style.display = isSay ? '' : 'none';
   $('saraNext').textContent = last ? 'GOOD LUCK ✔' : 'NEXT ▶';
 }
 
-// ---- Sara is drawn on a low-res canvas: hard pixels, a white + dark-blue pixel outline, pop-in and sway all snapped to the pixel grid ----
-const sprite = { key: '', cv: document.createElement('canvas') }, bodyCv = document.createElement('canvas');
-let saraAnim = 0, saraLast = 0, saraDh = 0;
-function saraSprite(face, W, H) {   // the face downscaled to W x H with hard (non-antialiased) edges
-  const key = face + '|' + W + 'x' + H; if (sprite.key === key) return sprite.cv;
-  const im = FACE_IMG[face]; if (!im || !im.complete || !im.naturalWidth) return null;
-  const c = sprite.cv; c.width = W; c.height = H;
-  const x = c.getContext('2d', { willReadFrequently: true });
-  x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high'; x.drawImage(im, 0, 0, W, H);
-  const d = x.getImageData(0, 0, W, H), a = d.data;
-  for (let i = 3; i < a.length; i += 4) a[i] = a[i] > 120 ? 255 : 0;
-  x.putImageData(d, 0, 0); sprite.key = key; return c;
+// ---- Sara: 2D pixel-art sprite drawn on #saraCv. The four pictures (idle1, point, disappointed, angry) are loaded once; the green screen is
+// removed automatically and a thick, chunky white outline is added, all at load time, so the raw art can stay as it is. ----
+const SARA_FRAMES = ['idle1', 'point', 'disappointed', 'angry'];   // a line's face name = the picture it shows; no face = point while she talks, idle1 once she is done
+const SARA_FILES = { idle1: 'normal.png', point: 'talk.png', disappointed: 'dissapointed.png', angry: 'angry.png' };   // picture -> file in assets/sara/
+const SARA_GRID = 128, SARA_OUTLINE = 3;
+// sample the picture on a coarse "art pixel" grid (centre of every block) so the result is crisp, chunky pixel art
+function saraSample(data, w, h, G) {
+  const out = new Uint8ClampedArray(G * G * 4), sx = w / G, sy = h / G;
+  for (let y = 0; y < G; y++) for (let x = 0; x < G; x++) {
+    const i = (Math.min(h - 1, (y * sy + sy / 2) | 0) * w + Math.min(w - 1, (x * sx + sx / 2) | 0)) * 4, o = (y * G + x) * 4;
+    out[o] = data[i]; out[o + 1] = data[i + 1]; out[o + 2] = data[i + 2]; out[o + 3] = 255;
+  }
+  return out;
 }
+// chroma key: find the green from the corners, flood-fill it away from the edges (so green INSIDE the art is safe), keep the biggest blob
+function saraKey(px, G) {
+  let kr = 0, kg = 0, kb = 0, n = 0;
+  for (const [cx, cy] of [[0, 0], [G - 4, 0], [0, 4], [G - 4, 4]]) for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) { const i = ((cy + y) * G + cx + x) * 4; kr += px[i]; kg += px[i + 1]; kb += px[i + 2]; n++; }
+  kr /= n; kg /= n; kb /= n;
+  const isKey = i => { const r = px[i], g = px[i + 1], b = px[i + 2], d = Math.hypot(r - kr, g - kg, b - kb); return d < 70 || (g - Math.max(r, b) > 45 && d < 120); };
+  const bg = new Uint8Array(G * G), st = [];
+  const push = (x, y) => { if (x < 0 || y < 0 || x >= G || y >= G) return; const p = y * G + x; if (bg[p] || !isKey(p * 4)) return; bg[p] = 1; st.push(p); };
+  for (let i = 0; i < G; i++) { push(i, 0); push(i, G - 1); push(0, i); push(G - 1, i); }
+  while (st.length) { const p = st.pop(), x = p % G, y = (p / G) | 0; push(x + 1, y); push(x - 1, y); push(x, y + 1); push(x, y - 1); }
+  // enclosed pockets of pure key colour (e.g. the gap between an arm and the body) are removed too
+  { const seen = new Uint8Array(G * G);
+    const strong = p => { if (bg[p]) return false; const i = p * 4, r = px[i], g = px[i + 1], b = px[i + 2]; return Math.hypot(r - kr, g - kg, b - kb) < 85 && g - Math.max(r, b) > 30; };
+    for (let s = 0; s < G * G; s++) { if (seen[s] || !strong(s)) continue;
+      const comp = [s], q = [s]; seen[s] = 1;
+      while (q.length) { const p = q.pop(), x = p % G, y = (p / G) | 0;
+        for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) { if (nx < 0 || ny < 0 || nx >= G || ny >= G) continue; const np = ny * G + nx; if (!seen[np] && strong(np)) { seen[np] = 1; q.push(np); comp.push(np); } } }
+      if (comp.length >= 2) for (const p of comp) bg[p] = 1; } }
+  // fringe: art pixels touching the key that are still tinted green get eaten too
+  for (let pass = 0; pass < 2; pass++) {
+    const kill = [];
+    for (let y = 0; y < G; y++) for (let x = 0; x < G; x++) { const p = y * G + x; if (bg[p]) continue; const i = p * 4;
+      if (px[i + 1] - Math.max(px[i], px[i + 2]) < 22) continue;
+      if ((x > 0 && bg[p - 1]) || (x < G - 1 && bg[p + 1]) || (y > 0 && bg[p - G]) || (y < G - 1 && bg[p + G])) kill.push(p); }
+    for (const p of kill) bg[p] = 1;
+  }
+  const m = new Uint8Array(G * G); for (let p = 0; p < G * G; p++) m[p] = bg[p] ? 0 : 1;
+  // keep only the largest connected blob (drops stray specks)
+  const lab = new Int32Array(G * G); let best = 0, bestN = 0, id = 0;
+  for (let s = 0; s < G * G; s++) { if (!m[s] || lab[s]) continue; id++; let c = 0; const q = [s]; lab[s] = id;
+    while (q.length) { const p = q.pop(); c++; const x = p % G, y = (p / G) | 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= G || ny >= G) continue; const np = ny * G + nx; if (m[np] && !lab[np]) { lab[np] = id; q.push(np); } } }
+    if (c > bestN) { bestN = c; best = id; } }
+  for (let p = 0; p < G * G; p++) if (lab[p] !== best) m[p] = 0;
+  return m;
+}
+// chunky outline: grow the silhouette by R art-pixels (rounded square-ish brush) and paint the new ring white
+function saraOutline(m, G, R) {
+  const ring = new Uint8Array(G * G);
+  for (let y = 0; y < G; y++) for (let x = 0; x < G; x++) {
+    if (m[y * G + x]) continue;
+    let hit = false;
+    for (let dy = -R; dy <= R && !hit; dy++) for (let dx = -R; dx <= R; dx++) {
+      if (dx * dx + dy * dy > R * R + R) continue;
+      const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= G || ny >= G) continue;
+      if (m[ny * G + nx]) { hit = true; break; }
+    }
+    if (hit) ring[y * G + x] = 1;
+  }
+  return ring;
+}
+
+// rotate + scale the art around her feet with nearest-neighbour sampling: every output pixel is a whole art pixel (no blur, no jaggies, no AA)
+function saraRender(src, w, h, dst, cw, ang, sc) {
+  const cos = Math.cos(ang), sin = Math.sin(ang), px = cw / 2, py = h, ox = w / 2;
+  for (let y = 0; y < h; y++) for (let x = 0; x < cw; x++) {
+    const vx = x + 0.5 - px, vy = y + 0.5 - py;
+    const sx = ((vx * cos + vy * sin) / sc + ox) | 0, sxf = (vx * cos + vy * sin) / sc + ox;
+    let sy = (-vx * sin + vy * cos) / sc + h;
+    let c = 0;
+    if (sxf >= 0 && sxf < w) { if (sy >= h) sy = h - 1; if (sy >= 0) c = src[(sy | 0) * w + sx]; }
+    dst[y * cw + x] = c;
+  }
+}
+let saraAnim = 0, saraSprites = null, saraLoading = false, saraPopAt = 0, saraPose = '', saraDraw = '', saraImg = null, saraDst = null;
+function saraLoadImg(file) {
+  return new Promise((ok, no) => { const im = new Image(); im.onload = () => ok(im); im.onerror = () => no(new Error('missing: ' + SARA_DIR + file)); im.src = SARA_DIR + file; });
+}
+async function saraLoad() {
+  if (saraSprites || saraLoading) return;
+  saraLoading = true;
+  try {
+    const got = await Promise.allSettled(SARA_FRAMES.map(n => saraLoadImg(SARA_FILES[n])));
+    got.forEach((r, k) => { if (r.status === 'rejected') console.warn('Sara picture ' + SARA_FRAMES[k] + ' not found (' + r.reason.message + '), using idle instead'); });
+    const names = SARA_FRAMES.filter((n, k) => got[k].status === 'fulfilled'), imgs = got.filter(r => r.status === 'fulfilled').map(r => r.value);
+    if (!imgs.length) throw new Error('no Sara pictures found in ' + SARA_DIR);
+    const G = SARA_GRID, raw = {};
+    let x0 = G, y0 = G, x1 = 0, y1 = 0;
+    imgs.forEach((im, k) => {
+      const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight;
+      const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(im, 0, 0);
+      const px = saraSample(g.getImageData(0, 0, c.width, c.height).data, c.width, c.height, G);
+      const m = saraKey(px, G), ring = saraOutline(m, G, SARA_OUTLINE);
+      raw[names[k]] = { px, m, ring };
+      for (let y = 0; y < G; y++) for (let x = 0; x < G; x++) if (m[y * G + x] || ring[y * G + x]) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    });
+    const w = x1 - x0 + 1, h = y1 - y0 + 1, frames = {}, px32 = {};   // one shared crop for every frame, so nothing jumps when she changes picture
+    for (const n of names) {
+      const { px, m, ring } = raw[n], c = document.createElement('canvas'); c.width = w; c.height = h;
+      const g = c.getContext('2d'), id = g.createImageData(w, h);
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const p = (y + y0) * G + x + x0, o = (y * w + x) * 4;
+        if (m[p]) { id.data[o] = px[p * 4]; id.data[o + 1] = px[p * 4 + 1]; id.data[o + 2] = px[p * 4 + 2]; id.data[o + 3] = 255; }
+        else if (ring[p]) { id.data[o] = id.data[o + 1] = id.data[o + 2] = id.data[o + 3] = 255; }
+      }
+      g.putImageData(id, 0, 0); frames[n] = c; px32[n] = new Uint32Array(id.data.buffer);
+    }
+    for (const n of SARA_FRAMES) if (!frames[n]) { frames[n] = frames.idle1 || frames[names[0]]; px32[n] = px32.idle1 || px32[names[0]]; }   // a missing picture falls back to idle
+    saraSprites = { frames, px32, w, h };
+  } catch (e) { console.warn('Sara sprite failed to load:', e); }
+  saraLoading = false;
+}
+saraLoad();   // preload + key + outline at startup, so Sara is ready the instant the first dialogue opens
 function saraFrame(now) {
   if (!tut.on) { saraAnim = 0; return; }
   saraAnim = requestAnimationFrame(saraFrame);
-  if (now - saraLast < 33) return;   // ~30 fps: reads as chunky pixel animation and keeps it cheap
-  saraLast = now;
-  const cv = $('saraCv'); if (!cv || !sara || sara.classList.contains('top')) return;
-  const vh = innerHeight, big = sara.classList.contains('big');
+  const cv = $('saraCv'); if (!cv || !sara || !saraSprites || sara.classList.contains('top')) return;
+  const { px32, frames, w, h } = saraSprites, vh = innerHeight, big = sara.classList.contains('big');
+
+  // which picture: the line's own pose (disappointed / angry / point) if it has one; otherwise she uses the talking pose while the text types
+  // and goes back to the normal pose only once she is done talking
+  const key = frames[tut.faceNow] ? tut.faceNow : tutTyping() ? 'point' : 'idle1';
+
+  // size: whole-number zoom of the art grid, so the pixels stay perfectly square
   const want = (big ? Math.max(260, Math.min(500, vh * 0.64)) : Math.max(130, Math.min(220, vh * 0.32))) * (vh <= 480 ? 0.8 : 1);
-  saraDh = saraDh ? saraDh + (want - saraDh) * 0.25 : want;   // glide between the big and the small size
-  const P = Math.max(2, Math.round(((view && view.pixel) || 3) * 0.67));   // css px per Sara pixel
-  const H = Math.max(40, Math.round(saraDh / P)), W = Math.round(H * 475 / 525);
-  const spr = saraSprite(tut.faceNow || 'normal', W, H); if (!spr) return;
-  const t = now / 1000, pad = Math.ceil(H * 0.05) + 3, top = Math.ceil(H * 0.06) + 3, CW = W + pad * 2, CH = H + top;
-  if (cv.width !== CW || cv.height !== CH) { cv.width = CW; cv.height = CH; bodyCv.width = CW; bodyCv.height = CH; cv.style.width = CW * P + 'px'; cv.style.height = CH * P + 'px'; }
-  // pop: ease-out-back scale from 80% with a little hop; sway: rows lean sideways, anchored at the feet; breathing: 1-2px of height
-  const pp = Math.min(1, (now - (tut.popAt || 0)) / 450), back = 1 + 2.70158 * Math.pow(pp - 1, 3) + 1.70158 * Math.pow(pp - 1, 2), sc = 0.8 + 0.2 * back;
-  const sW = Math.round(W * sc * (1 + 0.05 * (1 - pp))), sH = Math.round(H * sc * (1 + 0.012 * Math.sin(t * 3.4)));
-  const hop = Math.round(Math.sin(pp * Math.PI) * 0.03 * H), amp = Math.sin(t * 1.7) * 0.03 * H;
-  const bx = bodyCv.getContext('2d', { willReadFrequently: true }); bx.clearRect(0, 0, CW, CH); bx.imageSmoothingEnabled = false;
-  const yTop = CH + 3 - hop - sH, x0 = CW / 2 - sW / 2;
-  for (let j = 0; j < sH; j++) {
-    const k = (sH - j) / sH, sy = Math.min(H - 1, Math.floor(j * H / sH));
-    bx.drawImage(spr, 0, sy, W, 1, Math.round(x0 + amp * k * k), yTop + j, sW, 1);
+  const K = Math.max(1, Math.round(want / h + 0.2)), PAD = 8, cw0 = w + PAD * 2;   // PAD = room on both sides for the tilt
+  if (cv.width !== cw0 || cv.height !== h || !saraImg) { cv.width = cw0; cv.height = h; saraImg = cv.getContext('2d').createImageData(cw0, h); saraDst = new Uint32Array(saraImg.data.buffer); saraDraw = ''; }
+  const cw = cw0 * K + 'px', ch = h * K + 'px';
+  if (cv.style.width !== cw) { cv.style.width = cw; cv.style.height = ch; }
+  if (saraPose !== key) { saraPose = key; saraPopAt = now; }                         // every new picture gets a small pop
+
+  // tilt: she rocks around her feet, and a short soft pop (scale) plays when the picture changes. Both are drawn nearest-neighbour on the art grid,
+  // so every pixel snaps to a whole art-pixel: no blur, no jagged edges.
+  const t = now / 1000, deg = Math.round(Math.sin(t * 1.5) * 2.6 * 10) / 10;
+  const pp = Math.min(1, (now - saraPopAt) / 320), back = 1 + 1.70158 * Math.pow(pp - 1, 3) + 0.70158 * Math.pow(pp - 1, 2);
+  const sc = Math.round((pp >= 1 ? 1 : 0.92 + 0.08 * back) * 200) / 200;
+  const sig = key + '|' + deg + '|' + sc;
+  if (saraDraw !== sig) {
+    saraRender(px32[key], w, h, saraDst, cw0, deg * Math.PI / 180, sc);
+    cv.getContext('2d').putImageData(saraImg, 0, 0); saraDraw = sig;
   }
-  // pixel outline: dark blue touching her, white outside it
-  const src = bx.getImageData(0, 0, CW, CH).data, N = CW * CH, m = new Uint8Array(N);
-  for (let i = 0; i < N; i++) if (src[i * 4 + 3]) m[i] = 3;
-  const ring = (from, to) => {
-    const mark = [];
-    for (let y = 0; y < CH; y++) for (let x = 0; x < CW; x++) {
-      const i = y * CW + x; if (m[i]) continue;
-      let hit = false;
-      for (let dy = -1; dy <= 1 && !hit; dy++) for (let dx = -1; dx <= 1; dx++) {
-        const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= CW || ny >= CH) continue;
-        if (m[ny * CW + nx] === from) { hit = true; break; }
-      }
-      if (hit) mark.push(i);
-    }
-    for (const i of mark) m[i] = to;
-  };
-  ring(3, 1); ring(1, 2); ring(2, 2);   // dark blue 1px inside, white 2px outside
-  const out = new ImageData(CW, CH), o = out.data;
-  for (let i = 0; i < N; i++) {
-    const v = m[i], q = i * 4;
-    if (v === 3) { o[q] = src[q]; o[q + 1] = src[q + 1]; o[q + 2] = src[q + 2]; o[q + 3] = 255; }
-    else if (v === 1) { o[q] = 22; o[q + 1] = 34; o[q + 2] = 107; o[q + 3] = 255; }   // inner ring: dark blue
-    else if (v === 2) { o[q] = 255; o[q + 1] = 255; o[q + 2] = 255; o[q + 3] = 255; }   // outer ring: white
-  }
-  cv.getContext('2d').putImageData(out, 0, 0);
 }
 function tutSay(text, face) {
   clearInterval(tut.timer);
@@ -1227,8 +1371,7 @@ function tutTick() {
   if (!tut.on || !game || !running) return;
   if (game.wave > 0) { tutEnd(true); return; }
   const s = TUT[tut.i]; if (!s) return;
-  sara.classList.toggle('top', trayOpen());
-  const talking = !!s.say && !trayOpen();
+  const talking = !!s.say;
   sara.classList.toggle('big', talking); dim.classList.toggle('on', talking);   // dialogue: big Sara + blurred, dimmed game; tasks: small Sara, game fully usable
   if (s.task) {
     if (s.done()) { sfx.sale(); tutEnter(tut.i + 1); return; }
@@ -1240,11 +1383,12 @@ function tutTick() {
 function tutStart() {
   if (save.tutDone || tut.on || !game) return;
   if (game.wave > 0 || (save.tutDone === undefined && save.best > 0)) { save.tutDone = true; persist(); return; }   // veterans who never saw it skip it; a restarted run replays it
-  tutBuildUI(); tut.on = true; sara.classList.remove('off'); saraDh = 0; if (!saraAnim) saraAnim = requestAnimationFrame(saraFrame);
+  tutBuildUI(); tut.on = true; sara.classList.remove('off'); saraPose = ''; saraDraw = ''; saraLoad(); if (!saraAnim) saraAnim = requestAnimationFrame(saraFrame);
   let st = save.tutStep || 0;   // resume where we left off; a rolled-back day (no sales yet) goes back to opening the store
   const gi = TUT.findIndex(x => x.id === 'go'), bi = TUT.findIndex(x => x.id === 'bye');
   if (st > gi && st < bi && game.served === 0) st = gi;
   tutEnter(st);
+  tutTick();   // size + dim right now, not at the next 150ms tick
 }
 function tutEnd(done) {
   clearInterval(tut.timer); tut.on = false;
@@ -1261,7 +1405,7 @@ setInterval(tutTick, 150);
 let last = performance.now(), clock = 0;
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now; clock += dt;
-  musicTick(dt);
+  musicTick(dt); bossBannerTick();
   if (game) {
     const was = game.phase; game.update(paused || tutHold() ? 0 : dt * speed);
     if (game.phase === 'wave' || game.phase === 'morning' || game.phase === 'evening' || was !== game.phase) { if (Math.floor(clock * 4) !== Math.floor((clock - dt) * 4)) refresh(); }
