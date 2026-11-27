@@ -127,11 +127,20 @@ export class View {
     const aspect = tw / th;
     const ex = this.ext; let halfH = ((ROWS + 1.6 + (ex.top - 0.5) + (ex.bottom - 0.5)) * Math.sin(ELEV) + 2.2) / 2, halfW = (COLS + ex.left + ex.right + 1.2) / 2;
     if (halfW / aspect > halfH) halfH = halfW / aspect; else halfW = halfH * aspect;
-    // the big build receipt lives on the right: slide the frustum right so the store sits on the left of the screen
-    halfW *= 1.0; halfH *= 1.0; const shift = halfW * 0.16;
+    // the build receipt covers the right side: frame the WHOLE store inside the free part of the screen (left of the receipt)
+    const res = Math.min(w * 0.6, Math.max(0, this.reserveRight || 0));
+    let shift = 0;
+    if (res > 0) {
+      const free = (w - res) / w;                         // share of the screen the store may use
+      halfW /= free; halfH = halfW / aspect;              // widen the frustum so the store fits that share
+      shift = halfW * (1 - free);                         // ...and slide it so the store is centred in the free part
+    } else { shift = halfW * 0.0; }
     const c = this.camera; c.left = -halfW + shift; c.right = halfW + shift; c.top = halfH; c.bottom = -halfH;
     c.updateProjectionMatrix();
   }
+
+  // px of the screen (from the right edge) that the build receipt covers; the camera re-frames the store around it
+  setReserve(px) { px = Math.round(px || 0); if (Math.abs(px - (this.reserveRight || 0)) < 2) return; this.reserveRight = px; this.resize(); }
 
   // ---------- store set dressing (rebuilt per game; the shapes live in js/model/) ----------
   setGame(game) {
@@ -892,6 +901,7 @@ export class View {
         seen.add(o.id);
         let m = this.meshes.get(o.id);
         if (!m) { const grp = make(o); this.dyn.add(grp); m = { group: grp, lvl: 0 }; this.meshes.set(o.id, m); grp.traverse(c => { if (c.isMesh && c.castShadow === undefined) c.castShadow = true; }); }
+        if (m.group && (o.kind === 'tower' || o.kind === 'shelf' || o.kind === 'trap')) { m.group.position.x = wx(o.x); m.group.position.z = wz(o.y); }   // items can be moved
         upd(o, m);
       }
     };
