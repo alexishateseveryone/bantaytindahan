@@ -503,9 +503,9 @@ export class Game {
   }
 
   // the steel shelf is built ON TOP of 3 shelves in a row; the soda statue is a 3x3 block (x, y = its middle)
-  canPlaceBig(type, x, y) {
+  canPlaceBig(type, x, y, mv) {
     const def = ITEMS[type];
-    if (this.costOf(type) > this.cash) return { ok: false, reason: 'Not enough cash' };
+    if (!mv && this.costOf(type) > this.cash) return { ok: false, reason: 'Not enough cash' };
     if (def.onShelves) return this.steelWindow(x, y) ? { ok: true } : { ok: false, reason: 'Needs 3 shelves in a row' };
     const cells = [];
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) cells.push([x + dx, y + dy]);
@@ -525,21 +525,21 @@ export class Game {
     return { ok: true };
   }
 
-  canPlace(type, x, y) {
+  canPlace(type, x, y, mv) {   // mv = checking a MOVE of an item you already own: no unlock / limit / cost checks
     const def = ITEMS[type];
-    if (!this.isUnlocked(type)) return { ok: false, reason: 'Locked: buy it in the shop' };
-    if (this.countOf(type) >= this.limitOf(type)) return { ok: false, reason: `Limit reached (${this.limitOf(type)}): renovate for more` };
-    if (def.foot > 1) return this.canPlaceBig(type, x, y);
+    if (!mv && !this.isUnlocked(type)) return { ok: false, reason: 'Locked: buy it in the shop' };
+    if (!mv && this.countOf(type) >= this.limitOf(type)) return { ok: false, reason: `Limit reached (${this.limitOf(type)}): renovate for more` };
+    if (def.foot > 1) return this.canPlaceBig(type, x, y, mv);
     if (x < 0 || y < 0 || x >= COLS || y >= ROWS || this.reserved(x, y)) return { ok: false, reason: 'Not buildable here' };
     if (this.spawns.some(s => s.x === x && s.y === y)) return { ok: false, reason: 'Door — keep clear' };
     if (this.blocked[idx(x, y)]) return { ok: false, reason: 'Occupied' };
     if (def.kind === 'skill') {
       if (this.phase !== 'wave') return { ok: false, reason: 'Skill items work at night' };
-      if (this.costOf(type) > this.cash) return { ok: false, reason: 'Not enough cash' };
+      if (!mv && this.costOf(type) > this.cash) return { ok: false, reason: 'Not enough cash' };
       return { ok: true };
     }
     if (this.trapAt(x, y)) return { ok: false, reason: 'Mop is there' };
-    if (this.costOf(type) > this.cash) return { ok: false, reason: 'Not enough cash' };
+    if (!mv && this.costOf(type) > this.cash) return { ok: false, reason: 'Not enough cash' };
     if (def.kind === 'trap') return { ok: true };
     for (const e of this.enemies) {
       if (Math.hypot(e.x - x, e.y - y) < 0.75 || (e.tx === x && e.ty === y)) return { ok: false, reason: 'Burglar in the way' };
@@ -591,6 +591,27 @@ export class Game {
     this.towers.push(t); this.blocked[idx(x, y)] = 2;
     this.refreshPaths(); this.emit('place', { tower: t });
     return true;
+  }
+
+  // ---------- moving items you already own (free): shelves, machines, turrets, mops. The steel shelf is welded together, so it stays. ----------
+  canMoveItem(t) { return !!t && (t.kind === 'tower' || t.kind === 'trap' || (t.kind === 'shelf' && t.placed !== false && t.type !== 'steel')) && this.phase !== 'lost'; }
+  canMove(t, x, y) {
+    if (!this.canMoveItem(t)) return { ok: false, reason: "Can't be moved" };
+    if (t.x === x && t.y === y) return { ok: false, reason: 'Already here' };
+    const own = t.kind === 'trap' ? [] : this.cellsOf(t), saved = own.map(([cx, cy]) => this.blocked[idx(cx, cy)]);
+    own.forEach(([cx, cy]) => { this.blocked[idx(cx, cy)] = 0; });   // its own cells are free while we test the new spot
+    const r = this.canPlace(t.type, x, y, true);
+    own.forEach(([cx, cy], i) => { this.blocked[idx(cx, cy)] = saved[i]; });
+    return r;
+  }
+  move(t, x, y) {
+    if (!this.canMove(t, x, y).ok) return false;
+    if (t.kind === 'trap') { t.x = x; t.y = y; this.emit('move', { tower: t }); return true; }
+    for (const [cx, cy] of this.cellsOf(t)) this.blocked[idx(cx, cy)] = 0;
+    t.x = x; t.y = y;
+    if (t.cells) { t.cells = []; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) t.cells.push([x + dx, y + dy]); }   // soda statue: 3x3 around its middle
+    for (const [cx, cy] of this.cellsOf(t)) this.blocked[idx(cx, cy)] = t.kind === 'shelf' ? 3 : 2;
+    this.refreshPaths(); this.emit('move', { tower: t }); return true;
   }
 
   upgrade(t) {
