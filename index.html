@@ -53,7 +53,7 @@
   .pxb.gold { --c:var(--gold); color:#2a1d00; } .pxb.red { --c:var(--red); color:#2a0003; } .pxb.green { --c:var(--green); color:#00281a; }
   .pxb.sq { width:38px; height:38px; padding:0; display:grid; place-items:center; font-size:10px; }
 
-  #app { height:100dvh; }
+  #app { height:100%; height:100vh; height:100dvh; }   /* 100% first: on older iPads / iPhones 100dvh does not exist and 100vh is taller than the visible screen */
   #stage { position:relative; width:100%; height:100%; overflow:hidden; background:var(--bg); }
   #view { display:block; image-rendering:pixelated; image-rendering:crisp-edges; touch-action:none; }
   #floats { position:absolute; inset:0; pointer-events:none; overflow:hidden; }
