@@ -1985,6 +1985,25 @@ export class View {
     if (e.flash > 0) m.hitT = 0.13;                                         // hit: the whole burglar flashes white
     if ((m.hitT || 0) > 0 || m.hitOn) this.enemyFlash(m, (m.hitT || 0) > 0 ? Math.min(1, m.hitT / 0.13) : 0);
     if (m.hitT > 0) m.hitT -= dt;
+    if (e.enraged) {   // boss phase 2: burning outline, flame particles around the body and a pulsing glow (no banner)
+      if (!m.rage) {
+        m.rage = true; m.rageOl = this.olMat.clone();
+        grp.traverse(o => { if (o.userData.ol) o.material = m.rageOl; });
+        const sp = new THREE.Sprite(this.glowMat().clone()); sp.scale.setScalar(3.1 * (u.big || 1)); sp.position.y = 0.75 * (u.big || 1); sp.renderOrder = 5; grp.add(sp); m.rageGlow = sp;
+        this.ringFx(e.x, e.y, 2.4, 0xff7a1a); this.burst(e.x, e.y, 0.7, 0xff9a2a, 14, 3, 1.1); this.shake = Math.max(this.shake, 0.35);
+      }
+      const pu = 0.5 + 0.5 * Math.sin(time * 9 + e.id), big = u.big || 1;
+      m.rageOl.color.setRGB(1, 0.3 + 0.35 * pu, 0.05);
+      m.rageGlow.material.opacity = 0.55 + 0.3 * pu; m.rageGlow.scale.setScalar((2.9 + 0.5 * pu) * big);
+      if ((m.rf = (m.rf || 0) - dt) <= 0) {
+        m.rf = 0.03;
+        for (let i = 0; i < 2; i++) {   // flames licking up the silhouette
+          const a = Math.random() * Math.PI * 2, rr = (0.22 + Math.random() * 0.2) * big;
+          this.fireBit(e.x + Math.cos(a) * rr, (0.1 + Math.random() * 1.0) * big, e.y + Math.sin(a) * rr, 1.3 * big, 0.6);
+        }
+        if (Math.random() < 0.5) this.flame(e.x + (Math.random() - 0.5) * 0.4 * big, e.y + (Math.random() - 0.5) * 0.4 * big, (0.3 + Math.random() * 0.7) * big);
+      }
+    }
     const r = Math.max(0, e.hp / e.maxhp);
     u.bar.visible = r < 0.999; u.bar.quaternion.copy(this.camera.quaternion);
     u.fg.scale.set(0.58 * r, 0.07, 1); u.fg.position.x = -0.29 * (1 - r);
