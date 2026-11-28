@@ -1,12 +1,14 @@
 {
-  "name": "Tindang Sara",
-  "short_name": "Tindang Sara",
+  "name": "Tindang Sara A",
+  "short_name": "Sara A",
   "description": "Shelf Defense: Closing Time. Stock the shelves by day, defend the till by night.",
-  "start_url": "./",
+  "start_url": "./index-a.html",
   "scope": "./",
-  "id": "./",
-  "display": "fullscreen",
-  "display_override": ["fullscreen", "standalone"],
+  "id": "./test-a",
+  "display": "standalone",
+  "display_override": [
+    "standalone"
+  ],
   "orientation": "landscape",
   "background_color": "#000000",
   "theme_color": "#000000",
