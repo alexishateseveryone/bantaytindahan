@@ -300,6 +300,56 @@
   #dock #restockAll { font-size:1em !important; padding:.7em .9em !important; gap:.3em; border-radius:.9em !important; }
   #dock #speed { font-size:1em !important; min-width:2.8em !important; padding:0 .8em !important; border-radius:.9em !important; }
   #dock #restockAll img { width:1.3em; height:1.3em; }
+
+  /* ================= pixel edges: stair-stepped corners (clip-path) + a hand-drawn pixel outline (9-slice border-image) ================= */
+  :root { --u:3px; --pxo:url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%279%27%20height%3D%279%27%20shape-rendering%3D%27crispEdges%27%3E%3Cpath%20fill%3D%27%230d0b1d%27%20fill-opacity%3D%27.34%27%20d%3D%27M3%200h3v1H3zM3%208h3v1H3zM0%203h1v3H0zM8%203h1v3H8zM2%201h1v1H2zM1%201h1v1H1zM0%202h1v1H0zM6%201h1v1H6zM7%201h1v1H7zM8%202h1v1H8zM0%206h1v1H0zM1%207h1v1H1zM2%207h1v1H2zM8%206h1v1H8zM7%207h1v1H7zM6%207h1v1H6z%27%2F%3E%3C%2Fsvg%3E"); --pxs:url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%279%27%20height%3D%279%27%20shape-rendering%3D%27crispEdges%27%3E%3Cpath%20fill%3D%27%232a2622%27%20fill-opacity%3D%27.5%27%20d%3D%27M3%200h3v1H3zM3%208h3v1H3zM0%203h1v3H0zM8%203h1v3H8zM2%201h1v1H2zM1%201h1v1H1zM0%202h1v1H0zM6%201h1v1H6zM7%201h1v1H7zM8%202h1v1H8zM0%206h1v1H0zM1%207h1v1H1zM2%207h1v1H2zM8%206h1v1H8zM7%207h1v1H7zM6%207h1v1H6z%27%2F%3E%3C%2Fsvg%3E"); --pxg:url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%279%27%20height%3D%279%27%20shape-rendering%3D%27crispEdges%27%3E%3Cpath%20fill%3D%27%23ffd23f%27%20d%3D%27M3%200h3v1H3zM3%208h3v1H3zM0%203h1v3H0zM8%203h1v3H8zM2%201h1v1H2zM1%201h1v1H1zM0%202h1v1H0zM6%201h1v1H6zM7%201h1v1H7zM8%202h1v1H8zM0%206h1v1H0zM1%207h1v1H1zM2%207h1v1H2zM8%206h1v1H8zM7%207h1v1H7zM6%207h1v1H6z%27%2F%3E%3C%2Fsvg%3E"); --pxgr:url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%279%27%20height%3D%279%27%20shape-rendering%3D%27crispEdges%27%3E%3Cpath%20fill%3D%27%235fe3a1%27%20d%3D%27M3%200h3v1H3zM3%208h3v1H3zM0%203h1v3H0zM8%203h1v3H8zM2%201h1v1H2zM1%201h1v1H1zM0%202h1v1H0zM6%201h1v1H6zM7%201h1v1H7zM8%202h1v1H8zM0%206h1v1H0zM1%207h1v1H1zM2%207h1v1H2zM8%206h1v1H8zM7%207h1v1H7zM6%207h1v1H6z%27%2F%3E%3C%2Fsvg%3E"); }
+  #view { cursor:grab; } #view:active { cursor:grabbing; }
+  img, canvas { image-rendering:pixelated; }
+  .px,.pxb,.chip,.card,.sheet,#skillSlots .slot,#pop .pi,#saraBox,#dock .pxb,#dock .pxb.sq,#dock #go,#dock #restockAll,#dock #speed,#tray .bp,#tray .bpTab,#tray #dAct,#tray #renoPane .pxb,#tray .sc,#tray .rc,#tray .pv .pic,#tray #renoPane .stCard,#tray #shopPane .choice {
+    border-radius:0 !important; image-rendering:pixelated;
+    border:1px solid transparent;
+    border-image-source:var(--pxo); border-image-slice:4; border-image-width:calc(var(--u)*4); border-image-repeat:stretch;
+    clip-path:polygon(0 calc(var(--u)*2),var(--u) calc(var(--u)*2),var(--u) var(--u),calc(var(--u)*3) var(--u),calc(var(--u)*3) 0,calc(100% - var(--u)*3) 0,calc(100% - var(--u)*3) var(--u),calc(100% - var(--u)) var(--u),calc(100% - var(--u)) calc(var(--u)*2),100% calc(var(--u)*2),100% calc(100% - var(--u)*2),calc(100% - var(--u)) calc(100% - var(--u)*2),calc(100% - var(--u)) calc(100% - var(--u)),calc(100% - var(--u)*3) calc(100% - var(--u)),calc(100% - var(--u)*3) 100%,calc(var(--u)*3) 100%,calc(var(--u)*3) calc(100% - var(--u)),var(--u) calc(100% - var(--u)),var(--u) calc(100% - var(--u)*2),0 calc(100% - var(--u)*2)) !important;
+  }
+  #tray .sc,#tray .rc,#tray .pv .pic,#tray #renoPane .stCard,#tray #shopPane .choice { border-image-source:var(--pxs); }
+  #tray .rc { --u:2px; }
+  #tray .bp { --u:4px; }
+  .card.sel { border-image-source:var(--pxg); }
+  #skillSlots .slot.sel { border-image-source:var(--pxgr); }
+  /* clipped shapes can't cast a shadow themselves, so the hard drop shadow sits on their containers; the 3D lip is an inset band */
+  .px,.pxb,.chip,.card,.sheet,#skillSlots .slot,#pop .pi,#saraBox,#dock .pxb,#dock .pxb.sq,#dock #go,#dock #restockAll,#dock #speed,#tray .bp,#tray .bpTab,#tray #dAct,#tray #renoPane .pxb { box-shadow:inset 0 -4px 0 rgba(0,0,0,.25), inset 0 3px 0 rgba(255,255,255,.14) !important; }
+  #tray .bp, #tray .bpTab, #tray #dAct, #tray #renoPane .pxb { box-shadow:none !important; }
+  .pxb:active:not(:disabled) { box-shadow:inset 0 -1px 0 rgba(0,0,0,.25), inset 0 3px 0 rgba(255,255,255,.14) !important; }
+  #dock, #skillSlots, #title .btns, #pauseMenu .pbox, #pop { filter:drop-shadow(0 4px 0 rgba(0,0,0,.55)); }
+  #tray { filter:drop-shadow(5px 5px 0 rgba(0,0,0,.6)); }
+  #hudL > * { clip-path:none !important; border-image:none !important; }
+  /* ===== v3: flat colours, no gloss, clean soft ring outline (no border-image) ===== */
+  :root { --ol:rgba(30,20,40,.32); }
+  .px,.pxb,.chip,.card,.sheet,#skillSlots .slot,#pop .pi,#saraBox,#dock .pxb,#dock .pxb.sq,#dock #go,#dock #restockAll,#dock #speed,#tray .bp,#tray .bpTab,#tray #dAct,#tray #renoPane .pxb,#tray .sc,#tray .rc,#tray .pv .pic,#tray #renoPane .stCard,#tray #shopPane .choice {
+    border-image:none !important; border:0 !important; box-shadow:inset 0 0 0 2px var(--ol) !important; text-shadow:none; }
+  .pxb:active:not(:disabled) { box-shadow:inset 0 0 0 2px var(--ol) !important; }
+  #tray .sc,#tray .rc,#tray .pv .pic,#tray #renoPane .stCard,#tray #shopPane .choice { --ol:rgba(42,38,34,.22); }
+  .card.sel { --ol:#ffd23f; } #skillSlots .slot.sel { --ol:#5fe3a1; }
+  #tray .bp,#tray .bpTab,#tray #dAct,#tray #renoPane .pxb { box-shadow:inset 0 0 0 2px var(--ol) !important; }
+  .pxb.gold,.card .pxb.gold,#renoPane .pxb.gold { background:#ffc233 !important; }
+  .pxb.red { background:#ff4f58 !important; }
+  .pxb.green,.card .pxb.green,#renoPane .cell.on { background:#35cf92 !important; }
+  .card .pxb { background:#ff7a2e; }
+  .card .pxb.gold { background:#ffc233 !important; }
+  .card,#saraBox { background:#fff3e0 !important; }
+  .card.lock { background:#e8dfd2 !important; }
+  .card .pic,.card.lock .pic { background:#ffe3c2 !important; }
+  .sheet { background:#43302a !important; }
+  #tray .bp { background:#faf4e4 !important; }
+  #pause.on { background:#ffc233; }
+  /* Sara dialogue: tag and box stay uncut */
+  #sara #saraBox { --ol:rgba(122,90,64,.38); clip-path:polygon(0 calc(var(--u)*2),var(--u) calc(var(--u)*2),var(--u) var(--u),calc(var(--u)*3) var(--u),calc(var(--u)*3) -24px,150px -24px,150px 0,calc(100% - var(--u)*3) 0,calc(100% - var(--u)*3) var(--u),calc(100% - var(--u)) var(--u),calc(100% - var(--u)) calc(var(--u)*2),100% calc(var(--u)*2),100% calc(100% - var(--u)*2),calc(100% - var(--u)) calc(100% - var(--u)*2),calc(100% - var(--u)) calc(100% - var(--u)),calc(100% - var(--u)*3) calc(100% - var(--u)),calc(100% - var(--u)*3) 100%,calc(var(--u)*3) 100%,calc(var(--u)*3) calc(100% - var(--u)),var(--u) calc(100% - var(--u)),var(--u) calc(100% - var(--u)*2),0 calc(100% - var(--u)*2),0 calc(100% - 46px),-14px calc(100% - 46px),-14px calc(100% - 22px),0 calc(100% - 22px)) !important; }
+  #sara #saraBox::before { display:none; }
+  #sara #saraBox .sn { box-shadow:none; border-radius:0; clip-path:polygon(0 var(--u),var(--u) var(--u),var(--u) 0,calc(100% - var(--u)) 0,calc(100% - var(--u)) var(--u),100% var(--u),100% calc(100% - var(--u)),calc(100% - var(--u)) calc(100% - var(--u)),calc(100% - var(--u)) 100%,var(--u) 100%,var(--u) calc(100% - var(--u)),0 calc(100% - var(--u))); }
+  #sara:not(.off) #saraBox { filter:drop-shadow(0 4px 0 rgba(0,0,0,.28)); }
+  #go { white-space:nowrap !important; display:inline-flex; align-items:center; justify-content:center; gap:.45em; }
+  #go .sun { width:1.15em; height:1.15em; flex:none; color:currentColor; image-rendering:pixelated; }
+  #go:not(:disabled) .sun { color:#fff; }
 </style>
 </head>
 <body>
@@ -318,7 +368,7 @@
     <div id="skillSlots" class="off"></div>
     <div id="dock" class="off">
       <div id="dockTop">
-        <button class="pxb" id="restockAll" title="Restock every shelf (R)"><img data-emoji="📦" alt=""> $<span id="rsCost">0</span></button>
+        <button class="pxb" id="restockAll" title="Restock every shelf (R)"><img data-emoji="📦" alt=""> ₱<span id="rsCost">0</span></button>
         <button class="pxb sq" id="speed" title="Game speed">1x</button>
       </div>
       <div id="dockBot">
