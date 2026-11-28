@@ -15,7 +15,17 @@ THREE.ColorManagement.enabled = false;
 // the store grows with the Room Expansion upgrade, so the origin is recomputed for every new game
 let OX = (COLS - 1) / 2, OZ = (ROWS - 1) / 2;
 const wx = x => x - OX, wz = y => y - OZ;
-const ELEV = 58 * Math.PI / 180;
+// true isometric-style camera: 45 degrees around, looking down at ELEV
+const AZ = Math.PI / 4, ELEV = 40 * Math.PI / 180;
+const CAMDIR = new THREE.Vector3(Math.sin(AZ) * Math.cos(ELEV), Math.sin(ELEV), Math.cos(AZ) * Math.cos(ELEV));
+
+// paves a canvas with a running-bond brick pattern (8px rows, 16px bricks = 1 x 0.5 world units)
+function paintBricks(c, w, h, a = '#cfae86', b = '#c29e76', mortar = '#9c8a70') {
+  c.fillStyle = mortar; c.fillRect(0, 0, w, h);
+  for (let ry = 0, r = 0; ry < h; ry += 8, r++) for (let x = -(r % 2) * 8, i = 0; x < w; x += 16, i++) {
+    c.fillStyle = (i + r * 3) % 3 === 0 ? b : a; c.fillRect(x + 1, ry + 1, 14, 6);
+  }
+}
 
 export class View {
   constructor(container, canvas) {
@@ -39,16 +49,17 @@ export class View {
     const sun = this.sun = new THREE.DirectionalLight(0xfff2dd, 1.4);
     this.tod = 0;   // 0 = bright morning, 1 = night
     this.sky = new THREE.Color();
-    sun.position.set(-6, 14, 5); sun.castShadow = true;
+    sun.position.set(6, 14, -4); sun.castShadow = true;
     sun.shadow.mapSize.set(1024, 1024);
     const sc = sun.shadow.camera; sc.left = -9; sc.right = 9; sc.top = 10; sc.bottom = -10; sc.near = 1; sc.far = 40;
-    sun.shadow.bias = -0.002;
+    sun.shadow.bias = -0.0015; sun.shadow.normalBias = 0.03;
     this.scene.add(sun);
 
     this.camera = new THREE.OrthographicCamera(-5, 5, 5, -5, 0.1, 100);
-    this.camera.position.set(0, Math.sin(ELEV) * 30, Math.cos(ELEV) * 30);
+    this.camDir = CAMDIR.clone();
+    this.camera.position.copy(this.camDir).multiplyScalar(30); this.camera.position.y += 0.2;
     this.camera.lookAt(0, 0.2, 0);
-    this.camBase = this.camera.position.clone();
+    this.camBase = this.camera.position.clone();   // used by the loading screen
 
     this.box = new THREE.BoxGeometry(1, 1, 1);
     this.cyl = new THREE.CylinderGeometry(1, 1, 1, 10);
@@ -123,19 +134,26 @@ export class View {
     this.rt.setSize(tw, th);
     this.sx = w / (tw * P); this.sy = h / (th * P);
     this.quadMat.uniforms.uvScale.value.set(this.sx, this.sy);
-    // frame the store (wide room + side wall + register)
-    const aspect = tw / th;
-    const ex = this.ext; let halfH = ((ROWS + 1.6 + (ex.top - 0.5) + (ex.bottom - 0.5)) * Math.sin(ELEV) + 2.2) / 2, halfW = (COLS + ex.left + ex.right + 1.2) / 2;
+    // frame the store: project the store's bounding box through the isometric camera and fit the ortho frustum around it
+    const aspect = tw / th, c = this.camera, ex = this.ext, cap = v => Math.min(v, 1.9);
+    const tx = (ex.right - ex.left) / 2, tz = (ex.bottom - ex.top) / 2;
+    c.position.set(tx + this.camDir.x * 30, 0.2 + this.camDir.y * 30, tz + this.camDir.z * 30); c.lookAt(tx, 0.2, tz); c.updateMatrixWorld(true);
+    const x0 = wx(-0.5) - cap(ex.left), x1 = wx(COLS - 0.5) + cap(ex.right), z0 = wz(-0.5) - cap(ex.top), z1 = wz(ROWS - 0.5) + cap(ex.bottom);
+    let mnx = 1e9, mxx = -1e9, mny = 1e9, mxy = -1e9; const v = this._fv || (this._fv = new THREE.Vector3());
+    for (const x of [x0, x1]) for (const z of [z0, z1]) for (const y of [0, 1.8]) {
+      v.set(x, y, z).applyMatrix4(c.matrixWorldInverse); mnx = Math.min(mnx, v.x); mxx = Math.max(mxx, v.x); mny = Math.min(mny, v.y); mxy = Math.max(mxy, v.y);
+    }
+    const cx = (mnx + mxx) / 2, cy = (mny + mxy) / 2;
+    let halfW = (mxx - mnx) / 2 + 0.6, halfH = (mxy - mny) / 2 + 0.6; const halfW0 = halfW, halfH0 = halfH;
     if (halfW / aspect > halfH) halfH = halfW / aspect; else halfW = halfH * aspect;
-    // the build receipt covers the right side: frame the WHOLE store inside the free part of the screen (left of the receipt)
+    // the build receipt covers the right side: put the store in the middle of the free part of the screen (left of the receipt)
     const res = Math.min(w * 0.6, Math.max(0, this.reserveRight || 0));
     let shift = 0;
     if (res > 0) {
-      const free = (w - res) / w;                         // share of the screen the store may use
-      halfW /= free; halfH = halfW / aspect;              // widen the frustum so the store fits that share
-      shift = halfW * (1 - free);                         // ...and slide it so the store is centred in the free part
-    } else { shift = halfW * 0.0; }
-    const c = this.camera; c.left = -halfW + shift; c.right = halfW + shift; c.top = halfH; c.bottom = -halfH;
+      const free = (w - res) / w;
+      halfH = Math.max(halfH0, halfW0 / free / aspect) * 0.97; halfW = halfH * aspect; shift = halfW * (1 - free);
+    } else { halfW *= 0.97; halfH *= 0.97; }
+    c.left = cx - halfW + shift; c.right = cx + halfW + shift; c.top = cy + halfH; c.bottom = cy - halfH;
     c.updateProjectionMatrix();
   }
 
@@ -156,7 +174,7 @@ export class View {
       if (m.warn) this.scene.remove(m.warn);          // warning signs live in the scene, not in the group: don't leave them behind
     }
     this.meshes.clear();
-    if (this.stat) { this.scene.remove(this.stat); this.stat.traverse(o => { if (o.userData.own) { o.material.map.dispose(); o.material.dispose(); } }); }
+    if (this.stat) { this.scene.remove(this.stat); this.stat.traverse(o => { if (o.userData.ownMats) for (const mt of o.userData.ownMats) { if (mt.map) mt.map.dispose(); mt.dispose(); } if (o.userData.ownGeo) o.geometry.dispose(); if (o.isInstancedMesh) o.dispose(); }); }
     for (const w of this.wind) { for (const m of w.cubes) this.scene.remove(m); w.mat.dispose(); } this.wind = [];
     this.pops.clear(); this.hoverId = null; this.outline = [];
     const { group, clerk } = this.buildShell(game);
@@ -176,80 +194,137 @@ export class View {
       }
     });
   }
-  // ---------- store shell: floor, walls, doors, counter. Rebuilt from COLS/ROWS, so renovating grows the walls too ----------
+  // ---------- one thick paving block: a real box, its top face carries a repeating flat-colour pattern ('check' or 'brick') ----------
+  slab(S, mode, c1, c2, x0, x1, z0, z1, yTop, yBot, sideColor = 0x6f6c66) {
+    const K = 16, cv = document.createElement('canvas'); cv.width = cv.height = K * 2; const c = cv.getContext('2d');
+    if (mode === 'brick') paintBricks(c, K * 2, K * 2);
+    else { c.fillStyle = c1; c.fillRect(0, 0, K * 2, K * 2); c.fillStyle = c2; c.fillRect(0, 0, K, K); c.fillRect(K, K, K, K); }
+    const t = new THREE.CanvasTexture(cv); t.magFilter = t.minFilter = THREE.NearestFilter; t.generateMipmaps = false;
+    t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set((x1 - x0) / 2, (z1 - z0) / 2);
+    const top = new THREE.MeshToonMaterial({ map: t, gradientMap: this.gradient }), side = this.toon(sideColor);
+    const m = new THREE.Mesh(this.box, [side, side, top, side, side, side]);   // box faces: +x -x +y -y +z -z  (index 2 = the top)
+    m.scale.set(x1 - x0, yTop - yBot, z1 - z0); m.position.set((x0 + x1) / 2, (yTop + yBot) / 2, (z0 + z1) / 2);
+    m.receiveShadow = true; m.userData.ownMats = [top]; S.add(m); return m;
+  }
+  // a street lamp as real parts: base, pole, head and a glowing bulb
+  lampMesh(S, x, z) {
+    this.part(S, this.cyl, 0x2b2b33, 0.12, 0.16, 0.12, x, 0.08, z);
+    this.part(S, this.cyl, 0x2b2b33, 0.045, 1.9, 0.045, x, 0.95, z);
+    this.part(S, this.box, 0x2b2b33, 0.3, 0.07, 0.3, x, 1.93, z);
+    this.glow(S, 0xffe9a6, 0.22, 0.1, 0.22, x, 1.86, z);
+  }
+
+  // ---------- store shell: tiled floor, walls with real door openings, swinging glass doors, counter. Rebuilt from COLS/ROWS, so renovating grows everything ----------
   buildShell(game) {
     const S = new THREE.Group(), part = (...a) => this.part(S, ...a);
     const cs = game.counterSide, ds = game.doorSide;
-    const L = wx(-0.5), R = wx(COLS - 0.5), Tt = wz(-0.5), B = wz(ROWS - 0.5);   // floor edges (from the live COLS/ROWS, so renovating regrows everything)
+    const L = wx(-0.5), R = wx(COLS - 0.5), Tt = wz(-0.5), B = wz(ROWS - 0.5);   // floor edges (from the live COLS/ROWS)
+    this.doors = [];
 
-    // ----- floor: ONE canvas texture (your original checker + lane tints + hazard stripes) on ONE plane -----
-    const K = 16, cv = document.createElement('canvas'); cv.width = COLS * K; cv.height = ROWS * K; const cx = cv.getContext('2d');
+    // ----- floor: one instanced 3D tile per cell (flat colours: checker + counter lane + door lane), grout below, a concrete plinth under the whole store -----
     const lane = (x, y) => (cs === 'right' && x === COLS - 1) || (cs === 'left' && x === 0) || (cs === 'top' && y === 0) ? 'counter'
       : (ds === 'left' && x === 0) || (ds === 'right' && x === COLS - 1) || (ds === 'bottom' && y === ROWS - 1) ? 'door' : '';
-    for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
-      const l = lane(x, y), odd = (x + y) % 2;
-      cx.fillStyle = l === 'counter' ? (odd ? '#c9bf9d' : '#bfb48f') : l === 'door' ? (odd ? '#b8c4cc' : '#a9b6c0') : (odd ? '#e7dfc6' : '#d3caaa');
-      cx.fillRect(x * K, y * K, K, K);
-      cx.fillStyle = 'rgba(0,0,0,0.07)'; cx.fillRect(x * K, y * K, K, 1); cx.fillRect(x * K, y * K, 1, K);
-    }
-    for (let i = 0; i < (cs === 'top' ? COLS : ROWS) * K; i += 8) {   // hazard stripes along the inside edge of the counter lane
-      cx.fillStyle = (i / 8) % 2 ? '#f2c94c' : '#33302e';
-      if (cs === 'right') cx.fillRect((COLS - 1) * K, i, 3, 8); else if (cs === 'left') cx.fillRect(K - 3, i, 3, 8); else cx.fillRect(i, K - 3, 8, 3);
-    }
-    const tex = new THREE.CanvasTexture(cv); tex.magFilter = tex.minFilter = THREE.NearestFilter; tex.generateMipmaps = false;
-    const floor = new THREE.Mesh(this.plane, new THREE.MeshToonMaterial({ map: tex, gradientMap: this.gradient }));
-    floor.rotation.x = -Math.PI / 2; floor.scale.set(COLS, ROWS, 1); floor.receiveShadow = true; floor.userData.own = true; S.add(floor);
-    const slab = new THREE.Mesh(this.box, this.basic(0x000000));   // pure black outside the store (unlit, so it can never look grey)
-    slab.scale.set(COLS + 12, 0.2, ROWS + 10); slab.position.set(0, -0.12, 0); S.add(slab);
+    const tiles = new THREE.InstancedMesh(this.box, this.toon(0xffffff), COLS * ROWS);
+    { const m4 = new THREE.Matrix4(), col = new THREE.Color(); let n = 0;
+      for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
+        const l = lane(x, y), odd = (x + y) % 2;
+        col.setHex(l === 'counter' ? (odd ? 0xc9bf9d : 0xbfb48f) : l === 'door' ? (odd ? 0xb8c4cc : 0xa9b6c0) : (odd ? 0xe7dfc6 : 0xd3caaa));
+        m4.makeScale(0.98, 0.14, 0.98).setPosition(wx(x), -0.07, wz(y));
+        tiles.setMatrixAt(n, m4); tiles.setColorAt(n, col); n++;
+      }
+      tiles.instanceMatrix.needsUpdate = true; if (tiles.instanceColor) tiles.instanceColor.needsUpdate = true; }
+    tiles.receiveShadow = true; tiles.frustumCulled = false; S.add(tiles);
+    part(this.box, 0x8d8678, COLS, 0.1, ROWS, 0, -0.07, 0, false);                                   // grout between the tiles
+    part(this.box, 0x7f8590, COLS + 3.4, 0.2, ROWS + 3.0, 0, -0.14, 0, false);                       // concrete plinth: the foundation under floor, counter and walls
+    { const len = cs === 'top' ? COLS : ROWS;                                                       // hazard stripes along the inside edge of the counter lane
+      for (let i = 0; i < len * 2; i++) {
+        const along = i * 0.5 + 0.25 - len / 2, col = i % 2 ? 0xf2c94c : 0x33302e;
+        if (cs === 'right') part(this.box, col, 0.08, 0.012, 0.5, R - 1 + 0.06, 0.006, along, false);
+        else if (cs === 'left') part(this.box, col, 0.08, 0.012, 0.5, L + 1 - 0.06, 0.006, along, false);
+        else part(this.box, col, 0.5, 0.012, 0.08, along, 0.006, Tt + 1 - 0.06, false);
+      } }
 
-    // ----- walls: purple, door walls low, counter wall lower and set back behind the desk, back wall with posters. No wall shadows. -----
-    const off = side => side === cs ? 1.45 : 0.25, H = side => side === 'top' ? 1.6 : side === cs ? 0.7 : side === 'bottom' ? 0.55 : 1.1;
+    // ----- walls: real thick boxes with a blue skirting and a dark cap. The two walls the isometric camera looks at (right + front) stay low, the two behind (back + left) are tall -----
+    const WALL = 0.5, DW = 1.3, DH = 1.3;
+    const off = side => side === cs ? 1.45 : 0.25, H = side => (side === 'top' || side === 'left') ? 1.7 : 0.6;
     const xL = L - off('left'), xR = R + off('right'), zT = Tt - off('top');
-    const wall = (sx, sz, x, z, h) => part(this.box, 0x4b3f8f, sx, h, sz, x, h / 2, z, false);
-    const zBt = B + 0.25, zA = zT + 0.25, zB = B + 0.5;                                          // side walls run from the back wall's inner face to just past the floor
-    wall(0.5, zB - zA, xL, (zA + zB) / 2, H('left')); wall(0.5, zB - zA, xR, (zA + zB) / 2, H('right'));
-    wall(xR - xL + 0.5, 0.5, (xL + xR) / 2, zT, H('top'));
-    if (ds === 'bottom') wall(xR - xL + 0.5, 0.5, (xL + xR) / 2, zBt, H('bottom'));   // low front wall on the door side
+    const zBt = B + 0.25, zA = zT + 0.25, zB = B + 0.5;
+    const PAL = { wall: 0xf1e4c7, base: 0x4f6b8a, cap: 0x2b2a35, frame: 0x3a3d4a };
+    const wallRun = (vertical, fixed, a0, a1, h, gaps) => {      // gaps = centres of the door openings along the wall
+      const box = (u0, u1, y0, y1, t, color) => {
+        const len = u1 - u0, hh = y1 - y0, uc = (u0 + u1) / 2; if (len <= 0.001) return;
+        if (vertical) part(this.box, color, t, hh, len, fixed, y0 + hh / 2, uc, true); else part(this.box, color, len, hh, t, uc, y0 + hh / 2, fixed, true);
+      };
+      const gs = gaps.map(c => [c - DW / 2, c + DW / 2]).sort((p, q) => p[0] - q[0]), segs = []; let u = a0;
+      for (const [g0, g1] of gs) { if (g0 > u) segs.push([u, g0]); u = Math.max(u, g1); }
+      if (u < a1) segs.push([u, a1]);
+      for (const [s0, s1] of segs) { box(s0, s1, 0, h, WALL, PAL.wall); box(s0, s1, 0, 0.22, WALL + 0.06, PAL.base); box(s0, s1, h, h + 0.07, WALL + 0.08, PAL.cap); }
+      if (h > DH + 0.05) for (const [g0, g1] of gs) { box(g0, g1, DH, h, WALL, PAL.wall); box(g0, g1, h, h + 0.07, WALL + 0.08, PAL.cap); }   // wall above the doorway
+    };
+    const gapsFor = side => ds === side ? game.spawns.map(sp => side === 'bottom' ? wx(sp.x) : wz(sp.y)) : [];
+    wallRun(true, xL, zA, zB, H('left'), gapsFor('left'));
+    wallRun(true, xR, zA, zB, H('right'), gapsFor('right'));
+    wallRun(false, zT, xL - 0.25, xR + 0.25, H('top'), []);
+    if (ds === 'bottom') wallRun(false, zBt, xL - 0.25, xR + 0.25, H('bottom'), gapsFor('bottom'));
+    // wall decoration: framed posters + windows on the back wall, posters on the left wall
     const PC = [0xff5a5f, 0xffcf4a, 0x5fe3a1, 0x6fa8ff, 0xff9f1c];
-    for (let x = xL + 1.5, i = 0; x < xR - 1; x += 3.5, i++) part(this.box, PC[i % 5], 1.0, 0.6, 0.05, x, 1.0, zT + 0.28, false);   // posters
-
-    // ----- doors: mat on the floor + glass door set into the wall -----
-    for (const sp of game.spawns) {
-      part(this.box, 0x6e5f4a, 0.9, 0.03, 0.9, wx(sp.x), 0.02, wz(sp.y), false);
-      const orange = sp.from > 1;
-      if (ds === 'bottom') {
-        const dx = wx(sp.x);
-        part(this.box, 0x9ad7ff, 1.3, 0.9, 0.55, dx, 0.45, zBt, false); part(this.box, 0x6fb7e8, 0.9, 0.7, 0.58, dx, 0.42, zBt, false);
-        if (orange) part(this.box, 0xff9f1c, 0.35, 0.18, 0.35, dx, 1.05, zBt, false);
-      } else {
-        const dx = ds === 'left' ? xL : xR, dz = wz(sp.y);
-        part(this.box, 0x9ad7ff, 0.55, 1.3, 1.3, dx, 0.65, dz, false); part(this.box, 0x6fb7e8, 0.58, 1.0, 0.9, dx, 0.6, dz, false);
-        if (orange) part(this.box, 0xff9f1c, 0.35, 0.18, 0.35, dx, 1.45, dz, false);
+    for (let x = xL + 1.5, i = 0; x < xR - 1; x += 3.5, i++) {
+      part(this.box, 0x3a3d4a, 1.1, 0.7, 0.04, x, 1.05, zT + 0.27, false); part(this.box, PC[i % 5], 0.95, 0.55, 0.05, x, 1.05, zT + 0.29, false);
+      const wxp = x + 1.75;
+      if (wxp < xR - 1.3) {   // a window through the back wall: dark frame, bright glass, cross bars
+        part(this.box, 0x3a3d4a, 1.3, 0.85, WALL + 0.1, wxp, 1.0, zT, true); this.glow(S, 0x9ad7ff, 1.1, 0.65, WALL + 0.14, wxp, 1.0, zT);
+        part(this.box, 0xf6f1e4, 0.06, 0.65, WALL + 0.16, wxp, 1.0, zT, false); part(this.box, 0xf6f1e4, 1.1, 0.06, WALL + 0.16, wxp, 1.0, zT, false);
       }
     }
+    if (ds !== 'left') for (let z = zA + 1.5, i = 0; z < zB - 1.5; z += 3.5, i++) {
+      part(this.box, 0x3a3d4a, 0.04, 0.7, 1.1, xL + 0.27, 1.05, z, false); part(this.box, PC[(i + 2) % 5], 0.05, 0.55, 0.95, xL + 0.29, 1.05, z, false);
+    }
 
-    // ----- sidewalk outside the doors (the other sides stay black) -----
+    // ----- doors: frame + two glass leaves hinged on the posts. They swing INWARDS when somebody walks up (animated in render) -----
+    for (const sp of game.spawns) {
+      part(this.box, 0x6e5f4a, 0.9, 0.03, 0.9, wx(sp.x), 0.02, wz(sp.y), false);   // doormat
+      let px, pz, rot;
+      if (ds === 'bottom') { px = wx(sp.x); pz = zBt; rot = 0; }
+      else if (ds === 'left') { px = xL; pz = wz(sp.y); rot = -Math.PI / 2; }
+      else { px = xR; pz = wz(sp.y); rot = Math.PI / 2; }
+      const g = new THREE.Group(); g.position.set(px, 0, pz); g.rotation.y = rot; S.add(g);   // local x runs along the wall, local +z points OUT to the street
+      const gp = (...a) => this.part(g, ...a);
+      for (const sx of [-1, 1]) gp(this.box, PAL.frame, 0.12, DH, WALL + 0.12, sx * (DW / 2 - 0.06), DH / 2, 0, true);   // posts
+      gp(this.box, PAL.frame, DW + 0.12, 0.16, WALL + 0.12, 0, DH, 0, true);                                             // lintel beam
+      this.glow(g, sp.from > 1 ? 0xff9f1c : 0x5fe3a1, DW - 0.3, 0.05, WALL + 0.14, 0, DH + 0.105, 0);                    // glowing strip on top (orange = the second door)
+      const glassMat = new THREE.MeshToonMaterial({ color: 0x9ad7ff, transparent: true, opacity: 0.55, gradientMap: this.gradient, depthWrite: false });
+      const leaves = [-1, 1].map(side => {
+        const hinge = new THREE.Group(); hinge.position.set(side * (DW / 2 - 0.1), 0.04, 0); g.add(hinge);
+        const w = DW / 2 - 0.08, cx = -side * w / 2;
+        this.part(hinge, this.box, 0x4a4d5a, w, 1.12, 0.06, cx, 0.58, 0, true);
+        const glass = new THREE.Mesh(this.box, glassMat); glass.scale.set(w - 0.1, 0.96, 0.075); glass.position.set(cx, 0.6, 0); glass.userData.ownMats = [glassMat]; hinge.add(glass);
+        this.part(hinge, this.box, 0xdedede, 0.04, 0.3, 0.12, -side * (w - 0.08), 0.6, 0, false);                           // handle
+        return hinge;
+      });
+      this.doors.push({ sp, A: leaves[0], B: leaves[1], open: 0, force: 0 });
+    }
+
+    // ----- sidewalk outside the doors: a thick brick slab with a curb and two street lamps -----
     {
       const D = 2.6, xl = L - off('left'), xr = R + off('right');
       let x0, x1, z0, z1;
       if (ds === 'left') { x1 = xl - 0.25; x0 = x1 - D; z0 = zT - 0.25; z1 = B + 0.9; }
       else if (ds === 'right') { x0 = xr + 0.25; x1 = x0 + D; z0 = zT - 0.25; z1 = B + 0.9; }
       else { x0 = xl - 0.25; x1 = xr + 0.25; z0 = zBt + 0.25; z1 = z0 + D; }
-      const K2 = 16, w = x1 - x0, d = z1 - z0, sc = document.createElement('canvas'); sc.width = Math.round(w * K2); sc.height = Math.round(d * K2);
-      const c2 = sc.getContext('2d');
-      for (let y = 0; y < sc.height; y += K2) for (let x = 0; x < sc.width; x += K2) {
-        c2.fillStyle = ((x + y) / K2) % 2 ? '#c9c5ba' : '#bdb9ad'; c2.fillRect(x, y, K2, K2);
-        c2.fillStyle = 'rgba(0,0,0,0.12)'; c2.fillRect(x, y, K2, 1); c2.fillRect(x, y, 1, K2);
-      }
-      c2.fillStyle = '#6f6c66';   // curb along the street edge
-      if (ds === 'left') c2.fillRect(0, 0, 4, sc.height); else if (ds === 'right') c2.fillRect(sc.width - 4, 0, 4, sc.height); else c2.fillRect(0, sc.height - 4, sc.width, 4);
-      const st = new THREE.CanvasTexture(sc); st.magFilter = st.minFilter = THREE.NearestFilter; st.generateMipmaps = false;
-      const sw = new THREE.Mesh(this.plane, new THREE.MeshToonMaterial({ map: st, gradientMap: this.gradient }));
-      sw.rotation.x = -Math.PI / 2; sw.scale.set(w, d, 1); sw.position.set((x0 + x1) / 2, 0.004, (z0 + z1) / 2); sw.receiveShadow = true; sw.userData.own = true; S.add(sw);
-      // two street lamps (the glow stays bright at night)
-      const lamp = (lx, lz) => { part(this.box, 0x2b2b33, 0.1, 1.9, 0.1, lx, 0.95, lz, false); this.glow(S, 0xffe9a6, 0.3, 0.14, 0.3, lx, 1.95, lz); };
-      if (ds === 'bottom') { const lz = z1 - 0.35; lamp(x0 + 0.8, lz); lamp(x1 - 0.8, lz); }
-      else { const lx = ds === 'left' ? x0 + 0.35 : x1 - 0.35; lamp(lx, z0 + 0.8); lamp(lx, z1 - 0.9); }
+      this.slab(S, 'brick', 0, 0, x0, x1, z0, z1, 0.03, -0.1, 0x8a7a64);
+      if (ds === 'left') part(this.box, 0x6f6c66, 0.2, 0.09, z1 - z0, x0 + 0.1, 0.045, (z0 + z1) / 2, true);
+      else if (ds === 'right') part(this.box, 0x6f6c66, 0.2, 0.09, z1 - z0, x1 - 0.1, 0.045, (z0 + z1) / 2, true);
+      else part(this.box, 0x6f6c66, x1 - x0, 0.09, 0.2, (x0 + x1) / 2, 0.045, z1 - 0.1, true);
+      if (ds === 'bottom') { const lz = z1 - 0.35; this.lampMesh(S, x0 + 0.8, lz); this.lampMesh(S, x1 - 0.8, lz); }
+      else { const lx = ds === 'left' ? x0 + 0.35 : x1 - 0.35; this.lampMesh(S, lx, z0 + 0.8); this.lampMesh(S, lx, z1 - 0.9); }
+    }
+
+    // ----- the world around the store -----
+    {
+      const D = 2.6, xl = L - off('left'), xr = R + off('right');
+      const curb = ds === 'left' ? xl - 0.25 - D : ds === 'right' ? xr + 0.25 + D : zBt + 0.25 + D;
+      const a0 = ds === 'bottom' ? xl - 0.25 : zT - 0.25, a1 = ds === 'bottom' ? xr + 0.25 : B + 0.9;
+      this.buildSurroundings(S, ds, curb, a0, a1, D, { xl, xr, zT, zB: B + 0.5 });
     }
 
     // ----- checkout counter + register + clerk, built once facing +x and turned onto its wall -----
@@ -258,20 +333,219 @@ export class View {
     cg.rotation.y = cs === 'left' ? Math.PI : cs === 'top' ? Math.PI / 2 : 0;
     const cp = (...a) => this.part(cg, ...a), ox = 0.45;
     const az = (game.counterPos - (len - 1) / 2) * (cs === 'left' ? -1 : 1);       // where the till cells sit along the wall
-    cp(this.box, 0x7a4b2b, 0.9, 0.9, len, ox, 0.45, 0, false);
-    cp(this.box, 0xe9d8a6, 0.95, 0.08, len, ox, 0.92, 0, false);
-    cp(this.box, 0xdedede, 0.6, 0.35, 0.9, ox, 1.12, az, false);
-    cp(this.box, 0x2d2d3a, 0.08, 0.28, 0.8, ox - 0.1, 1.45, az, false).rotation.z = 0.4;
-    cp(this.box, 0x3ddc84, 0.05, 0.1, 0.5, ox - 0.15, 1.46, az, false).rotation.z = 0.4;
-    for (let i = 0; i < 4; i++) cp(this.box, [0xff5a5f, 0xffcf4a, 0x5fe3a1, 0x6fa8ff][i], 0.22, 0.14, 0.28, ox, 1.06, az - 1.8 + i * 0.4, false);
+    cp(this.box, 0x2b2a35, 0.84, 0.12, len - 0.04, ox + 0.03, 0.06, 0, true);          // kick plate
+    cp(this.box, 0x7a4b2b, 0.9, 0.76, len, ox, 0.5, 0, true);                          // cabinet
+    for (let z = -len / 2 + 0.5; z < len / 2 - 0.3; z += 1) cp(this.box, 0x8f5d38, 0.04, 0.5, 0.7, ox - 0.46, 0.5, z, false);   // inset panels on the customer side
+    cp(this.box, 0x3b2a20, 1.0, 0.03, len + 0.08, ox, 0.885, 0, true);                // dark trim under the top
+    cp(this.box, 0xe9d8a6, 0.98, 0.08, len + 0.06, ox, 0.92, 0, true);                 // counter top (surface at y 0.96)
+    cp(this.box, 0xdedede, 0.6, 0.35, 0.9, ox, 1.12, az, true);                        // register
+    cp(this.box, 0x2d2d3a, 0.08, 0.28, 0.8, ox - 0.1, 1.45, az, true).rotation.z = 0.4;
+    this.glow(cg, 0x3ddc84, 0.05, 0.1, 0.5, ox - 0.15, 1.46, az).rotation.z = 0.4;
+    cp(this.box, 0x2d2d3a, 0.22, 0.04, 0.32, ox - 0.32, 0.99, az - 0.95, false);       // card reader
+    cp(this.box, 0xffffff, 0.1, 0.12, 0.05, ox + 0.12, 1.36, az + 0.46, false);       // receipt coming out
+    for (let i = 0; i < 4; i++) cp(this.box, [0xff5a5f, 0xffcf4a, 0x5fe3a1, 0x6fa8ff][i], 0.22, 0.14, 0.28, ox, 1.06, az - 1.8 + i * 0.4, true);   // candy rack
     const clerk = new THREE.Group(); clerk.position.set(ox + 0.05, 0.9, az + 1.6); clerk.rotation.y = -Math.PI / 2; cg.add(clerk);
-    this.part(clerk, this.box, 0x3a7bd5, 0.34, 0.4, 0.22, 0, 0.35, 0, false);
-    this.part(clerk, this.box, 0xf1c9a0, 0.24, 0.22, 0.22, 0, 0.68, 0, false);
+    this.part(clerk, this.box, 0x3a7bd5, 0.34, 0.4, 0.22, 0, 0.35, 0, true);
+    this.part(clerk, this.box, 0xf1c9a0, 0.24, 0.22, 0.22, 0, 0.68, 0, true);
     this.part(clerk, this.box, 0xd9534f, 0.28, 0.07, 0.26, 0, 0.82, 0.01, false);
     // ----- money stack: bricks of cash piled on the counter next to the register, growing with the player's cash -----
     this.money = new THREE.Group(); cg.add(this.money); this.moneyN = -1; this.moneyPop = 0; this.moneyOx = ox;
     this.moneySlots = [az + 0.72, az + 1.05, az - 2.25, az - 2.62, az + 2.15].filter(z => Math.abs(z) < len / 2 - 0.25);
     return { group: S, clerk };
+  }
+
+  // ---------- the world around the store: every piece is a real 3D mesh (merged per colour, casting and receiving shadows): grass, paving slabs, highway + traffic,
+  // low-poly trees and bushes, lamps, benches, and houses / shops with roofs, framed windows, doors and awnings ----------
+  buildSurroundings(S, ds, curb, a0, a1, D, rect) {
+    const rnd = (() => { let a = 20260611; return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = (t + Math.imul(t ^ t >>> 7, 61 | t)) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; })();
+    const pick = arr => arr[Math.floor(rnd() * arr.length)];
+    const hz = ds === 'bottom', sgn = ds === 'left' ? -1 : 1, EXT = 80;
+    // street frame: u runs ALONG the street, v runs outward from the footpath's curb edge (v < 0 = footpath / store side)
+    const W = (u, v) => hz ? [u, curb + v] : [curb + sgn * v, u];
+    const pushed = new Map(), Q = new THREE.Quaternion(), E = new THREE.Euler(), SC = new THREE.Vector3(), PP = new THREE.Vector3();
+    const addG = (color, geo, sx, sy, sz, x, y, z, ry = 0, rx = 0, rz = 0) => {
+      E.set(rx, ry, rz); Q.setFromEuler(E);
+      const m = new THREE.Matrix4().compose(PP.set(x, y, z), Q, SC.set(sx, sy, sz));
+      let l = pushed.get(color); if (!l) pushed.set(color, l = []); l.push([geo, m]);
+    };
+    const add = (color, sx, sy, sz, x, y, z) => addG(color, this.box, sx, sy, sz, x, y, z);
+    const bx = (color, du, h, dv, u, y, v) => { const [x, z] = W(u, v); add(color, hz ? du : dv, h, hz ? dv : du, x, y, z); };
+    const gx = (color, geo, du, h, dv, u, y, v) => { const [x, z] = W(u, v); addG(color, geo, hz ? du : dv, h, hz ? dv : du, x, y, z); };
+    const flat = g => { const f = g.index ? g.toNonIndexed() : g; f.computeVertexNormals(); return f; };   // faceted low-poly normals = flat colour faces
+    const cylF = flat(new THREE.CylinderGeometry(1, 1, 1, 8)), coneF = flat(new THREE.ConeGeometry(1, 1, 6)), icoG = new THREE.IcosahedronGeometry(1, 0);
+    const roofG = (() => { const g = new THREE.ConeGeometry(Math.SQRT1_2, 1, 4); g.rotateY(Math.PI / 4); return flat(g); })();   // square pyramid, 1 x 1 footprint
+    const lampAt = (u, v) => { const [x, z] = W(u, v); addG(0x2b2b33, cylF, 0.12, 0.16, 0.12, x, 0.08, z); addG(0x2b2b33, cylF, 0.045, 1.9, 0.045, x, 0.95, z); add(0x2b2b33, 0.3, 0.07, 0.3, x, 1.93, z); this.glow(S, 0xffe9a6, 0.22, 0.1, 0.22, x, 1.86, z); };
+    const strip = (mode, c1, c2, u0, u1, v0, v1, yTop, yBot, side) => {
+      const [xa, za] = W(u0, v0), [xb, zb] = W(u1, v1);
+      return this.slab(S, mode, c1, c2, Math.min(xa, xb), Math.max(xa, xb), Math.min(za, zb), Math.max(za, zb), yTop, yBot, side);
+    };
+    const RW = 6.4, solid = [];   // solid = building footprints in street coordinates [u0, u1, v0, v1] (trees keep out of them)
+
+    // ----- ground + brick pathway along the whole street, and a garden path around the other three sides of the store -----
+    this.slab(S, 'check', '#5aa84a', '#52a044', -EXT, EXT, -EXT, EXT, -0.06, -1.2, 0x3f7a35);
+    strip('brick', 0, 0, -EXT, a0, -D, 0, 0.03, -0.1, 0x8a7a64); strip('brick', 0, 0, a1, EXT, -D, 0, 0.03, -0.1, 0x8a7a64);
+    if (rect) {
+      const g1 = 0.4, g2 = 1.7, { xl, xr, zT, zB } = rect;
+      for (const sd of ['left', 'right', 'top', 'bottom']) {
+        if (sd === ds) continue;
+        if (sd === 'left') this.slab(S, 'brick', 0, 0, xl - g2, xl - g1, zT - g2, zB + g2, 0.02, -0.1, 0x8a7a64);
+        else if (sd === 'right') this.slab(S, 'brick', 0, 0, xr + g1, xr + g2, zT - g2, zB + g2, 0.02, -0.1, 0x8a7a64);
+        else if (sd === 'top') this.slab(S, 'brick', 0, 0, xl - g2, xr + g2, zT - g2, zT - g1, 0.02, -0.1, 0x8a7a64);
+        else this.slab(S, 'brick', 0, 0, xl - g2, xr + g2, zB + g1, zB + g2, 0.02, -0.1, 0x8a7a64);
+      }
+    }
+    bx(0x6f6c66, EXT * 2, 0.09, 0.2, 0, 0.045, 0.0);                                  // curb
+    // ----- the highway: a sunken asphalt slab with lane markings and zebra crossings -----
+    strip('check', '#3d3f49', '#3a3c46', -EXT, EXT, 0, RW, 0.006, -0.2, 0x2d2f38);
+    bx(0xdddddd, EXT * 2, 0.02, 0.09, 0, 0.016, 0.35); bx(0xdddddd, EXT * 2, 0.02, 0.09, 0, 0.016, RW - 0.35);
+    bx(0xe6c84a, EXT * 2, 0.02, 0.08, 0, 0.016, RW / 2 - 0.1); bx(0xe6c84a, EXT * 2, 0.02, 0.08, 0, 0.016, RW / 2 + 0.1);
+    for (let u = -EXT; u < EXT; u += 2.4) { bx(0xdddddd, 1.2, 0.02, 0.07, u, 0.016, RW * 0.25); bx(0xdddddd, 1.2, 0.02, 0.07, u, 0.016, RW * 0.75); }
+    for (const cu of [a1 + 7, a0 - 7]) for (let i = 0; i < 6; i++) bx(0xe9e9e9, 0.5, 0.02, RW - 1.2, cu + i * 0.95, 0.016, RW / 2);   // zebra crossings
+    strip('brick', 0, 0, -EXT, EXT, RW, RW + 2.4, 0.03, -0.1, 0x8a7a64);                // far footpath
+    bx(0x6f6c66, EXT * 2, 0.09, 0.2, 0, 0.045, RW);
+
+    // ----- street furniture: lamps, benches, bins, hydrants, mailboxes -----
+    for (let u = -EXT + 4; u < EXT; u += 9) { if (u > a0 - 1.5 && u < a1 + 1.5) continue; lampAt(u, -0.45); }
+    for (let u = -EXT + 2; u < EXT; u += 9) lampAt(u, RW + 0.6);
+    const bench = (u, v, face) => {        // face = +1 looks towards the road, -1 away from it
+      bx(0x8a5a32, 1.3, 0.1, 0.45, u, 0.45, v); bx(0x8a5a32, 1.3, 0.4, 0.08, u, 0.72, v - face * 0.22);
+      bx(0x2b2b33, 0.08, 0.4, 0.4, u - 0.5, 0.2, v); bx(0x2b2b33, 0.08, 0.4, 0.4, u + 0.5, 0.2, v);
+    };
+    const bin = (u, v) => { const [x, z] = W(u, v); addG(0x3a6b4a, cylF, 0.2, 0.55, 0.2, x, 0.28, z); addG(0x2b4d36, cylF, 0.23, 0.07, 0.23, x, 0.58, z); };
+    const hydrant = (u, v) => { const [x, z] = W(u, v); addG(0xd62828, cylF, 0.12, 0.4, 0.12, x, 0.2, z); addG(0xd62828, cylF, 0.09, 0.1, 0.09, x, 0.45, z); add(0xd62828, 0.34, 0.07, 0.07, x, 0.3, z); };
+    const mail = (u, v) => { bx(0x3a86e8, 0.4, 0.5, 0.3, u, 0.85, v); bx(0x2b2b33, 0.08, 0.7, 0.08, u, 0.35, v); bx(0xffffff, 0.2, 0.04, 0.32, u, 0.97, v); };
+    for (let u = -EXT + 12; u < EXT; u += 15) { if (u > a0 - 3 && u < a1 + 3) continue; bench(u, -1.2, 1); bin(u + 2.2, -1.0); }
+    for (let u = -EXT + 8; u < EXT; u += 17) { bench(u, RW + 1.7, -1); bin(u + 2.2, RW + 1.5); }
+    for (let u = -EXT + 20; u < EXT; u += 31) { if (u > a0 - 3 && u < a1 + 3) continue; hydrant(u, -0.7); mail(u + 6, -0.8); }
+
+    // ----- buildings: shops across the street, neighbours either side of the store, and a row behind it -----
+    const AW = [0xe8473f, 0x3a86e8, 0x2fbf71, 0xf2c94c, 0xff8a3d], WALLC = [0xe8c8a0, 0xc9a3d4, 0x9fd0e8, 0xf0b6a8, 0xd9d49a, 0xa8d8b8, 0xf2e6c8], ROOF = [0x9b4a3a, 0x4b3f8f, 0x3f6e8f, 0x7a5a3a, 0x5a7a4a];
+    const TRIM = 0xf6f1e4;
+    const building = (u, v, du, dv, h, facing, shop) => {     // facing = -1: front is on the low-v side, +1: on the high-v side
+      solid.push([u - du / 2, u + du / 2, v - dv / 2, v + dv / 2]);
+      const wall = pick(WALLC), roofC = pick(ROOF), fr = v + facing * (dv / 2 + 0.03);
+      bx(wall, du, h, dv, u, h / 2, v);
+      bx(0x6e675c, du + 0.12, 0.3, dv + 0.12, u, 0.15, v);                                   // stone plinth
+      bx(TRIM, du + 0.06, 0.1, dv + 0.06, u, h - 0.05, v);                                    // eave band
+      if (rnd() < 0.55) {                                                                     // hip roof + chimney
+        const rh = 0.9 + rnd() * 0.7; gx(roofC, roofG, du + 0.5, rh, dv + 0.5, u, h + rh / 2, v);
+        if (rnd() < 0.6) { bx(0x8a5a4a, 0.34, rh * 0.8 + 0.4, 0.34, u + du * 0.25, h + (rh * 0.8 + 0.4) / 2 + 0.2, v + dv * 0.12); bx(0x5a3a30, 0.44, 0.08, 0.44, u + du * 0.25, h + rh * 0.8 + 0.6, v + dv * 0.12); }
+      } else {                                                                                // flat roof: slab, parapet, air-con unit, water tank
+        bx(roofC, du + 0.2, 0.18, dv + 0.2, u, h + 0.09, v);
+        bx(TRIM, du + 0.2, 0.22, 0.1, u, h + 0.29, v + dv / 2 + 0.05); bx(TRIM, du + 0.2, 0.22, 0.1, u, h + 0.29, v - dv / 2 - 0.05);
+        bx(TRIM, 0.1, 0.22, dv + 0.2, u + du / 2 + 0.05, h + 0.29, v); bx(TRIM, 0.1, 0.22, dv + 0.2, u - du / 2 - 0.05, h + 0.29, v);
+        bx(0xb7bcc6, 0.8, 0.4, 0.6, u - du * 0.2, h + 0.38, v); bx(0x8a909c, 0.6, 0.06, 0.45, u - du * 0.2, h + 0.61, v);
+        if (rnd() < 0.5) { const [x, z] = W(u + du * 0.22, v); addG(0x8a5a32, cylF, 0.3, 0.5, 0.3, x, h + 0.45, z); addG(0x5a3a22, coneF, 0.34, 0.25, 0.34, x, h + 0.82, z); }
+      }
+      for (let k = 0; k < Math.floor(du / 1.6); k++) for (let r = 0; r < Math.floor((h - 1.4) / 1.1); r++) {   // framed windows with sills and a mullion
+        const wu = u - du / 2 + 0.9 + k * 1.6, wy = 1.9 + r * 1.1;
+        bx(TRIM, 0.74, 0.74, 0.1, wu, wy, fr); bx(0x6ab8f0, 0.58, 0.58, 0.13, wu, wy, fr + facing * 0.01); bx(TRIM, 0.05, 0.58, 0.16, wu, wy, fr + facing * 0.02); bx(TRIM, 0.86, 0.07, 0.22, wu, wy - 0.4, fr + facing * 0.07);
+      }
+      if (shop) {
+        const aw = pick(AW), aV = v + facing * (dv / 2 + 0.38), aw0 = du * 0.8;
+        for (let k = 0; k < Math.floor(aw0 / 0.4); k++) { const su = u - aw0 / 2 + 0.2 + k * 0.4; bx(k % 2 ? 0xffffff : aw, 0.4, 0.08, 0.76, su, 1.64, aV); bx(k % 2 ? 0xffffff : aw, 0.4, 0.22, 0.06, su, 1.52, aV + facing * 0.38); }   // striped awning with a valance
+        bx(0x2b2b33, 0.06, 1.5, 0.06, u - aw0 / 2 + 0.1, 0.75, aV + facing * 0.34); bx(0x2b2b33, 0.06, 1.5, 0.06, u + aw0 / 2 - 0.1, 0.75, aV + facing * 0.34);
+        bx(TRIM, 0.96, 1.28, 0.06, u - du * 0.2, 0.64, fr); bx(0x5b3a22, 0.8, 1.2, 0.09, u - du * 0.2, 0.6, fr + facing * 0.02); bx(0xe6c84a, 0.07, 0.07, 0.14, u - du * 0.2 + 0.28, 0.6, fr + facing * 0.04);   // door
+        bx(TRIM, 1.26, 0.86, 0.06, u + du * 0.18, 0.85, fr); bx(0x9ccfff, 1.1, 0.7, 0.09, u + du * 0.18, 0.85, fr + facing * 0.02);                                                                         // shop window
+        bx(aw, du * 0.5, 0.3, 0.1, u, h - 0.45, fr + facing * 0.03); bx(0xffffff, du * 0.3, 0.07, 0.12, u, h - 0.45, fr + facing * 0.04);                                                                        // sign
+      }
+    };
+    for (let u = -EXT + 6; u < EXT - 4;) {                      // across the street
+      const du = 4 + rnd() * 3.4, dv = 3 + rnd() * 1.6;
+      if (rnd() < 0.85) building(u + du / 2, RW + 2.4 + 3.2 + dv / 2, du, dv, 2.6 + rnd() * 2.6, -1, rnd() < 0.6);
+      u += du + 0.6 + rnd() * 1.4;
+    }
+    const sideV = dv => -D - 0.8 - dv / 2;                      // neighbours either side of the store, right behind the footpath
+    for (const dir of [-1, 1]) for (let u = dir < 0 ? a0 - 3.5 : a1 + 3.5, i = 0; i < 12; i++) {
+      const du = 4 + rnd() * 3, dv = 4 + rnd() * 2;
+      building(u + dir * du / 2, sideV(dv), du, dv, 2.6 + rnd() * 2.4, 1, rnd() < 0.7);
+      u += dir * (du + 0.5 + rnd() * 1.5);
+    }
+    const back = -D - Math.max(6, rect ? (hz ? (rect.zB - rect.zT) : (rect.xr - rect.xl)) + 0.8 : 12);   // a row of houses behind the store
+    for (let u = -EXT + 6; u < EXT - 4;) {
+      const du = 4 + rnd() * 3, dv = 4 + rnd() * 2;
+      if (rnd() < 0.8) building(u + du / 2, back - 3.4 - dv / 2, du, dv, 2.2 + rnd() * 2.2, 1, rnd() < 0.35);
+      u += du + 1 + rnd() * 2.4;
+    }
+
+    // ----- low-poly trees and bushes on whatever grass is left -----
+    const placed = [], hw = COLS / 2 + 3, hh = ROWS / 2 + 3;
+    const free = (x, z) => {
+      if (Math.abs(x) < hw && Math.abs(z) < hh) return false;                               // the store + its garden path
+      const u = hz ? x : z, v = hz ? z - curb : sgn * (x - curb);
+      if (v > -D - 0.8 && v < RW + 2.4 + 8.5) return false;                                 // footpaths, road, shops across the street
+      if (solid.some(([u0, u1, v0, v1]) => u > u0 - 1.2 && u < u1 + 1.2 && v > v0 - 1.2 && v < v1 + 1.2)) return false;
+      return placed.every(([px, pz, r]) => Math.hypot(px - x, pz - z) > r + 1.4);
+    };
+    const tree = (x, z, s, kind) => {
+      const a = rnd() * 6.28;
+      if (kind === 0) {          // round tree: trunk + two faceted crowns
+        addG(0x7a4a2a, cylF, 0.15 * s, 0.9 * s, 0.15 * s, x, 0.45 * s, z);
+        addG(0x2f8f46, icoG, 0.95 * s, 0.8 * s, 0.95 * s, x, 1.5 * s, z, a); addG(0x43b05a, icoG, 0.65 * s, 0.6 * s, 0.65 * s, x, 2.15 * s, z, a + 1);
+      } else if (kind === 1) {   // pine: trunk + three stacked cones
+        addG(0x6b4226, cylF, 0.13 * s, 0.7 * s, 0.13 * s, x, 0.35 * s, z);
+        addG(0x23743a, coneF, 0.95 * s, 0.9 * s, 0.95 * s, x, 1.05 * s, z, a); addG(0x2c8a46, coneF, 0.72 * s, 0.8 * s, 0.72 * s, x, 1.65 * s, z, a); addG(0x3aa257, coneF, 0.48 * s, 0.7 * s, 0.48 * s, x, 2.2 * s, z, a);
+      } else {                   // bush with a flower
+        addG(0x2f9a4c, icoG, 0.55 * s, 0.4 * s, 0.55 * s, x, 0.3 * s, z, a); addG(0x45b862, icoG, 0.38 * s, 0.3 * s, 0.38 * s, x + 0.25 * s, 0.38 * s, z + 0.1 * s, a);
+        if (rnd() < 0.5) addG(0xff7a9a, icoG, 0.08, 0.08, 0.08, x + 0.15, 0.62 * s, z + 0.3);
+      }
+    };
+    for (let i = 0, tries = 0; i < 70 && tries < 1500; tries++) {
+      const R = Math.pow(rnd(), 0.65) * 46 + 4, an = rnd() * Math.PI * 2, x = Math.cos(an) * R * 1.15, z = Math.sin(an) * R;
+      if (!free(x, z)) continue;
+      const kind = rnd() < 0.3 ? 2 : rnd() < 0.5 ? 1 : 0, s = 0.8 + rnd() * 0.6;
+      tree(x, z, s, kind); placed.push([x, z, kind === 2 ? 0.5 : 0.9 * s]); i++;
+    }
+
+    // ----- traffic: cars and a bus drive along the road, one lane each way (real parts: body, cabin, glass, cylinder wheels, lights) -----
+    this.cars = [];
+    for (let i = 0; i < 7; i++) {
+      const dir = i % 2 ? 1 : -1, g = new THREE.Group(), bus = i === 3;
+      const col = pick([0xe8473f, 0x3a86e8, 0xf2c94c, 0x5fd08a, 0xf2f2f2, 0xff8a3d, 0x9b6be8]), body = bus ? 0xf2c94c : col;
+      const L = bus ? 2.6 : 1.5, pp = (geo, c, sx, sy, sz, x, y, z) => this.part(g, geo, c, sx, sy, sz, x, y, z, true);
+      pp(this.box, body, L, 0.34, 0.8, 0, 0.32, 0);                                                   // chassis
+      if (bus) { pp(this.box, body, L - 0.1, 0.5, 0.78, 0, 0.78, 0); pp(this.box, 0x2a3340, L - 0.3, 0.26, 0.8, 0, 0.84, 0); pp(this.box, 0xdddddd, L - 0.1, 0.05, 0.8, 0, 1.05, 0); }
+      else { pp(this.box, body, 0.82, 0.3, 0.72, -0.05, 0.62, 0); pp(this.box, 0x2a3340, 0.6, 0.2, 0.74, 0.0, 0.64, 0); pp(this.box, body, 0.84, 0.04, 0.72, -0.05, 0.79, 0); }
+      for (const [wxp, wzp] of [[L * 0.3, 0.4], [L * 0.3, -0.4], [-L * 0.3, 0.4], [-L * 0.3, -0.4]]) {
+        pp(this.cyl, 0x16161c, 0.17, 0.12, 0.17, wxp, 0.17, wzp).rotation.x = Math.PI / 2;
+        pp(this.cyl, 0xcfd3dc, 0.09, 0.13, 0.09, wxp, 0.17, wzp).rotation.x = Math.PI / 2;
+      }
+      this.glow(g, 0xfff3b0, 0.06, 0.12, 0.2, L / 2, 0.4, 0.26); this.glow(g, 0xfff3b0, 0.06, 0.12, 0.2, L / 2, 0.4, -0.26);
+      this.glow(g, 0xff3b3b, 0.06, 0.12, 0.2, -L / 2, 0.4, 0.26); this.glow(g, 0xff3b3b, 0.06, 0.12, 0.2, -L / 2, 0.4, -0.26);
+      const v = dir > 0 ? RW * 0.75 : RW * 0.25;
+      g.rotation.y = hz ? (dir > 0 ? 0 : Math.PI) : (dir > 0 ? -Math.PI / 2 : Math.PI / 2);
+      S.add(g); this.cars.push({ g, dir, v, u: -EXT + rnd() * EXT * 2, sp: bus ? 2.4 + rnd() : 3 + rnd() * 3 });
+    }
+
+    // ----- merge every static piece of scenery into ONE mesh per colour (a handful of draw calls), shadows on -----
+    const nm = new THREE.Matrix3(), tv = new THREE.Vector3();
+    for (const [color, list] of pushed) {
+      let nv = 0, ni = 0;
+      for (const [geo] of list) { const c = geo.attributes.position.count; nv += c; ni += geo.index ? geo.index.count : c; }
+      const P = new Float32Array(nv * 3), N = new Float32Array(nv * 3), I = new Uint32Array(ni);
+      let vo = 0, io = 0;
+      for (const [geo, mat] of list) {
+        const pos = geo.attributes.position, nor = geo.attributes.normal, cnt = pos.count; nm.getNormalMatrix(mat);
+        for (let i = 0; i < cnt; i++) {
+          tv.fromBufferAttribute(pos, i).applyMatrix4(mat); P[(vo + i) * 3] = tv.x; P[(vo + i) * 3 + 1] = tv.y; P[(vo + i) * 3 + 2] = tv.z;
+          tv.fromBufferAttribute(nor, i).applyMatrix3(nm).normalize(); N[(vo + i) * 3] = tv.x; N[(vo + i) * 3 + 1] = tv.y; N[(vo + i) * 3 + 2] = tv.z;
+        }
+        if (geo.index) for (let i = 0; i < geo.index.count; i++) I[io++] = geo.index.getX(i) + vo; else for (let i = 0; i < cnt; i++) I[io++] = vo + i;
+        vo += cnt;
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(P, 3)); g.setAttribute('normal', new THREE.BufferAttribute(N, 3)); g.setIndex(new THREE.BufferAttribute(I, 1));
+      const m = new THREE.Mesh(g, this.toon(color)); m.userData.ownGeo = true; m.castShadow = true; m.receiveShadow = true; S.add(m);
+    }
+    for (const g of [cylF, coneF, icoG, roofG]) g.dispose();
+    this.envW = W; this.envEXT = EXT; this.trafficTick(0);
+  }
+  trafficTick(dt) {
+    if (!this.cars || !this.envW) return;
+    for (const c of this.cars) {
+      c.u += c.dir * c.sp * dt; if (c.u > this.envEXT) c.u = -this.envEXT; else if (c.u < -this.envEXT) c.u = this.envEXT;
+      const [x, z] = this.envW(c.u, c.v); c.g.position.set(x, 0, z);
+    }
   }
 
   // cash on the counter: one brick per ~4x$ (square-root growth so it keeps filling up), ten bricks high per pile
@@ -341,6 +615,7 @@ export class View {
   // daytime wind: a few blocky pixel swirls that curl their way across the store
   windTick(dt, time) {
     const b = this.bounds; if (!b) return;
+    this.trafficTick(dt);
     const day = Math.max(0, 1 - this.tod * 1.8), SNAP = 0.07, N = 10;
     this.windAcc += dt * day * 0.45;                       // about one swirl every 2 seconds in full daylight
     if (this.windAcc >= 1 && this.wind.length < 5) {
@@ -366,10 +641,10 @@ export class View {
 
   // re-frame the camera and the shadow box for the current room size
   fitRoom() {
-    const half = Math.max(COLS, ROWS) / 2 + 2, sun = this.sun, sc = sun.shadow.camera;
+    const half = Math.max(COLS, ROWS) / 2 + 8, sun = this.sun, sc = sun.shadow.camera;
     if (sc.right !== half) {
       sc.left = -half; sc.right = half; sc.top = half + 1; sc.bottom = -half - 1; sc.updateProjectionMatrix();
-      const size = half > 9 ? 2048 : 1024;
+      const size = half > 14 ? 4096 : 2048;
       if (sun.shadow.mapSize.x !== size) { sun.shadow.mapSize.set(size, size); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } }
     }
     this.resize();
@@ -771,6 +1046,7 @@ export class View {
     else if (type === 'panic') this.burst(d.enemy.x, d.enemy.y, 1.0, 0x8fd3ff, 6, 1.6, 0.7);
     else if (type === 'molotovSplash') this.blast3d(d.x, d.y, d.r, d.fueled ? 1.35 : 1, true);
     else if (type === 'doorCrash') {
+      const dr = this.doors && this.doors.find(q => q.sp.x === d.x && q.sp.y === d.y); if (dr) dr.force = 1.2;
       this.burst(d.x, d.y, 0.8, 0xc08a50, 14, 3.4, 1.3); this.burst(d.x, d.y, 0.8, 0x9ad7ff, 10, 3, 1); this.ringFx(d.x, d.y, 1.4, 0xe9ddc0);
       for (let i = 0; i < 5; i++) this.puff(d.x, d.y, 0.3 + Math.random() * 0.4, 0xb9b3a4, 1.2, 0.8, 0.8);
       this.shake = Math.max(this.shake, 0.35);
@@ -1023,6 +1299,14 @@ export class View {
     }
     for (const [id, m] of this.meshes) if (!seen.has(id)) { if (id === this.hoverId) { this.hoverId = null; this.outline = []; } this.dyn.remove(m.group); if (m.mark) { this.scene.remove(m.mark); m.mark.material.dispose(); } if (m.warn) this.scene.remove(m.warn); this.meshes.delete(id); }
 
+    // doors swing open for anybody walking up to them
+    if (this.doors) for (const d of this.doors) {
+      let near = d.force > 0; d.force = Math.max(0, d.force - dt);
+      if (!near) for (const c of g.customers) if (Math.hypot(c.x - d.sp.x, c.y - d.sp.y) < 1.9) { near = true; break; }
+      if (!near) for (const e of g.enemies) if (!e.dead && Math.hypot(e.x - d.sp.x, e.y - d.sp.y) < 2.4) { near = true; break; }
+      d.open += ((near ? 1 : 0) - d.open) * Math.min(1, dt * 7);
+      const a = d.open * 1.75; d.A.rotation.y = a; d.B.rotation.y = -a;   // swing INWARD (into the shop)
+    }
     // morning -> night lighting
     const target = { morning: 0, prep: 0, evening: 0.55, wave: 1, restock: 1, lost: 1, won: 0 }[g.phase] ?? 0;
     this.tod += (target - this.tod) * Math.min(1, dt * 1.4);
@@ -1086,7 +1370,7 @@ export class View {
     this.shake = Math.max(0, this.shake - dt);
     const sh = this.shake * this.shake * 0.9;
     const offX = (this.ext.right - this.ext.left) / 2, offZ = (this.ext.bottom - this.ext.top) / 2;   // fixed camera, aimed at the middle of the whole shop
-    this.camera.position.set(this.camBase.x + offX + (Math.random() - 0.5) * sh, this.camBase.y + (Math.random() - 0.5) * sh, this.camBase.z + offZ);
+    this.camera.position.set(offX + this.camDir.x * 30 + (Math.random() - 0.5) * sh, 0.2 + this.camDir.y * 30 + (Math.random() - 0.5) * sh, offZ + this.camDir.z * 30);
     this.camera.lookAt(offX, 0.2, offZ);
 
     // two-pass: low-res target, then nearest-neighbour upscale
