@@ -421,15 +421,15 @@ body.lostOpen #card .row{justify-content:center;max-width:440px;margin-left:auto
 @keyframes lostFade{from{opacity:0;-webkit-backdrop-filter:blur(0);backdrop-filter:blur(0)}to{opacity:1;-webkit-backdrop-filter:blur(7px);backdrop-filter:blur(7px)}}
 @keyframes lostText{from{opacity:0;transform:translateY(14px) scale(.96)}to{opacity:1;transform:none}}
 #tray .pxb,#tray .choice{clip-path:none}
-#tray .bp{position:absolute;left:0;top:0;width:400px;height:620px;transform-origin:0 0;transform:scale(var(--k,1));box-sizing:border-box;border-radius:22px;color:#2a2622;font-family:var(--cf);
+#tray .bp{position:absolute;left:0;top:0;width:var(--lw,400px);height:var(--lh,620px);transform-origin:0 0;transform:scale(var(--k,1));box-sizing:border-box;border-radius:22px;color:#2a2622;font-family:var(--cf);
   background:linear-gradient(180deg,#fffdf4,#f5efdc);
   box-shadow:6px 6px 0 rgba(0,0,0,.65),10px 10px 0 rgba(0,0,0,.25)}
 #tray .bpIn{position:absolute;inset:20px 20px 18px;display:flex;flex-direction:column;gap:10px}
 /* buttons: wipe the page's button styles, then paint them receipt-style */
 #tray .bpTab,#tray .sc,#tray .rc,#tray #dAct,#tray #renoPane .pxb{all:unset;box-sizing:border-box;cursor:pointer;-webkit-tap-highlight-color:transparent}
 /* bookmark tabs: on the receipt's left side, tucked UNDER the sheet (no cutout), hard pixel shadow, ease-out-back pop when clicked */
-#tray .bpTabs{position:absolute;left:0;top:0;width:64px;height:620px;transform-origin:0 0;transform:scale(var(--k,1)) translateX(-50px);display:flex;flex-direction:column;gap:10px;padding-top:40px;box-sizing:border-box}
-#tray .bpTab{width:64px;height:124px;padding-right:14px;display:flex;flex-direction:column-reverse;align-items:center;justify-content:center;gap:8px;border-radius:14px 0 0 14px;
+#tray .bpTabs{position:absolute;left:0;top:0;width:64px;height:var(--lh,620px);transform-origin:0 0;transform:scale(var(--k,1)) translateX(-50px);display:flex;flex-direction:column;gap:10px;padding-top:min(40px,calc(var(--lh,620px)*.07));box-sizing:border-box}
+#tray .bpTab{width:64px;height:124px;flex:0 1 124px;min-height:0;padding-right:14px;display:flex;flex-direction:column-reverse;align-items:center;justify-content:center;gap:8px;border-radius:14px 0 0 14px;
   background:var(--tc,#ff9a4a);color:#fff;text-shadow:0 2px 0 rgba(0,0,0,.3);font:600 16px/1 var(--cf);letter-spacing:.5px;white-space:nowrap;filter:brightness(.86) saturate(.85);
   box-shadow:-4px 4px 0 rgba(0,0,0,.65);transform-origin:100% 50%;
   transition:transform .22s cubic-bezier(.3,1.15,.5,1),filter .2s,box-shadow .22s cubic-bezier(.3,1.15,.5,1)}
@@ -510,6 +510,21 @@ body.lostOpen #card .row{justify-content:center;max-width:440px;margin-left:auto
 #tray #shopPane .choice .nm{color:#2a2622;font:600 16px/1.05 var(--cf);text-transform:uppercase;letter-spacing:.4px} #tray #shopPane .choice .ds{color:#5b534a;font:600 12px/1.05 var(--cf)} #tray #shopPane .lvl{color:#8b8277}
 #tray #shopPane .choice>span:last-child{color:#c4570f!important}
 #tray #shopPane .choice:disabled{opacity:.5}
+/* ----- compact receipt (phones, short tablets): the card is laid out at the REAL size, so text stays readable ----- */
+#tray.bpc .bpIn{inset:14px 14px 12px;gap:6px}
+#tray.bpc .bpTab{padding-right:10px;gap:5px;font-size:13px} #tray.bpc .bpTab .pxe{width:20px;height:20px}
+#tray.bpc .pv{height:74px;gap:8px} #tray.bpc .pv .pic{width:68px;height:68px}
+#tray.bpc .pv .nm{font-size:19px} #tray.bpc .pv .ds{font-size:13px;line-height:1.05}
+#tray.bpc #stocksPane{gap:6px}
+#tray.bpc #trayGrid{grid-auto-rows:90px;gap:6px} #tray.bpc .sc{height:90px}
+#tray.bpc .sc>img:first-child{width:46px;height:46px;margin-bottom:14px}
+#tray.bpc .sc-k,#tray.bpc .sc-ct{font-size:12px} #tray.bpc .sc-pr{font-size:15px;bottom:4px}
+#tray.bpc .gBar{height:46px;padding-top:6px;gap:8px}
+#tray.bpc .gInfo{font-size:11px} #tray.bpc .gInfo b{font-size:15px}
+#tray.bpc #dAct{min-width:96px;padding:10px 10px 8px;font-size:15px}
+#tray.bpc .bpBar{height:8px}
+#tray.bpc #renoPane .stCard{padding:8px 10px;margin-bottom:8px} #tray.bpc #renoPane .stRow b{font-size:16px} #tray.bpc #renoPane .stRow span,#tray.bpc #renoPane p{font-size:12px}
+#tray.bpc #shopPane .choice{padding:8px 10px} #tray.bpc #shopPane .choice .nm{font-size:15px} #tray.bpc #shopPane .choice .ds{font-size:12px}
 `;
 document.head.appendChild(trayCss);
 $('tray').innerHTML = `<nav class="bpTabs">
@@ -695,16 +710,34 @@ function placeBuild() {
   const r = dock.getBoundingClientRect();   // anchored above the WHOLE dock, so it never covers restock / speed / OPEN STORE
   const show = !!game && running && !dock.classList.contains('off') && r.width > 0 && !panelFolded;
   t.classList.toggle('off', !show);
-  if (!show) { if (r.width) document.documentElement.style.setProperty('--bpx', Math.round(innerWidth - r.left + 14) + 'px'); view.setReserve(0); return; }
-  // responsive: the receipt never takes more than ~34% of the screen width (phone / tablet), and never taller than the room above the dock
-  const k = Math.max(0.34, Math.min(1, (r.top - 12 - 58) / BP_H, innerWidth * 0.34 / (BP_W + TAB_W)));
-  t.style.setProperty('--k', k.toFixed(4)); t.style.setProperty('--w', (BP_W * k).toFixed(1) + 'px'); t.style.setProperty('--h', (BP_H * k).toFixed(1) + 'px');
-  document.documentElement.style.setProperty('--bpx', Math.round((BP_W + TAB_W) * k + Math.max(6, innerWidth - r.right) + 14) + 'px');   // Sara stays left of the card
-  t.style.setProperty('--r', Math.max(6, innerWidth - r.right) + 'px'); t.style.setProperty('--b', Math.max(6, innerHeight - r.top + 10) + 'px');
-  view.setReserve((BP_W + TAB_W) * k + Math.max(6, innerWidth - r.right) + 8);   // the store is re-framed in the space LEFT of the receipt
+  const mR = Math.max(6, innerWidth - r.right);
+  const hidden = !game || !running || panelFolded || dock.classList.contains('off');   // really hidden (menu / folded) vs just measured at 0 for a moment
+  if (!show) { if (r.width) document.documentElement.style.setProperty('--bpx', Math.round(innerWidth - r.left + 14) + 'px'); if (hidden) view.setReserve(0); return; }
+  // responsive receipt: pick a READABLE text scale, then give the card whatever real width / height is free (it reflows instead of shrinking)
+  const keyS = innerWidth + 'x' + innerHeight + ':' + Math.round(dock.offsetHeight / 2);
+  if (placeBuild.key !== keyS) { placeBuild.key = keyS; placeBuild.top = r.top; }   // the dock top only changes with the screen, not with the labels
+  const availH = Math.max(150, placeBuild.top - 10 - 52);                // from under the mute / pause buttons down to the dock
+  let k = Math.max(0.85, Math.min(1, innerHeight / 760));                // text scale: 1 on PC / iPad, ~.85 on phones
+  const frac = innerWidth < 800 ? 0.42 : 0.36;                           // share of the screen width the card may take
+  const W0 = Math.min(BP_W * k, innerWidth * frac - TAB_W * k * 0.8), H0 = Math.min(BP_H * k, availH);
+  k = Math.max(0.55, Math.min(k, W0 / 290, H0 / 270));                   // only shrink the text if the card would get tinier than 290 x 270
+  const LW = Math.round(W0 / k), LH = Math.round(H0 / k);
+  t.classList.toggle('bpc', LH < 570 || LW < 380);
+  t.style.setProperty('--k', k.toFixed(4)); t.style.setProperty('--lw', LW + 'px'); t.style.setProperty('--lh', LH + 'px');
+  t.style.setProperty('--w', (LW * k).toFixed(1) + 'px'); t.style.setProperty('--h', (LH * k).toFixed(1) + 'px');
+  const used = (LW * k) + 50 * k + mR + 8;                                // card + the tabs that stick out on its left
+  document.documentElement.style.setProperty('--bpx', Math.round(used + 6) + 'px');   // Sara stays left of the card
+  t.style.setProperty('--r', mR + 'px'); t.style.setProperty('--b', Math.max(6, innerHeight - r.top + 10) + 'px');
+  view.setReserve(used - 34 * k);   // the store is re-framed in the space LEFT of the receipt (its tabs may overlap the store's edge a little)
 }
 window.addEventListener('resize', placeBuild);
 window.addEventListener('orientationchange', () => setTimeout(placeBuild, 300));
+// keep the receipt snapped to the dock whenever the dock or the screen changes (day won, modals closing, browser bars, rotation...)
+try {
+  const ro = new ResizeObserver(() => placeBuild()); ro.observe($('dock')); ro.observe($('stage'));
+  const mo = new MutationObserver(() => placeBuild()); mo.observe($('dock'), { attributes: true, attributeFilter: ['class', 'style'] }); mo.observe($('modal'), { attributes: true, attributeFilter: ['class'] });
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', placeBuild);
+} catch (e) { /* old browser: the resize listener still works */ }
 function renderTabletStatus() { placeBuild(); }
 
 
@@ -728,11 +761,11 @@ function refresh() {
   }
   renderDetail();
   const go = $('go'), setGo = (cls, dis, txt) => { go.disabled = dis; go.className = 'pxb ' + cls; setHTML(go, txt); };
-  if (game.phase === 'prep') { if (game.canOpen().ok) setGo('gold', false, '☀ OPEN<br>STORE'); else setGo('', false, '🔒 OPEN<br>STORE'); }   // an empty store can't open
-  else if (game.phase === 'morning') setGo('', true, '🛒 STORE<br>OPEN');
-  else if (game.phase === 'evening') setGo('red', false, `🌙 NIGHT IN ${Math.max(1, Math.ceil(game.nightIn))}<br>TAP: NOW`);   // starts by itself; tapping skips the wait
-  else if (game.phase === 'wave') setGo('', true, '🌙 NIGHT<br>DEFEND!');
-  else setGo('', true, '...');
+  // the label NEVER changes (always OPEN STORE); only the look does: gold = tap to open, grey = not available right now
+  const OPEN = '☀ OPEN<br>STORE';
+  if (game.phase === 'prep') setGo(game.canOpen().ok ? 'gold' : '', false, OPEN);   // an empty store can't open
+  else if (game.phase === 'evening') setGo('gold', false, OPEN);                      // tapping still skips the wait for night
+  else setGo('', true, OPEN);                                                          // store already open / night / lost
   musicWant = !running ? null : game.phase === 'wave' ? 'night' : game.phase === 'lost' ? null : 'day';
   renderInfo();
   renderReno(); renderSlots(); renderTabletStatus();
@@ -856,7 +889,7 @@ cv.addEventListener('pointermove', e => {
   if (e.pointerType !== 'mouse' || !game || !running) return;
   hover = view.pick(e.clientX, e.clientY);
   view.setHover(hover ? (game.towerAt(hover.x, hover.y) || game.shelfAt(hover.x, hover.y) || game.trapAt(hover.x, hover.y)) : null);
-  if (moving && hover) view.setCursor(hover, game.canMove(moving, hover.x, hover.y).ok, fpOf(moving.type));
+  if (moving && hover) view.setCursor(hover, game.canMove(moving, hover.x, hover.y).ok, fpOf(moving.type || 'shelf'));
   else if (selected && hover) view.setCursor(hover, game.canPlace(selected, hover.x, hover.y).ok, fpOf(selected)); else view.setCursor(null);
   view.setRange(...rangeFor());
 });
@@ -866,7 +899,7 @@ cv.addEventListener('pointermove', e => {
   if (!drag.on && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) < 10) return;
   if (!drag.on) { drag.on = true; moving = drag.item; hidePop(); }
   const c = view.pick(e.clientX, e.clientY);
-  preview = c; if (c) view.setCursor(c, game.canMove(moving, c.x, c.y).ok, fpOf(moving.type)); else view.setCursor(null);
+  preview = c; if (c) view.setCursor(c, game.canMove(moving, c.x, c.y).ok, fpOf(moving.type || 'shelf')); else view.setCursor(null);
 });
 function dragEnd(e, cancel) {
   if (!drag || e.pointerId !== drag.id) return;
@@ -889,7 +922,7 @@ cv.addEventListener('pointerdown', e => {
   if (moving) {   // tap-to-move: pick the new spot (touch: first tap previews, the ✔ confirms)
     if (existing === moving) { moving = null; preview = null; view.setCursor(null); refresh(); return; }
     const touch = e.pointerType !== 'mouse';
-    if (touch && !(preview && preview.x === c.x && preview.y === c.y)) { preview = c; view.setCursor(c, game.canMove(moving, c.x, c.y).ok, fpOf(moving.type)); refresh(); return; }
+    if (touch && !(preview && preview.x === c.x && preview.y === c.y)) { preview = c; view.setCursor(c, game.canMove(moving, c.x, c.y).ok, fpOf(moving.type || 'shelf')); refresh(); return; }
     if (game.move(moving, c.x, c.y)) endMove();
     else { sfx.bad(); floatText(c.x, c.y, game.canMove(moving, c.x, c.y).reason, 'bad'); }
     refresh(); return;
@@ -1132,14 +1165,15 @@ function hintBuild(id, cellOnly) {
 // say: [text, face?] lines with a NEXT button. task: Sara waits until done() is true.
 const TUT = [
   { id: 'hello', say: [
-    ['Uy, kamusta! Ikaw pala ang bago kong kasama dito sa tindahan! 😄', 'point'],
-    ['Ako nga pala si Sara. Ako muna ang bahala sa iyo ngayong unang araw.'],
-    ['Sa umaga, mamimili ang mga customer. Pagdating ng gabi, papasok ang mga magnanakaw, at ang kaha natin ang target nila!'],
-    ['Kaya simulan natin sa mga shelf. Doon kasi bumibili ang mga customer.'] ] },
+    ['Ay, ikaw pala yung nag-apply kahapon! Buti naman dumating ka. 😄', 'point'],
+    ['Ako si Sara. Ako ang magtuturo sa iyo ngayong unang araw. Madali lang ito, promise!'],
+    ['Ganito ang takbo dito: sa umaga, mamimili ang mga customer. Pagdating ng gabi, papasok ang mga magnanakaw para nakawin ang kaha natin.'],
+    ['Kaya unahin muna natin ang mga shelf. Doon kasi bumibili ang mga customer.'] ] },
   { id: 'receipt', say: [
     ['Nakikita mo ba ang resibo sa kanan, sa itaas ng OPEN STORE? 🧾', 'point'],
     ['Diyan mo bibilhin ang lahat ng gamit sa tindahan. May apat na tab sa gilid nito: ITEMS, SKILLS, STATUS at SHOP.'],
-    ['Nasa ITEMS ang mga shelf at turret. Pumili ka lang sa grid, tapos pindutin ang BUILD sa ibaba ng resibo.'] ] },
+    ['Ganito ang paglalagay: una, piliin ang Shelf sa grid ng ITEMS. Pangalawa, pindutin ang BUILD sa ibaba ng resibo. Pangatlo, i-tap ang sahig kung saan mo ito gustong ilagay.'],
+    ['Kapag nailagay na, i-tap mo ulit ang shelf para i-restock, ibenta, o ilipat gamit ang ✥ MOVE. Pwede mo rin siyang i-drag papunta sa ibang pwesto!'] ] },
   { id: 'menu', task: () => 'Sa resibo, nasa ITEMS tab ang grid. Pindutin ang Shelf.',
     done: () => panelTouched || !!selected || game.shelves.length > 0, hint: () => hintBuild('shelf', true) },
   { id: 'pick', task: () => 'Pindutin ang BUILD sa ibaba ng resibo para kunin ang Shelf.',
@@ -1155,8 +1189,8 @@ const TUT = [
   { id: 'vend', say: [
     ['Tingnan mo, may kita na tayo! 💰', 'point'],
     ['Pero mag-ingat, pagdating ng gabi ay may mga magnanakaw na papasok sa pinto.'],
-    ['Haay... Nakakadismaya na talaga. Lagi na lang nananakawan ang tindahan natin. Pagod na pagod na ako dito.', 'disappointed'],
-    ['Kaya ikaw na ang bahala ngayon! Bugbugin mo nang todo ang mga magnanakaw na yan, hanggang hindi na sila makabalik! Walang awa!', 'angry'],
+    ['Haay... nakakadismaya na talaga. Lagi na lang nananakawan ang tindahan natin. Pagod na pagod na ako dito.', 'disappointed'],
+    ['Kaya ikaw na ang bahala magbantay sa tindahan! Bugbugin mo nang todo ang mga magnanakaw na yan, hanggang hindi na sila makabalik! Walang awa!', 'angry'],
     ['Maglagay ka ng Vending Machine malapit sa pinto, kung saan sila dadaan. Minarkahan ko na para sa iyo.'] ] },
   { id: 'vendTask', marks: true,
     task: () => selected === 'cans' ? 'I-tap ang may markang sahig malapit sa pinto para ilagay ang Vending Machine.' : 'Sa resibo, piliin ang Vending Machine sa grid at pindutin ang BUILD, tapos ilagay ito malapit sa pinto.',
@@ -1225,8 +1259,8 @@ function tutPaint() {
 
 // ---- Sara: 2D pixel-art sprite drawn on #saraCv. The four pictures (idle1, point, disappointed, angry) are loaded once; the green screen is
 // removed automatically and a thick, chunky white outline is added, all at load time, so the raw art can stay as it is. ----
-const SARA_FRAMES = ['idle1', 'point', 'disappointed', 'angry'];   // a line's face name = the picture it shows; no face = point while she talks, idle1 once she is done
-const SARA_FILES = { idle1: 'normal.png', point: 'talk.png', disappointed: 'dissapointed.png', angry: 'angry.png' };   // picture -> file in assets/sara/
+const SARA_FRAMES = ['idle1', 'point', 'disappointed', 'angry', 'blink'];   // a line's face name = the picture it shows; no face = point while she talks, idle1 once she is done
+const SARA_FILES = { idle1: 'normal.png', point: 'talk.png', disappointed: 'dissapointed.png', angry: 'angry.png', blink: 'blink.png' };   // picture -> file in assets/sara/
 const SARA_GRID = 128, SARA_OUTLINE = 3;
 // sample the picture on a coarse "art pixel" grid (centre of every block) so the result is crisp, chunky pixel art
 function saraSample(data, w, h, G) {
@@ -1348,7 +1382,8 @@ function saraFrame(now) {
 
   // which picture: the line's own pose (disappointed / angry / point) if it has one; otherwise she uses the talking pose while the text types
   // and goes back to the normal pose only once she is done talking
-  const key = frames[tut.faceNow] ? tut.faceNow : tutTyping() ? 'point' : 'idle1';
+  const base = frames[tut.faceNow] ? tut.faceNow : tutTyping() ? 'point' : 'idle1';
+  const key = base === 'idle1' && frames.blink && now % 4200 < 150 ? 'blink' : base;   // when she is just standing there she blinks every ~4 seconds
 
   // size: whole-number zoom of the art grid, so the pixels stay perfectly square
   const want = (big ? Math.max(260, Math.min(500, vh * 0.64)) : Math.max(130, Math.min(220, vh * 0.32))) * (vh <= 480 ? 0.8 : 1);
@@ -1356,7 +1391,7 @@ function saraFrame(now) {
   if (cv.width !== cw0 || cv.height !== h || !saraImg) { cv.width = cw0; cv.height = h; saraImg = cv.getContext('2d').createImageData(cw0, h); saraDst = new Uint32Array(saraImg.data.buffer); saraDraw = ''; }
   const cw = cw0 * K + 'px', ch = h * K + 'px';
   if (cv.style.width !== cw) { cv.style.width = cw; cv.style.height = ch; }
-  if (saraPose !== key) { saraPose = key; saraPopAt = now; }                         // every new picture gets a small pop
+  if (saraPose !== base) { saraPose = base; saraPopAt = now; }                         // every new picture gets a small pop
 
   // tilt: she rocks around her feet, and a short soft pop (scale) plays when the picture changes. Both are drawn nearest-neighbour on the art grid,
   // so every pixel snaps to a whole art-pixel: no blur, no jagged edges.
