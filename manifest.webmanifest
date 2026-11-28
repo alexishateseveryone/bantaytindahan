@@ -1,10 +1,10 @@
 {
-  "name": "Tindang Sara A",
-  "short_name": "Sara A",
+  "name": "Tindang Sara B",
+  "short_name": "Sara B",
   "description": "Shelf Defense: Closing Time. Stock the shelves by day, defend the till by night.",
-  "start_url": "./index-a.html",
+  "start_url": "./index-b.html",
   "scope": "./",
-  "id": "./test-a",
+  "id": "./test-b",
   "display": "standalone",
   "display_override": [
     "standalone"
