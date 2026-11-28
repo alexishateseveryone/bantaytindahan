@@ -570,6 +570,7 @@ function onEvent(type, d) {
     case 'waveStart': sfx.wave(); banner(d.subs > 1 ? `🌙 Night ${d.n} — wave 1/${d.subs}` : `🌙 Night ${d.n} — burglars!`); break;
     case 'subClear': sfx.win(); banner(`Wave ${d.sub}/${d.subs} cleared — next one in ${d.gap}s`); break;
     case 'subWave': sfx.wave(); banner(d.sub === d.subs ? `🌙 Final wave ${d.sub}/${d.subs}!` : `🌙 Wave ${d.sub}/${d.subs}`); break;
+    case 'perma': if (d.id === 'p_greed') { banner('🤑 GREED +' + peso(d.cash)); sfx.win(); } else if (d.id === 'p_chain') banner('💥 Chain Reaction!'); break;
     case 'waveClear': hideBossBanner(); bankProgress(); sfx.win(); banner('Clear! +' + peso(d.bonus)); break;
     case 'freeze': sfx.freeze(); break;
     case 'bounce': sfx.bounce(); break;
@@ -1371,8 +1372,8 @@ function showRestock() {
     <div class="face back"><div class="sg">✦</div><div class="sg2">☾ ☀</div></div>
     <div class="face front"><div class="rn">${ROM[i] || i + 1}</div><div class="ic">${u.icon}</div><div class="nm">${u.name}</div><div class="ds">${u.desc}</div><div class="gl"></div></div>
   </div></div></div>`).join('');
-  tarot.innerHTML = `<div class="tt"><div class="th">📦 Morning delivery — day ${game.wave + 1}</div>
-    <div class="ts">You survived night ${game.wave}. Draw one card · Till ${game.lives}/${game.maxLives}</div>
+  tarot.innerHTML = `<div class="tt"><div class="th">${game.choices[0] && game.choices[0].perma ? '✨ PERMANENT CARD' : '📦 Morning delivery'} — day ${game.wave + 1}</div>
+    <div class="ts">${game.choices[0] && game.choices[0].perma ? 'Lasts for this whole run (not kept in other saves). Pick one' : 'You survived night ' + game.wave + '. Draw one card'} · Till ${game.lives}/${game.maxLives}</div>
     <div class="tr">${cards}</div><button class="tbtn" id="t-reroll" ${game.rerolls ? '' : 'disabled'}>🔄 Reroll (${game.rerolls})</button></div>`;
   tarot.classList.add('on');
   const els = [...tarot.querySelectorAll('.tc')]; let busy = false;
