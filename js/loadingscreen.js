@@ -11,7 +11,7 @@ import { SELLABLES, ITEMS, MAX_STOCK } from './game.js';
 import { makeItem, makeShelf, setShelfGoods, makeEnemy } from './model/index.js';
 
 const MIN_SHOW = 5200;   // ms the loading screen stays at least, so the floor + placing animation can finish
-const ELEV = 58 * Math.PI / 180, SIN = Math.sin(ELEV);   // the game's camera angle
+const ELEV = 40 * Math.PI / 180, SIN = Math.sin(ELEV), C45 = Math.SQRT1_2;   // the game's isometric camera angle (45 deg around, 40 deg down)
 const HINTS = ['Laying the floor...', 'Building the shelves...', 'Plugging in the machines...', 'Stocking up...', 'Opening soon!'];
 const PRELOAD = ['assets/sara/talk.png', 'assets/sara/normal.png', 'assets/sara/shh.png'];
 const POP = 0.45;        // seconds of one elastic pop (same as placing in the game)
@@ -84,7 +84,7 @@ class LoadView extends View {
     VIS = Math.max(9, Math.min(14, w / 100));
     const hw = VIS / 2, hh = hw * h / w, c = this.camera;
     c.left = -hw; c.right = hw; c.top = hh; c.bottom = -hh; c.updateProjectionMatrix();
-    const half = Math.max(hw, hh / SIN) + 4, sc = this.sun.shadow.camera;   // shadow box covers the whole visible floor
+    const half = (hw + hh / SIN) * C45 + 6, sc = this.sun.shadow.camera;   // shadow box covers the whole visible floor
     sc.left = -half; sc.right = half; sc.top = half + 1; sc.bottom = -half - 1; sc.updateProjectionMatrix();
     this.dirty = true;
   }
@@ -158,7 +158,7 @@ function makeThing(type, v) {   // the same models and set-up as the game's buil
 function build() {
   if (!view) return;
   if (content) { view.scene.remove(content.group); }
-  const nx = Math.ceil(VIS) + 5 | 1, nz = Math.ceil(2 * (VIS / 2 * view.h / view.w) / SIN) + 5 | 1, hx = nx >> 1, hz = nz >> 1;
+  const reach = Math.ceil((VIS / 2 + (VIS / 2 * view.h / view.w) / SIN) * C45) + 3, hx = reach, hz = reach;   // the rotated screen needs a square floor
   const group = new THREE.Group(), floors = [], things = [];
   view.scene.add(group);
   // floor tiles: a ripple from the middle outwards until the whole screen is covered
@@ -213,14 +213,16 @@ const RIDE = 28;   // bike speed (cells / s): the whole screen is swept in well 
 function planExit() {
   const c = content; if (!c) return 0;
   const hxOf = t => t.big === 2 ? 1.5 : 0.5, hzOf = t => t.big ? 1.5 : 0.5;
-  const halfW = VIS / 2, visZ = (halfW * view.h / view.w) / SIN, lim = Math.max(1, Math.floor(visZ * 0.6));
+  const hwv = VIS / 2, hhv = hwv * view.h / view.w, halfW = (hwv + hhv / SIN) * C45, lim = Math.max(1, Math.floor(Math.min(hwv, hhv / SIN) * 0.7));
   // the lane (a row across the screen) with the most stuff in it
   let lane = 0, best = -1;
   for (let z = -lim; z <= lim; z++) {
     const n = c.things.filter(t => Math.abs(t.x) <= halfW && Math.abs(t.z - z) <= hzOf(t) + 0.3).length - Math.abs(z) * 0.05;
     if (n > best) { best = n; lane = z; }
   }
-  const startX = -halfW - 3, crashX = halfW - 1, tStart = 0.1, timeAt = x => tStart + (x - startX) / RIDE, tCrash = timeAt(crashX);
+  // where that lane enters and leaves the (diagonal) screen
+  const xmin = Math.max(lane - hwv / C45, -lane - hhv / (C45 * SIN)), xmax = Math.min(lane + hwv / C45, -lane + hhv / (C45 * SIN));
+  const startX = xmin - 3, crashX = Math.max(xmin + 4, xmax - 1), tStart = 0.1, timeAt = x => tStart + (x - startX) / RIDE, tCrash = timeAt(crashX);
   let bike = null;
   try {
     bike = makeEnemy(view, { id: nextId++, type: 'moto', look: 4242, hp: 50, maxhp: 50, speed: 4, x: 0, y: 0, angle: Math.PI, soak: 0, burn: 0, slow: 0, stun: 0, flee: 0, wind: 0, moto: 'ride' });
