@@ -42,7 +42,7 @@ const $ = id => document.getElementById(id);
 const KEY = 'shelf-defense-closing-time-v1';
 let save = { bank: 0, levels: {}, best: 0, shifts: 0, run: null };   // run = the current store, saved between days
 try { Object.assign(save, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) { /* storage may be blocked */ }
-save.settings = Object.assign({ music: 0.3, sfx: 1 }, save.settings || {});   // volume sliders (0..1)
+save.settings = Object.assign({ music: 0.3, sfx: 1, ambience: 0.4 }, save.settings || {});   // volume sliders (0..1)
 const settings = save.settings;
 // 5 save slots: each one keeps its own store (save.run) and tutorial progress. The paycheck bank and shop upgrades are shared by all slots.
 const SLOTS = 5;
@@ -212,6 +212,25 @@ function musicTick(dt) {
       m.play().catch(() => { m._retry = performance.now() + 3000; }).finally(() => { m._busy = false; });   // blocked or missing file: try again later
     } else if (want === 0 && m.volume <= 0.001 && !m.paused) { m.pause(); m.currentTime = 0; }
   }
+}
+
+// ambience: a quiet looping background bed (assets/sfx/ambience.mp3, or .ogg / .wav / .m4a) that plays by day and fades out when night comes.
+// It is routed through Web Audio so the volume slider also works on iPad / iPhone (those ignore audio.volume).
+const AMB_VOL = 0.5;   // master quietness: slider 100% = half volume, so even the top of the slider stays in the background
+const AMB_EXT = ['mp3', 'ogg', 'wav', 'm4a'];
+const amb = { el: new Audio(), i: 0, v: 0, gain: null, busy: false, retry: 0 };
+amb.el.loop = true; amb.el.preload = 'auto'; amb.el.src = 'assets/sfx/ambience.' + AMB_EXT[0];
+amb.el.addEventListener('error', () => { if (amb.i + 1 < AMB_EXT.length) amb.el.src = 'assets/sfx/ambience.' + AMB_EXT[++amb.i]; });   // wrong extension: try the next one
+function ambTick(dt) {
+  const day = !!game && running && !game.isNight && game.phase !== 'wave' && game.phase !== 'lost';   // stops at night (burglars) and on the defeat screen
+  const want = musicOn && !muted && day ? settings.ambience * AMB_VOL : 0;
+  const diff = want - amb.v; amb.v += Math.sign(diff) * Math.min(Math.abs(diff), dt * 0.25 + 0.0001);   // slow fade in / out
+  if (!amb.gain && ac) { try { const n = ac.createMediaElementSource(amb.el), g = ac.createGain(); n.connect(g); g.connect(ac.destination); amb.gain = g; } catch (e) { amb.gain = null; } }
+  if (amb.gain) { amb.gain.gain.value = amb.v; amb.el.volume = 1; } else amb.el.volume = Math.max(0, Math.min(1, amb.v));
+  if (want > 0 && amb.el.paused && !amb.busy && performance.now() > amb.retry) {
+    amb.busy = true;
+    amb.el.play().catch(() => { amb.retry = performance.now() + 3000; }).finally(() => { amb.busy = false; });
+  } else if (want === 0 && amb.v <= 0.001 && !amb.el.paused) amb.el.pause();
 }
 
 // ---------- state ----------
@@ -1202,6 +1221,7 @@ document.head.appendChild(setCss);
 const pPane = document.createElement('div'); pPane.id = 'p-set'; pPane.className = 'off';
 pPane.innerHTML = `<div class="sr"><div class="sl"><span>🎵 Music</span><b id="vMusicV"></b></div><input type="range" id="vMusic" min="0" max="100" step="1"></div>
   <div class="sr"><div class="sl"><span>🔊 Sound effects</span><b id="vSfxV"></b></div><input type="range" id="vSfx" min="0" max="100" step="1"></div>
+  <div class="sr"><div class="sl"><span>🌿 Ambience</span><b id="vAmbV"></b></div><input type="range" id="vAmb" min="0" max="100" step="1"></div>
   <button class="pxb gold" id="p-back">◀ BACK</button>`;
 $('pauseMenu').querySelector('.pbox').appendChild(pPane);
 function bindSlider(id, key, apply) {
@@ -1213,6 +1233,7 @@ function bindSlider(id, key, apply) {
 }
 bindSlider('vMusic', 'music', () => { musicOn = true; });
 bindSlider('vSfx', 'sfx', () => { if (outGain) outGain.gain.value = settings.sfx * 1.36; });
+bindSlider('vAmb', 'ambience', () => { musicOn = true; });
 function pauseView(on) {
   $('pauseMenu').querySelector('h1').textContent = on ? 'SETTINGS' : 'PAUSED';
   for (const id of ['p-continue', 'p-settings', 'p-exit']) $(id).classList.toggle('off', on);
@@ -1705,7 +1726,7 @@ setInterval(tutTick, 150);
 let last = performance.now(), clock = 0;
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now; clock += dt;
-  musicTick(dt); bossBannerTick();
+  musicTick(dt); ambTick(dt); bossBannerTick();
   if (game) {
     if (game.sandbox) { game.cash = 999999; game.lives = 999; }   // dev sandbox: unlimited money, can't lose
     const was = game.phase; game.update(paused || tutHold() || overlayOpen() ? 0 : dt * speed);   // the game freezes while a NEW ITEM card or the tarot cards are open
