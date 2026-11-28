@@ -5,22 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Tindang Sara</title>
 <!-- installable app (Android + iOS) -->
-<link rel="manifest" href="./manifest-b.webmanifest">
+<link rel="manifest" href="./manifest.webmanifest">
 <meta name="theme-color" content="#000000">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black">
-<meta name="apple-mobile-web-app-title" content="Tindang Sara: Money Defense!">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Tindang Sara">
 <link rel="apple-touch-icon" href="./assets/icons/apple-touch-icon.png">
 <link rel="icon" type="image/png" href="./assets/icons/icon-192.png">
-<style>html,body{background:#000}</style>
-<script>
-  // --app-h: the height the page can really paint. Kept in sync on resize / rotation / visual viewport changes.
-  (function () { var r = document.documentElement, s = function () { r.style.setProperty('--app-h', window.innerHeight + 'px'); };
-    s(); addEventListener('resize', s); addEventListener('load', s);
-    addEventListener('orientationchange', function () { setTimeout(s, 120); setTimeout(s, 500); });
-    if (window.visualViewport) visualViewport.addEventListener('resize', s); })();
-</script><script>
+<style>html,body{background:#000}</style><script>
   // keep Android's install prompt event until loadingscreen.js is ready to use it
   window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); window.__bip = e; });
 </script>
@@ -38,7 +31,7 @@
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; -webkit-font-smoothing:none; font-smooth:never; }
   /* pinned to the real visible screen (fixed + inset:0 follows the visible area on iPad / iPhone Safari, unlike 100vh) */
   /* locked to the full screen: vw / vh + fixed (avoids the iPadOS black-translucent + height:100% bug that leaves a black bar at the bottom) */
-  html, body { position:fixed; top:0; left:0; width:100vw; height:var(--app-h,100vh); margin:0; padding:0; background:var(--bg); color:var(--ink); overflow:hidden; overscroll-behavior:none;
+  html, body { position:fixed; top:0; left:0; width:100vw; height:100vh; margin:0; padding:0; background:var(--bg); color:var(--ink); overflow:hidden; overscroll-behavior:none;
     font:400 20px/1.05 var(--tf); user-select:none; -webkit-user-select:none; }
   .off { display:none !important; }
   .pxe { width:1.35em; height:1.35em; image-rendering:pixelated; vertical-align:-.3em; margin:0 .1em; }
@@ -61,14 +54,12 @@
   .pxb.gold { --c:var(--gold); color:#2a1d00; } .pxb.red { --c:var(--red); color:#2a0003; } .pxb.green { --c:var(--green); color:#00281a; }
   .pxb.sq { width:38px; height:38px; padding:0; display:grid; place-items:center; font-size:10px; }
 
-  /* --app-h = the height the page can REALLY paint (window.innerHeight, set by the script in <head>); falls back to 100vh before the script runs.
-     On the installed iPad app 100vh is 32px taller than that, which pushed the bottom buttons off the visible area. */
-  #app { position:fixed; top:0; left:0; width:100vw; height:var(--app-h,100vh); margin:0; padding:0; }
-  #stage { position:relative; width:100vw; height:var(--app-h,100vh); margin:0; padding:0; overflow:hidden; background:var(--bg); }
+  #app { position:fixed; top:0; left:0; width:100vw; height:100vh; margin:0; padding:0; }
+  #stage { position:relative; width:100vw; height:100vh; margin:0; padding:0; overflow:hidden; background:var(--bg); }
   /* a normal Safari tab (not the installed app): 100vh is taller than the visible area there, so follow the real visible area instead */
   @media (display-mode: browser) { html, body, #app, #stage { width:100%; height:100%; } #view { width:100% !important; height:100% !important; } }
   /* like the old game's #c: the canvas is pinned to the whole screen by CSS and !important beats any pixel size view.js writes on it, so it can never end up shorter than the screen (black bar) */
-  #view { display:block; position:fixed !important; top:0 !important; left:0 !important; margin:0; padding:0; width:100vw !important; height:var(--app-h,100vh) !important; image-rendering:pixelated; image-rendering:crisp-edges; touch-action:none; }
+  #view { display:block; position:fixed !important; top:0 !important; left:0 !important; margin:0; padding:0; width:100vw !important; height:100vh !important; image-rendering:pixelated; image-rendering:crisp-edges; touch-action:none; }
   #floats { position:absolute; inset:0; pointer-events:none; overflow:hidden; }
   .float { position:absolute; transform:translate(-50%,-50%); font:400 9px/1 var(--pf); color:var(--gold); text-shadow:2px 2px 0 #000; animation:up .9s steps(9) forwards; white-space:nowrap; }
   .float.bad { color:var(--red); } .float.sale { color:#fff2a0; } .float.good { color:var(--green); }
@@ -362,6 +353,11 @@
   #go { white-space:nowrap !important; display:inline-flex; align-items:center; justify-content:center; gap:.45em; }
   #go .sun { width:1.15em; height:1.15em; flex:none; color:currentColor; image-rendering:pixelated; }
   #go:not(:disabled) .sun { color:#fff; }
+
+  /* ---- sandbox button: title screen, bottom right, icon only (same as pressing M) ---- */
+  #sbBtn { position:absolute; z-index:4; right:max(14px, env(safe-area-inset-right)); bottom:max(14px, env(safe-area-inset-bottom)); width:clamp(44px,11vh,60px); height:clamp(44px,11vh,60px); padding:0; display:grid; place-items:center; }
+  #sbBtn svg { width:55%; height:55%; image-rendering:pixelated; }
+  #stage:not(.menu) #sbBtn, #title.off ~ #sbBtn, #title.pop ~ #sbBtn, #title.slotsOut ~ #sbBtn { display:none; }
 </style>
 </head>
 <body>
@@ -399,6 +395,7 @@
       <div id="logo3d" role="img" aria-label="Tindang Sara"></div>
       <div class="btns"><button class="pxb gold" id="t-start">▶ PLAY</button></div>
     </div>
+    <button class="pxb gold" id="sbBtn" title="Sandbox (M)" aria-label="Sandbox"><svg viewBox="0 0 16 16" shape-rendering="crispEdges" fill="currentColor"><path d="M6 1h4v1H9v4l4 7v1H3v-1l4-7V2H6z"/><path d="M5 11h6l1.2 2H3.8z" fill="#fff" fill-opacity=".55"/></svg></button>
   </div>
 </div>
 <div id="modal"><div class="sheet px" id="card"></div></div>
@@ -407,5 +404,6 @@
 <script type="module" src="./js/loadingscreen.js"></script>   <!-- first, so the loading screen shows before the rest of the game finishes loading -->
 <script type="module" src="./js/main.js"></script>
 <script type="module" src="./js/title3d.js"></script>
+<script>document.getElementById('sbBtn').addEventListener('click', function(){ dispatchEvent(new KeyboardEvent('keydown', { key: 'm' })); });</script>
 </body>
 </html>
