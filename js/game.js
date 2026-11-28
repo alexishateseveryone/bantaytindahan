@@ -58,7 +58,7 @@ export const STATUE_UNIT_HP = 150;
 export const RAGE_HP = 0.5, RAGE_SPEED = 1.3, RAGE_RATE = 1.6;
 export const BOSS_ORDER = ['bombexpert', 'gunslinger', 'motoduo', 'doorrobber'];
 export const BOSS_INFO = {
-  bombexpert: { title: 'BOMB EXPERT', sub: 'Lobs bombs, and sometimes rains 5 at once', icon: '💣' },
+  bombexpert: { title: 'BOMB EXPERT', sub: 'Lobs bombs, and sometimes rains 3 at once', icon: '💣' },
   gunslinger: { title: 'GUNSLINGER', sub: 'Shotguns whatever blocks him. Calls 3 fast gunners', icon: '🔫' },
   motoduo:    { title: 'RIDING IN TANDEM', sub: 'Drives through the door and wrecks everything', icon: '🏍️' },
   doorrobber: { title: 'DOOR ROBBER', sub: 'His door tanks shots, slams the floor and flies like a boomerang', icon: '🚪' },
@@ -190,7 +190,7 @@ export const ENEMIES = {
   moto:   { name: 'Motor Bandit', hp: 50, push: 0, speed: 4, steal: 0, bounty: 10, armor: 1, cost: 3, abil: {}, cd: 99 },
   bat:    { name: 'Bat',     hp: 110, push: 24, speed: 1.1,  steal: 2, bounty: 14, armor: 1, cost: 3, abil: { smash: 1 }, cd: 3.2 },
   // ----- BOSSES (boss: true). bk = a custom behaviour handled in bossAct() -----
-  bombexpert: { name: 'Bomb Expert', hp: 420, push: 70, speed: 0.95, steal: 5, bounty: 80, armor: 2, cost: 0, abil: { bomb: 3, dash: 2 }, cd: 3.5, dashMul: 1.6, boss: true },
+  bombexpert: { name: 'Bomb Expert', hp: 320, push: 70, speed: 0.95, steal: 5, bounty: 80, armor: 2, cost: 0, abil: { bomb: 3, dash: 2 }, cd: 3.5, dashMul: 1.6, boss: true },
   gunslinger: { name: 'Gunslinger', hp: 520, push: 50, speed: 1.0, steal: 5, bounty: 90, armor: 2, cost: 0, abil: {}, cd: 99, boss: true, bk: 'gunslinger' },
   gunner:     { name: 'Gunner', hp: 30, push: 6, speed: 3.6, steal: 1, bounty: 5, armor: 0, cost: 0, abil: {}, cd: 99, bk: 'gunner' },
   motoduo:    { name: 'Riding in Tandem', hp: 600, push: 0, speed: 3.2, steal: 5, bounty: 100, armor: 2, cost: 0, abil: {}, cd: 99, boss: true, bk: 'motoduo', noSlow: true },
@@ -1873,14 +1873,14 @@ export class Game {
     this.projectiles.push({ id: this.nextId++, kind: 'bomb', lob: true, arc: 1.4, x: e.x, y: e.y, h: 0.9, h0: 0.9, sx: e.x, sy: e.y, d0, target: null, tx, ty, speed: 4.2, dmg: 0, level: 1, dx: 0, dy: 0, delay });
     this.emit('throw', { enemy: e });
   }
-  // Bomb Expert barrage: 5 bombs thrown one after another at RANDOM machines / shelves anywhere in the shop
-  barrage(e, n = 5) {
+  // Bomb Expert barrage: 3 bombs thrown one after another at RANDOM machines / shelves anywhere in the shop
+  barrage(e, n = 3) {
     const items = [...this.towers.filter(t => t.kind === 'tower' && !t.broken), ...this.shelves];
     if (!items.length) return;
     for (let i = items.length - 1; i > 0; i--) { const j = Math.floor(this.rng() * (i + 1)); [items[i], items[j]] = [items[j], items[i]]; }
     for (let i = 0; i < n; i++) {
       const it = items[i % items.length];
-      this.throwBomb(e, it.x + (this.rng() - 0.5) * 0.5, it.y + (this.rng() - 0.5) * 0.5, i * 0.22);
+      this.throwBomb(e, it.x + (this.rng() - 0.5) * 0.5, it.y + (this.rng() - 0.5) * 0.5, i * 0.3);
     }
     this.emit('barrage', { enemy: e, n });
   }
@@ -2071,8 +2071,8 @@ export class Game {
     const bombMul = n < 4 ? 0 : Math.min(2.2, 0.2 + (n - 4) * 0.22);
     const wb = (def.abil.bomb || 0) * bombMul, wd = def.abil.dash || 0, wm = def.abil.molo || 0, ws = def.abil.smash || 0, tot = wb + wd + wm + ws;
     e.abCd = def.cd * Math.max(0.5, 1.15 - 0.015 * n) * (1 + Math.max(0, 5 - n) * 0.2) * (0.7 + this.rng() * 0.7) * Math.pow(0.92, this.tierOf(n));   // tricks come 8% sooner per tier
-    if (e.type === 'bombexpert' && this.rng() < 0.4) {   // the big move: 5 bombs at random items
-      e.abCd *= 1.5; e.pending = { kind: 'barrage', n: 5 }; e.wind = 0.9;
+    if (e.type === 'bombexpert' && this.rng() < 0.2) {   // the big move: 3 bombs at random items (rarer, longer recovery, longer windup)
+      e.abCd *= 2.2; e.pending = { kind: 'barrage', n: 3 }; e.wind = 1.2;
       this.emit('windup', { enemy: e, kind: 'barrage' }); return true;
     }
     if (tot <= 0 || this.rng() > 0.75) return false;
