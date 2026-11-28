@@ -3,6 +3,9 @@ import * as THREE from 'three';
 import { COLS, ROWS, ITEMS, MAX_STOCK, BOMB_RADIUS, GUM_COLORS } from './game.js';   // COLS/ROWS are live bindings: the room size changes per game
 const COLA_PAL = [0x3b1f14, 0x6b3a22, 0xffffff, 0xc98a5a, 0xffffff, 0x8a4b2a];
 const FRUIT_COL = [0xe0463e, 0xff9f1c, 0x8bd450, 0xffd23f, 0x7b3fa0];
+import { makeCoffee } from './model/items/coffee.js';
+import { makeNoodle, makeCupNoodle } from './model/items/noodle.js';
+import { makeEggtray, makeEgg } from './model/items/eggtray.js';
 import { makeItem, makeShelf, setShelfGoods, makeCan, makeEnemy, makeCustomer, makeProjectile, makeFruit,
   makeGroundBomb, animGroundBomb, makeFire, animFire } from './model/index.js';
 
@@ -103,8 +106,10 @@ export class View {
     // cursor + range ring + path dots
     this.cursor = new THREE.Mesh(this.box, new THREE.MeshBasicMaterial({ color: 0x5fe3a1, transparent: true, opacity: 0.55 }));
     this.cursor.scale.set(0.96, 0.05, 0.96); this.cursor.visible = false; this.scene.add(this.cursor);
-    this.ring = new THREE.Mesh(new THREE.RingGeometry(0.955, 1, 64), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7, side: THREE.DoubleSide }));
-    this.ring.rotation.x = -Math.PI / 2; this.ring.position.y = 0.06; this.ring.visible = false; this.scene.add(this.ring);
+    // range indicator: a GRID of tiles (every cell in reach), brighter along the outer edge
+    this.gridMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.28, depthWrite: false });
+    this.gridEdgeMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55, depthWrite: false });
+    this.rangeGrid = new THREE.Group(); this.rangeGrid.visible = false; this.rangeKey = ''; this.scene.add(this.rangeGrid);
 
     this.resize();
     new ResizeObserver(() => this.resize()).observe(container);
@@ -712,7 +717,7 @@ export class View {
       obj = makeItem(this, { type, id: 1, dir: 'y', v: 0 });
       if (obj.userData.setGoods) obj.userData.setGoods(this, obj, ITEMS[type].cap);
       if (type === 'fruit') obj.rotation.y = Math.PI / 2;
-    } else obj = makeItem(this, { type, id: 1, level: 1 });
+    } else obj = type === 'coffee' ? makeCoffee(this, { type, id: 1, level: 1 }) : type === 'noodle' ? makeNoodle(this, { type, id: 1, level: 1 }) : type === 'eggtray' ? makeEggtray(this, { type, id: 1, level: 1 }) : makeItem(this, { type, id: 1, level: 1 });
     if (type === 'fridge') obj.scale.setScalar(0.78);
     else if (type === 'water' || type === 'cereal') obj.scale.setScalar(0.62);
     else if (type === 'tissue') obj.scale.setScalar(0.78);
@@ -826,6 +831,26 @@ export class View {
       });
     }
   }
+  // soda / cola hit: the cells in reach get splashed one after another (grid style, like the skill items), with foam and little fizz geysers
+  gridSplash(d, pal, foam, dropPal, life = 1.3) {
+    const cx0 = Math.round(d.x), cy0 = Math.round(d.y), rc = Math.ceil(d.r + 0.5), inside = (x, y) => x >= 0 && y >= 0 && x < COLS && y < ROWS;
+    for (let i = -rc; i <= rc; i++) for (let j = -rc; j <= rc; j++) {
+      const dist = Math.hypot(i, j), cx = cx0 + i, cy = cy0 + j;
+      if (dist > d.r + 0.5 || !inside(cx, cy)) continue;
+      this.later(dist * 0.06, () => {
+        this.cellStain(cx, cy, pal[Math.abs(i * 3 + j * 5) % pal.length], life, 0.94);
+        this.cellStain(cx, cy, foam[0], life * 0.6, 0.5, 0.056);
+        for (let k = 0; k < 3; k++) {   // foam bubbles stuck in the puddle
+          const s2 = 0.05 + Math.random() * 0.09, b = new THREE.Mesh(this.cyl, this.basic(foam[k % foam.length])); b.scale.set(s2, 0.01, s2); b.castShadow = false;
+          b.position.set(wx(cx) + (Math.random() - 0.5) * 0.7, 0.058 + k * 0.001, wz(cy) + (Math.random() - 0.5) * 0.7); this.scene.add(b);
+          this.fx.push({ decal: true, m: b, sx: s2, sz: s2, life: life * (0.5 + Math.random() * 0.5), t: 0 });
+        }
+        this.burst(cx, cy, 0.12, foam[0], 3, 1.6, 0.8); this.burst(cx, cy, 0.15, pal[1 % pal.length], 2, 1.8, 0.9);
+        if ((i + j) % 2 === 0) for (let n = 0; n < 4; n++) this.trailDrop(wx(cx), 0.1 + n * 0.14, wz(cy), dropPal, 3, 1.0);   // little fizz geyser
+      });
+    }
+    this.puff(d.x, d.y, 0.2, 0xffffff, 0.8, 0.8, 0.5);
+  }
   // the giant burger lands: a thud, ketchup and mustard splash over the 3x3 and the cells around it
   burgerLandFx(d) {
     const cx0 = Math.round(d.x), cy0 = Math.round(d.y), h = Math.floor(d.size / 2) + 1, inside = (x, y) => x >= 0 && y >= 0 && x < COLS && y < ROWS;
@@ -907,6 +932,25 @@ export class View {
     return { x: cx, y: cy };
   }
 
+  // exact picking: the machine / shelf / trap whose 3D model is under the pointer (not the floor cell behind a tall item)
+  pickItem(clientX, clientY) {
+    const g = this.game; if (!g) return null;
+    const r = this.canvas.getBoundingClientRect();
+    const u = (clientX - r.left) / r.width * this.sx, v = (1 - (clientY - r.top) / r.height) * this.sy;
+    this.ray.setFromCamera(new THREE.Vector2(u * 2 - 1, v * 2 - 1), this.camera);
+    const shown = o => { for (let n = o; n; n = n.parent) if (!n.visible) return false; return true; };
+    let best = null, bd = Infinity;
+    for (const it of [...g.towers, ...g.shelves, ...(g.traps || [])]) {
+      const m = this.meshes.get(it.id); if (!m || !m.group) continue;
+      for (const h of this.ray.intersectObject(m.group, true)) {
+        if (h.object.userData.ol || !shown(h.object)) continue;
+        if (h.distance < bd) { bd = h.distance; best = it; }
+        break;
+      }
+    }
+    return best ? { x: best.x, y: best.y, item: best } : null;
+  }
+
   project(cellX, cellY, h = 1) {
     const v = new THREE.Vector3(wx(cellX), h, wz(cellY)).project(this.camera);
     const r = this.canvas.getBoundingClientRect();
@@ -918,9 +962,38 @@ export class View {
     this.cursor.visible = true; this.cursor.position.set(wx(c.x), 0.04, wz(c.y)); this.cursor.scale.set(0.96 * fp, 0.05, 0.96 * fp);
     this.cursor.material.color.set(valid ? 0x5fe3a1 : 0xff5a5f);
   }
+  // grid cells (grid coords) whose centre is within r of cell (cx, cy), clipped to the room
+  gridCells(cx, cy, r) {
+    const out = [], rc = Math.ceil(r);
+    for (let i = -rc; i <= rc; i++) for (let j = -rc; j <= rc; j++) {
+      const x = Math.round(cx) + i, y = Math.round(cy) + j;
+      if (x < 0 || y < 0 || x >= COLS || y >= ROWS || Math.hypot(i, j) > r + 0.01) continue;
+      out.push([x, y]);
+    }
+    return out;
+  }
   setRange(c, r) {
-    if (!c || !r) { this.ring.visible = false; return; }
-    this.ring.visible = true; this.ring.position.set(wx(c.x), 0.06, wz(c.y)); this.ring.scale.set(r, r, 1);
+    if (!c || !r) { this.rangeGrid.visible = false; return; }
+    const key = c.x + ',' + c.y + ',' + r.toFixed(2);
+    if (key !== this.rangeKey) {
+      this.rangeKey = key;
+      while (this.rangeGrid.children.length) this.rangeGrid.remove(this.rangeGrid.children[0]);
+      const cells = this.gridCells(c.x, c.y, r), has = new Set(cells.map(([x, y]) => x + ',' + y));
+      for (const [x, y] of cells) {
+        const edge = ![[1, 0], [-1, 0], [0, 1], [0, -1]].every(([dx, dy]) => has.has((x + dx) + ',' + (y + dy)));
+        const m = new THREE.Mesh(this.box, edge ? this.gridEdgeMat : this.gridMat);
+        m.scale.set(0.9, 0.02, 0.9); m.position.set(wx(x), 0.075, wz(y)); m.castShadow = false; this.rangeGrid.add(m);
+      }
+    }
+    this.rangeGrid.visible = true;
+  }
+  // landing warning for lobbed shots: the grid cells the blast will cover (group.material is the shared material, so pulsing / disposing works like a mesh)
+  makeGridMark(tx, ty, r, color) {
+    const g = new THREE.Group(), mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.6, depthWrite: false });
+    for (const [x, y] of this.gridCells(tx, ty, Math.max(0.5, r))) {
+      const m = new THREE.Mesh(this.box, mat); m.scale.set(0.88, 0.02, 0.88); m.position.set(wx(x), 0.07, wz(y)); m.castShadow = false; g.add(m);
+    }
+    g.material = mat; return g;
   }
 
   // ---------- one-shot effects ----------
@@ -986,7 +1059,13 @@ export class View {
     m.castShadow = false; m.scale.setScalar(sz); m.position.set(wx(gx), h, wz(gy)); this.scene.add(m);
     this.fx.push({ m, vx: (Math.random() - 0.5) * 0.4, vy: 1 + Math.random() * 1.2, vz: (Math.random() - 0.5) * 0.4, life: life * (0.7 + Math.random() * 0.6), t: 0, s: sz, g: -0.4 });
   }
-  trailBit(pos, kind) {
+  trailBit(pos, kind, cols) {
+    if (kind === 'egg' || kind === 'broth') {   // a drip of liquid (egg white / yolk, or noodle broth) falling off a flying gob
+      cols = cols || [0xf6f1e4, 0xffc21f];
+      const sz = 0.05 + Math.random() * 0.05, m = new THREE.Mesh(this.sph, this.basic(Math.random() < 0.3 ? cols[1] : cols[0]));
+      m.castShadow = false; m.scale.setScalar(sz); m.position.copy(pos); this.scene.add(m);
+      this.fx.push({ m, vx: (Math.random() - 0.5) * 0.2, vy: 0, vz: (Math.random() - 0.5) * 0.2, life: 0.3 + Math.random() * 0.2, t: 0, s: sz, g: 9 }); return;
+    }
     const smoke = kind === 'smoke', m = new THREE.Mesh(this.box, smoke ? this.basic([0x2a2a33, 0x3a3a46, 0x55556a][Math.floor(Math.random() * 3)]) : this.fireMat([0xffe27a, 0xff8a1a, 0xff5a14][Math.floor(Math.random() * 3)]));
     const sz = smoke ? 0.12 + Math.random() * 0.1 : 0.06 + Math.random() * 0.06;
     m.castShadow = false; m.scale.setScalar(sz); m.position.copy(pos); this.scene.add(m);
@@ -1123,6 +1202,48 @@ export class View {
     this.fx.push({ m, vx: (Math.random() - 0.5) * 0.3, vy: rise, vz: (Math.random() - 0.5) * 0.3, life: life * (0.7 + Math.random() * 0.5), t: 0, s: sz, g: -0.6 });
   }
   flame(x, y, h) { this.puff(x, y, h, [0xff8c1a, 0xffd23f, 0xe0391a][Math.floor(Math.random() * 3)], 0.7, 1.3, 0.35); }
+  // noodle cup detonation: ring + flash, the cup tumbles away, 3D noodle strands fly out, broth gobs leave drip trails and land as puddles
+  noodleSplashFx(d) {
+    const BR = [0xe8a33d, 0xf2c230];
+    this.ringFx(d.x, d.y, d.r * 1.5, 0xf2c230); this.flashFx(d.x, d.y, d.r * 1.1, 0.3);
+    this.gridSplash({ x: d.x, y: d.y, r: 0.55 }, [0xe8a33d, 0xf2c230, 0xc98a5a], [0xfff3d0, 0xf0d58a], [0xf2c230, 0xfff3d0, 0xe8a33d], 1.2);
+    for (const c of [0xf2c230, 0xfff3d0, 0xd62828]) this.burst(d.x, d.y, 0.4, c, 5, 2.2, 0.9);
+    this.puff(d.x, d.y, 0.3, 0xfff3d0, 1.1, 0.7, 0.6); this.shake = Math.max(this.shake, 0.12);
+    this.liquidPuddle(wx(d.x), wz(d.y), 0.34, 0xe8a33d, 0xf2c230);                       // broth puddle under the cup
+    const cup = makeCupNoodle(this, 1.6); cup.position.set(wx(d.x), 0.3, wz(d.y)); this.scene.add(cup);   // the cup is blown up and tumbles away
+    this.fx.push({ m: cup, vx: (Math.random() - 0.5) * 1.6, vy: 3.4, vz: (Math.random() - 0.5) * 1.6, life: 1.5, t: 0, s: 1, sx: 1.6, sy: 1.6, sz: 1.6, g: 10, spin: [7, 4, 9] });
+    this.noodleGeo ||= new THREE.TorusGeometry(0.06, 0.013, 5, 12);
+    for (let i = 0; i < 10; i++) {                                                         // curly 3D noodle strands
+      const m = new THREE.Mesh(this.noodleGeo, this.basic(i % 2 ? 0xf3dc98 : 0xe6c777)), a = Math.random() * Math.PI * 2, spd = 1.2 + Math.random() * 2.2, sc = 0.8 + Math.random() * 0.8;
+      m.position.set(wx(d.x), 0.3, wz(d.y)); m.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3); this.scene.add(m);
+      this.fx.push({ m, vx: Math.cos(a) * spd, vy: 2.2 + Math.random() * 2, vz: Math.sin(a) * spd, life: 2.2, t: 0, s: sc, sx: sc, sy: sc, sz: sc, g: 9, spin: [(Math.random() - 0.5) * 12, (Math.random() - 0.5) * 12, (Math.random() - 0.5) * 12], trail: 'broth', cols: BR });
+    }
+    for (let i = 0; i < 9; i++) {                                                          // liquid broth gobs
+      const a = Math.random() * Math.PI * 2, spd = 1.2 + Math.random() * 2.2, sz = 0.08 + Math.random() * 0.07;
+      const m = new THREE.Mesh(this.sph, this.basic(i % 3 ? 0xe8a33d : 0xf2c230)); m.scale.set(sz, sz * 0.8, sz); m.position.set(wx(d.x), 0.25, wz(d.y)); this.scene.add(m);
+      this.fx.push({ m, vx: Math.cos(a) * spd, vy: 2 + Math.random() * 1.8, vz: Math.sin(a) * spd, life: 1.4, t: 0, s: sz, g: 9, trail: 'broth', cols: BR, land: true, accent: i % 3 === 0 });
+    }
+  }
+  // flat egg puddle on the floor: white blob with a yolk in the middle (decals shrink away on their own)
+  eggPuddle(gx, gz, r, yolk = true) { this.liquidPuddle(gx, gz, r, 0xf6f1e4, yolk ? 0xffc21f : 0); }
+  liquidPuddle(gx, gz, r, colA, colB) {
+    const mk = (col, rr, yo, rise) => {
+      const m = new THREE.Mesh(this.cyl, this.basic(col)); m.scale.set(rr, 0.01, rr * (0.8 + Math.random() * 0.4));
+      m.position.set(gx + (Math.random() - 0.5) * 0.04, 0.056 + rise, gz + (Math.random() - 0.5) * 0.04); m.rotation.y = Math.random() * 3; this.scene.add(m);
+      this.fx.push({ decal: true, m, sx: m.scale.x, sz: m.scale.z, life: 3.2 + Math.random() * 0.8 + yo, t: 0 });
+    };
+    mk(colA, r, 0, 0.002); if (colB) mk(colB, r * 0.45, 0.2, 0.004);
+  }
+  // egg explosion with a liquid trail: gobs of white / yolk fly out leaving drips behind them, then splat down as puddles
+  eggSplatFx(x, y, r) {
+    this.eggPuddle(wx(x), wz(y), 0.3 + r * 0.22);   // the splat under the egg
+    const n = 9;
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2, spd = 1.2 + Math.random() * 2.2, yolk = i % 3 === 0, sz = 0.08 + Math.random() * 0.07;
+      const m = new THREE.Mesh(this.sph, this.basic(yolk ? 0xffc21f : 0xf6f1e4)); m.scale.set(sz, sz * 0.8, sz); m.position.set(wx(x), 0.25, wz(y)); this.scene.add(m);
+      this.fx.push({ m, vx: Math.cos(a) * spd, vy: 2 + Math.random() * 1.8, vz: Math.sin(a) * spd, life: 1.4, t: 0, s: sz, g: 9, trail: 'egg', land: true, accent: yolk });
+    }
+  }
   // splatters of sauce stuck to the floor that slowly shrink away
   splat(x, y, r, color) {
     for (let i = 0; i < 9; i++) {
@@ -1152,8 +1273,14 @@ export class View {
     if (type === 'shoot') { const o = this.meshes.get(d.tower.id); if (o) o.kick = 0.18; if (d.tower.type === 'soda') this.burst(d.tower.x, d.tower.y, 0.8, 0x7df0d8, 5, 1.4, 0.8); if (d.tower.type === 'sauce') { this.burst(d.tower.x, d.tower.y, 1.1, 0xff5a1f, 6, 1.8, 0.9); this.burst(d.tower.x, d.tower.y, 1.1, 0xffd23f, 3, 1.4, 0.7); } }
     else if (type === 'gumHit') { this.scatterGum(d.x, d.y, d.dx, d.dy, d.color); this.burst(d.x, d.y, 0.5, d.color, 4, 1.8, 0.8); }
     else if (type === 'colaSplash') {
-      this.ringFx(d.x, d.y, d.r * 1.4, 0xc98a5a);
+      this.gridSplash(d, [0x4a2616, 0x6b3a22, 0x8a4b2a], [0xffffff, 0xc98a5a], COLA_PAL, 1.6);
       for (const c of [0x3b1f14, 0x6b3a22, 0xffffff]) this.burst(d.x, d.y, 0.5, c, 5, 2.2, 0.9);
+    }
+    else if (type === 'noodleLand') {   // the cup thuds down and starts hissing
+      this.burst(d.x, d.y, 0.15, 0xf2c230, 4, 1.4, 0.7); this.puff(d.x, d.y, 0.2, 0xfff3d0, 0.8, 0.5, 0.4);
+    }
+    else if (type === 'noodleSplash') {   // detonation: cup flies up, 3D noodle strands + broth gobs with drip trails, puddles on the floor
+      this.noodleSplashFx(d);
     }
     else if (type === 'swirl') { this.ringFx(d.swirl.x, d.swirl.y, d.swirl.r, 0xffffff); this.burst(d.swirl.x, d.swirl.y, 0.5, 0xffffff, 8, 2.2, 1); }
     else if (type === 'canHit') { this.scatterCans(d.x, d.y, d.dx, d.dy, d.color); this.burst(d.x, d.y, 0.5, 0xffffff, 4, 1.8); }
@@ -1222,7 +1349,17 @@ export class View {
         m.hitT = 0.13; (this.dying || (this.dying = [])).push({ group: m.group, m, t: 0 });
       }
     }
-    else if (type === 'splash') { this.ringFx(d.x, d.y, d.r, 0x7df0d8); this.burst(d.x, d.y, 0.45, 0x7df0d8, 10, 2.6, 1.2); this.burst(d.x, d.y, 0.5, 0xffffff, 5, 2, 0.9); }
+    else if (type === 'splash') {
+      if (d.kind === 'soda') { this.gridSplash(d, [0x7df0d8, 0x2fb6a6, 0xb8fff2], [0xffffff, 0xcffff6], [0x7df0d8, 0xffffff, 0xb8fff2, 0x2fb6a6], 1.3); this.burst(d.x, d.y, 0.45, 0x7df0d8, 8, 2.6, 1.1); this.burst(d.x, d.y, 0.5, 0xffffff, 5, 2, 0.9); }
+      else { this.ringFx(d.x, d.y, d.r, 0x7df0d8); this.burst(d.x, d.y, 0.45, 0x7df0d8, 10, 2.6, 1.2); this.burst(d.x, d.y, 0.5, 0xffffff, 5, 2, 0.9); }
+    }
+    else if (type === 'coffeeSplash') {   // a 4x4 splash of coffee
+      const o = this.meshes.get(d.tower.id); if (o) o.flash = 0.25;
+      const x = d.tower.x, y = d.tower.y, H = d.half;
+      this.ringFx(x, y, H * 1.1, 0xc98a5a);
+      for (let i = 0; i < 16; i++) this.burst(x + (Math.random() * 2 - 1) * H, y + (Math.random() * 2 - 1) * H, 0.35, [0x4a2616, 0x6b3a22, 0xc98a5a][i % 3], 4, 1.8, 1);
+      this.burst(x, y, 0.6, 0xffffff, 4, 1.4, 0.8);
+    }
     else if (type === 'pulse') { this.ringFx(d.tower.x, d.tower.y, d.r, 0xffee58); const o = this.meshes.get(d.tower.id); if (o) o.flash = 0.25; }
     else if (type === 'slip') this.burst(d.enemy.x, d.enemy.y, 0.2, 0x8fd3ff, 8, 2);
     else if (type === 'leak') { this.shake = 0.35; this.burst(d.enemy.x, d.enemy.y, 0.6, 0x5fe3a1, 10, 3); }
@@ -1240,6 +1377,13 @@ export class View {
       if (metal) this.burst(d.shelf.x, d.shelf.y, 0.7, 0xffe08a, 2, 2.2, 0.7);   // sparks off the steel
     }
     else if (type === 'fruitScatter') { this.burst(d.x, d.y, 0.5, 0xff9f1c, 8, 2.6, 1.2); this.burst(d.x, d.y, 0.5, 0xe0463e, 6, 2.2, 1.1); this.ringFx(d.x, d.y, 1.2, 0xffd23f); }
+    else if (type === 'eggBoom') {                                                       // egg splat: white + yolk burst, shell bits
+      this.ringFx(d.x, d.y, d.r * 1.2, 0xffd23f); this.flashFx(d.x, d.y, d.r * 0.9, 0.3);
+      this.burst(d.x, d.y, 0.4, 0xffd23f, 8, 2.8, 1.2); this.burst(d.x, d.y, 0.4, 0xffffff, 8, 2.4, 1.1); this.burst(d.x, d.y, 0.3, 0xf6f1e4, 5, 2, 0.8);
+      this.puff(d.x, d.y, 0.3, 0xfff3d0, 0.9, 0.6, 0.5); this.shake = Math.max(this.shake, 0.1);
+      this.eggSplatFx(d.x, d.y, d.r);
+    }
+    else if (type === 'eggFizzle') this.burst(d.x, d.y, 0.2, 0xffffff, 4, 1.2, 0.7);
     else if (type === 'fruitBoom') {
       this.ringFx(d.x, d.y, d.r * 1.3, 0xff9f1c); this.burst(d.x, d.y, 0.4, FRUIT_COL[d.kind % 5], 10, 3, 1.3);
       this.burst(d.x, d.y, 0.5, 0xffd23f, 6, 2.4, 1); this.burst(d.x, d.y, 0.4, 0xffffff, 5, 2, 1); this.shake = Math.max(this.shake, 0.12);
@@ -1260,7 +1404,6 @@ export class View {
     else if (type === 'bounce') this.burst(d.x, d.y, 0.8, 0xffa94d, 4, 1.8, 0.8);
     else if (type === 'freeze') { this.burst(d.enemy.x, d.enemy.y, 0.6, 0xbfeaff, 8, 2, 0.9); this.burst(d.enemy.x, d.enemy.y, 0.6, 0xffffff, 4, 1.4, 0.7); }
     else if (type === 'iceBurst') this.iceCubes(d);
-    else if (type === 'panic') this.burst(d.enemy.x, d.enemy.y, 1.0, 0x8fd3ff, 6, 1.6, 0.7);
     else if (type === 'molotovSplash') this.blast3d(d.x, d.y, d.r, d.fueled ? 1.35 : 1, true);
     else if (type === 'doorCrash') {
       const dr = this.doors && this.doors.find(q => q.sp.x === d.x && q.sp.y === d.y); if (dr) dr.force = 1.2;
@@ -1349,6 +1492,14 @@ export class View {
     else if (type === 'park') { for (let i = 0; i < 6; i++) this.puff(d.x, d.y, 0.2, 0xb9b3a4, 1, 0.6, 0.8); this.ringFx(d.x, d.y, 1.2, 0xe9ddc0); }
     else if (type === 'spinStart') { this.ringFx(d.x, d.y, 1.8, 0xc9b48a); for (let i = 0; i < 8; i++) this.puff(d.x, d.y, 0.2, 0xc9b48a, 1.2, 0.8, 0.9); }
     else if (type === 'tornado') { this.ringFx(d.x, d.y, 1.5, 0xc9b48a); this.burst(d.x, d.y, 0.3, 0xc9b48a, 10, 2.4, 1.1); }
+    else if (type === 'sodaRapid') { this.ringFx(d.tower.x, d.tower.y, 1.1, 0x7df0d8); this.burst(d.tower.x, d.tower.y, 0.9, 0x7df0d8, 10, 2.4, 1); this.burst(d.tower.x, d.tower.y, 0.9, 0xffffff, 6, 2, 0.9); }
+    else if (type === 'overheat') { const t = d.tower; this.ringFx(t.x, t.y, 1.3, 0xff5a1f); this.burst(t.x, t.y, 0.8, 0xff5a1f, 8, 2.2, 1); for (let i = 0; i < 5; i++) this.puff(t.x, t.y, 0.8 + Math.random() * 0.4, 0xe6ecf0, 1.5, 1.2, 1.1); this.shake = Math.max(this.shake, 0.12); }
+    else if (type === 'cooled') { const t = d.tower; this.ringFx(t.x, t.y, 0.9, 0x9ad7ff); this.burst(t.x, t.y, 0.8, 0x9ad7ff, 5, 1.6, 0.8); }
+    else if (type === 'barrage') { this.ringFx(d.enemy.x, d.enemy.y, 1.6, 0xff3b3b); this.burst(d.enemy.x, d.enemy.y, 1.0, 0xffd23f, 10, 2.8, 1); this.shake = Math.max(this.shake, 0.2); }
+    else if (type === 'doorThrow') { this.ringFx(d.x, d.y, 1.4, 0xffee58); this.burst(d.x, d.y, 0.7, 0xc08a50, 10, 3, 1.2); this.shake = Math.max(this.shake, 0.2); }
+    else if (type === 'doorTurn') { this.ringFx(d.x, d.y, 1.0, 0xffffff); this.burst(d.x, d.y, 0.6, 0xc08a50, 6, 2.2, 1); }
+    else if (type === 'doorHit') { this.ringFx(d.x, d.y, 1.3, 0xffee58); this.burst(d.x, d.y, 0.6, 0xffee58, 8, 3, 1.1); this.burst(d.x, d.y, 0.5, 0xc08a50, 8, 3, 1.3); for (let i = 0; i < 3; i++) this.puff(d.x, d.y, 0.4, 0xb9b3a4, 1.2, 0.8, 0.8); this.shake = Math.max(this.shake, 0.3); }
+    else if (type === 'doorCatch') { this.burst(d.x, d.y, 0.8, 0xffee58, 6, 2, 0.9); this.ringFx(d.x, d.y, 0.9, 0xffffff); }
     else if (type === 'bossSmash') {
       this.flashFx(d.x, d.y, 1.2); this.burst(d.x, d.y, 0.5, 0xffee58, 8, 3, 1); this.burst(d.x, d.y, 0.5, 0xc08a50, 8, 2.6, 1.2); this.burst(d.x, d.y, 0.4, 0x55556a, 6, 2.2, 1.3);
       for (let i = 0; i < 3; i++) this.puff(d.x, d.y, 0.4, 0x55556a, 1.2, 1, 0.9);
@@ -1365,6 +1516,16 @@ export class View {
     }
     grp.position.set(wx(x), 0.07, wz(y)); this.scene.add(grp);
     this.fx.push({ warn: true, m: grp, mat, life: life + 0.05, t: 0 });
+  }
+  // ---------- Door Robber: the thrown door (a flat plank that spins like a boomerang) ----------
+  makeFlyDoor() {
+    const g = new THREE.Group(), sp = new THREE.Group(); g.add(sp); g.userData.spin = sp;
+    this.part(sp, this.box, 0x3a3d4a, 0.62, 0.09, 1.16, 0, 0, 0, false);   // frame
+    this.part(sp, this.box, 0x8a5a32, 0.5, 0.11, 1.04, 0, 0, 0, false);    // panel
+    this.part(sp, this.box, 0x6b4526, 0.36, 0.12, 0.34, 0, 0, -0.26, false);
+    this.part(sp, this.box, 0x6b4526, 0.36, 0.12, 0.34, 0, 0, 0.26, false);
+    this.part(sp, this.box, 0xe6c84a, 0.07, 0.15, 0.07, 0.2, 0, 0.04, false);   // handle
+    return g;
   }
   // ---------- Riding in Tandem: dust tornado ----------
   makeTornado() {
@@ -1401,7 +1562,22 @@ export class View {
         if (o.kind === 'tower' || o.kind === 'shelf') this.glowItem(o, m, time);
       }
     };
-    sync(g.towers, t => this.at(makeItem(this, t), t), (t, m) => this.updTower(t, m, dt));
+    sync(g.towers, t => this.at(t.type === 'coffee' ? makeCoffee(this, t) : t.type === 'noodle' ? makeNoodle(this, t) : t.type === 'eggtray' ? makeEggtray(this, t) : makeItem(this, t), t), (t, m) => this.updTower(t, m, dt));
+    sync(g.eggs || [], e => makeEgg(this, 1.1), (e, m) => {                      // rolling eggs: tumble along the floor, wobble when they stop; blink before they fizzle
+      m.group.position.set(wx(e.x), 0.15, wz(e.y));
+      m.group.rotation.y = Math.atan2(-e.dy, e.dx);
+      m.group.userData.body.rotation.x = e.spin * 5;
+      m.group.visible = !(e.delay > 0) && (e.life - e.age > 2 || Math.floor(time * 10) % 2 === 0);
+    });
+    sync(g.noodleCups || [], c => makeCupNoodle(this, 1.6), (c, m) => {          // landed cup noodle: bounces, lies on its side hissing, shakes harder as the fuse burns down
+      const age = c.max - c.t, k = age / c.max, u = m.group.userData;
+      if (m.ry === undefined) m.ry = Math.random() * 6;
+      m.group.rotation.y = m.ry; u.cup.rotation.z = 1.2; u.cup.rotation.x = Math.sin(time * (20 + k * 50)) * 0.05 * k;
+      m.group.position.set(wx(c.x) + Math.sin(time * 60) * 0.015 * k, 0.12 + Math.abs(Math.sin(age * 10)) * 0.3 * Math.exp(-age * 5), wz(c.y) + Math.cos(time * 55) * 0.015 * k);
+      m.group.scale.setScalar(1 + 0.18 * k * (0.5 + 0.5 * Math.sin(time * (14 + k * 40))));   // swells and pulses faster until it blows
+      m.sp = (m.sp || 0) + dt;
+      if (m.sp > 0.12 - k * 0.08) { m.sp = 0; this.puff(c.x, c.y, 0.3, 0xfff3d0, 0.5, 0.8, 0.5); if (k > 0.5) this.burst(c.x, c.y, 0.3, 0xffd23f, 1, 1.2, 0.6); }   // steam + sparks
+    });
     sync(g.fruits || [], f => makeFruit(this, f), (f, m) => {          // loose fruit from a smashed fruit shelf: arcs out, then flashes until it blows
       const u = m.group.userData, left = f.fuse - f.age;
       m.group.position.set(wx(f.x), f.h, wz(f.y));
@@ -1447,7 +1623,13 @@ export class View {
     if (g.goldBuff) {   // Golden Apple: every machine glitters while the power-up lasts
       for (const t of g.towers) if (t.kind === 'tower' && !t.broken && Math.random() < dt * 5) { this.burst(t.x, t.y, 0.4 + Math.random() * 0.7, Math.random() < 0.5 ? 0xffe27a : 0xffffff, 1, 0.6, 0.7); if (Math.random() < 0.3) this.puff(t.x, t.y, 0.9, 0xffd23f, 0.35, 0.6, 0.5); }
     }
-    sync(g.swirls || [], s => this.at(this.makeSwirlModel(), s), (s, m) => this.animSwirl(m.group, s, time));
+    sync(g.flyDoors || [], d => this.makeFlyDoor(), (d, m) => {   // Door Robber's boomerang door
+      m.group.position.set(wx(d.x), 0.62 + Math.sin(time * 14) * 0.04, wz(d.y));
+      m.group.userData.spin.rotation.y += dt * 24;
+      if (Math.random() < dt * 40) this.puff(d.x, d.y, 0.55, 0xb9b3a4, 0.5, 0.4, 0.35);
+      if (Math.random() < dt * 20) this.burst(d.x, d.y, 0.6, 0xc08a50, 1, 0.8, 0.7);
+    });
+    sync(g.swirls || [], s => this.at(this.makeSwirlModel(), s), (s, m) => { m.group.position.set(wx(s.x), 0, wz(s.y)); this.animSwirl(m.group, s, time); });
     sync(g.tornados || [], tn => this.at(this.makeTornado(), tn), (tn, m) => { m.group.position.set(wx(tn.x), 0, wz(tn.y)); this.animTornado(m.group, tn, time); });
     sync(g.donuts || [], d => makeProjectile(this, d), (d, m) => {                // boomerang donuts: twirl flat, sprinkle crumbs
       m.group.position.set(wx(d.x), d.h, wz(d.y)); m.group.visible = !(d.delay > 0);
@@ -1460,7 +1642,7 @@ export class View {
       u.spin.rotation.x += dt * 20;
       u.rib.scale.set(0.22, 0.015, L); u.rib.position.set(0, -0.04 + Math.sin(time * 18 + r.id) * 0.02, -L / 2);
     });
-    sync(g.projectiles, p => p.kind === 'molo' ? this.makeMoloProj() : p.kind === 'hotdog' ? this.makeHotdogProj() : p.kind === 'ice' ? this.makeIceProj() : p.kind === 'cig' ? makeLitCig(this) : p.kind === 'banana' ? makeBanana(this, 1.15) : p.kind === 'miniburger' ? makeMiniBurger(this) : makeProjectile(this, p), (p, m) => {
+    sync(g.projectiles, p => p.kind === 'molo' ? this.makeMoloProj() : p.kind === 'hotdog' ? this.makeHotdogProj() : p.kind === 'noodle' ? makeCupNoodle(this, 1.6) : p.kind === 'ice' ? this.makeIceProj() : p.kind === 'cig' ? makeLitCig(this) : p.kind === 'banana' ? makeBanana(this, 1.15) : p.kind === 'miniburger' ? makeMiniBurger(this) : makeProjectile(this, p), (p, m) => {
       const grp = m.group; grp.position.set(wx(p.x), p.h, wz(p.y));
       grp.visible = !(p.delay > 0);   // queued gumballs are still inside the machine
       if (p.kind === 'gum') { grp.rotation.x += dt * 9; grp.rotation.z += dt * 6; }
@@ -1475,6 +1657,9 @@ export class View {
         for (const d of grp.userData.drops) d.position.set((Math.random() - 0.5) * 0.22, (Math.random() - 0.5) * 0.16, (Math.random() - 0.5) * 0.22);
         m.acc = (m.acc || 0) + dt;
         while (m.acc > 0.014) { m.acc -= 0.014; this.trailDrop(wx(p.x) - p.dx * m.acc * p.speed, p.h, wz(p.y) - p.dy * m.acc * p.speed); }
+      } else if (p.kind === 'noodle') {                                                                                       // tumbling cup noodle, broth drips
+        grp.rotation.y = Math.atan2(-p.dy, p.dx); grp.userData.cup.rotation.z += dt * 9; grp.userData.cup.rotation.x += dt * 5;
+        if (Math.random() < dt * 25) this.burst(p.x, p.y, p.h, Math.random() < 0.5 ? 0xf2c230 : 0xe8a33d, 1, 0.5, 0.5);
       } else if (p.kind === 'sauce') {                                                                                        // wobbling glob + burning drip trail
         const u = grp.userData, w = Math.sin(time * 24);
         u.core.scale.set(0.2 * (1 + 0.1 * w), 0.2 * (1 - 0.12 * w), 0.2 * (1 + 0.1 * w));
@@ -1514,10 +1699,9 @@ export class View {
       if (p.lob && (p.kind === 'bomb' || p.kind === 'molo')) {                                                                // landing warning for the burglars' bombs only
         if (!m.mark) {
           const r = p.kind === 'bomb' ? BOMB_RADIUS : p.kind === 'molo' ? 1.0 : p.kind === 'ice' ? 1.0 : p.kind === 'water' ? ITEMS.water.splash * (this.game.mods.waterR || 1) : p.kind === 'cereal' ? 0.5 : ITEMS.sauce.splash;
-          m.mark = new THREE.Mesh(this.markGeo ||= new THREE.RingGeometry(0.88, 1, 32), new THREE.MeshBasicMaterial({ color: p.kind === 'bomb' ? 0xff3b3b : p.kind === 'molo' ? 0xff6a00 : p.kind === 'ice' ? 0x8fd3f4 : p.kind === 'water' ? 0x4aa8ff : p.kind === 'cereal' ? 0xffd23f : 0xff8c1a, transparent: true, opacity: 0.7, side: THREE.DoubleSide }));
-          m.mark.rotation.x = -Math.PI / 2; m.mark.position.set(wx(p.tx), 0.07, wz(p.ty)); m.mark.scale.setScalar(r); this.scene.add(m.mark);
+          m.mark = this.makeGridMark(p.tx, p.ty, r, p.kind === 'bomb' ? 0xff3b3b : p.kind === 'molo' ? 0xff6a00 : p.kind === 'ice' ? 0x8fd3f4 : p.kind === 'water' ? 0x4aa8ff : p.kind === 'cereal' ? 0xffd23f : 0xff8c1a); this.scene.add(m.mark);
         }
-        m.mark.material.opacity = 0.45 + 0.3 * Math.sin(time * 18);
+        m.mark.material.opacity = 0.4 + 0.3 * Math.sin(time * 18);
       }
     });
     for (const [id, t0] of this.pops) {   // pop-in: elastic scale 0 -> 1
@@ -1593,7 +1777,8 @@ export class View {
       }
       else {
         f.vy -= (f.g ?? 9) * dt; f.m.position.x += f.vx * dt; f.m.position.y = Math.max(0.05, f.m.position.y + f.vy * dt); f.m.position.z += f.vz * dt;
-        if (f.trail) { f.ta = (f.ta || 0) + dt; while (f.ta > 0.03) { f.ta -= 0.03; this.trailBit(f.m.position, f.trail); } }   // leaves a trail behind it
+        if (f.land && f.t > 0.05 && f.m.position.y <= 0.06) { this.liquidPuddle(f.m.position.x, f.m.position.z, 0.07 + f.s * 1.4, f.cols ? f.cols[0] : 0xf6f1e4, f.accent ? f.cols ? f.cols[1] : 0xffc21f : 0); f.t = f.life; }   // egg gob lands: leaves a puddle
+        if (f.trail) { f.ta = (f.ta || 0) + dt; while (f.ta > 0.03) { f.ta -= 0.03; this.trailBit(f.m.position, f.trail, f.cols); } }   // leaves a trail behind it
         if (f.spin) {
           const onGround = f.m.position.y <= 0.051; if (onGround) { f.vx *= 0.9; f.vz *= 0.9; f.vy = 0; }
           else { f.m.rotation.x += f.spin[0] * dt; f.m.rotation.y += f.spin[1] * dt; f.m.rotation.z += f.spin[2] * dt; }
@@ -1604,6 +1789,7 @@ export class View {
       if (f.t >= f.life) { this.scene.remove(f.m); if (f.ring) { f.m.geometry.dispose(); f.m.material.dispose(); } if (f.warn) f.mat.dispose(); this.fx.splice(i, 1); }
     }
     this.windTick(dt, time);
+    this.gridMat.opacity = 0.24 + 0.08 * Math.sin(time * 5); this.gridEdgeMat.opacity = 0.5 + 0.15 * Math.sin(time * 5);
     // camera shake
     this.shake = Math.max(0, this.shake - dt);
     const sh = this.shake * this.shake * 0.9;
@@ -1699,6 +1885,16 @@ export class View {
       if (wear > 0.7 && m.fxT <= 0) { m.fxT = 0.55 - (wear - 0.7) * 1.0; this.puff(t.x, t.y, top * 0.8, 0x777788, 1, 0.7, 0.9); }
     }
     if (t.hit > 0) { grp.position.x = wx(t.x) + (Math.random() - 0.5) * 0.08; grp.position.z = wz(t.y) + (Math.random() - 0.5) * 0.08; } else { grp.position.x = wx(t.x); grp.position.z = wz(t.y); }
+    if (t.type === 'soda' && !t.broken) {   // rapid-fire frenzy: shakes and sprays; overheated: steams until it cools down
+      m.sT = (m.sT || 0) - dt;
+      if (t.rapid > 0) {
+        grp.position.x += (Math.random() - 0.5) * 0.05; grp.position.z += (Math.random() - 0.5) * 0.05;
+        if (m.sT <= 0) { m.sT = 0.05; this.burst(t.x, t.y, top * 0.8, Math.random() < 0.5 ? 0x7df0d8 : 0xffffff, 1, 1.6, 0.7); }
+      } else if (t.heat > 0 && m.sT <= 0) {
+        m.sT = 0.08; this.puff(t.x, t.y, top * 0.9, 0xe6ecf0, 1.2, 1.1, 0.9);
+        if (Math.random() < 0.4) this.fireBit(t.x + (Math.random() - 0.5) * 0.4, top * 0.7, t.y + (Math.random() - 0.5) * 0.4, 0.7, 0.4);
+      }
+    }
     if (t.kind === 'tower') {
       if (!m.warn) {
         const w = new THREE.Group(); const c = this.basic(0xffffff);
@@ -1712,18 +1908,18 @@ export class View {
       m.warn.position.set(wx(t.x), top + 0.4, wz(t.y)); m.warn.quaternion.copy(this.camera.quaternion);
       const col = this.basic(t.broken ? 0xff3b3b : 0xffb703); m.warnParts[0].material = col; m.warnParts[1].material = col;
     }
-    if ((!prop || t.type === 'micro') && t.facing !== undefined) {   // vending / hot dog / fridge / microwave: whole machine turns to its open side
+    if ((!prop || t.type === 'micro' || t.type === 'coffee' || t.type === 'noodle' || t.type === 'eggtray') && t.facing !== undefined) {   // vending / hot dog / fridge / microwave: whole machine turns to its open side
       if (m.face === undefined) m.face = t.facing;
       const d = Math.atan2(Math.sin(t.facing - m.face), Math.cos(t.facing - m.face));
       m.face += d * Math.min(1, dt * 10); grp.rotation.y = m.face;
     }
-    if (prop && t.type !== 'micro') {
+    if (prop && t.type !== 'micro' && t.type !== 'coffee' && t.type !== 'noodle' && t.type !== 'eggtray') {
       let a = prop.rotation.y, d = t.angle - a; d = Math.atan2(Math.sin(d), Math.cos(d));
       prop.rotation.y = a + d * Math.min(1, dt * 14);
     }
-    if (t.type === 'micro' && grp.userData.win) {
+    if ((t.type === 'micro' || t.type === 'coffee' || t.type === 'noodle' || t.type === 'eggtray') && grp.userData.win) {
       m.flash = Math.max(0, (m.flash || 0) - dt);
-      grp.userData.win.material.color.set(m.flash > 0 ? 0xffee58 : 0x1e2230);
+      grp.userData.win.material.color.set(m.flash > 0 ? (t.type === 'coffee' ? 0xc98a5a : t.type === 'noodle' || t.type === 'eggtray' ? 0xffd23f : 0xffee58) : 0x1e2230);
     }
   }
 
@@ -1753,7 +1949,7 @@ export class View {
     u.body.rotation.z = stunned ? Math.sin(time * 20) * 0.35 : 0;
     u.body.rotation.x = e.pushing ? 0.35 + Math.sin(time * 26) * 0.12 : e.dash ? 0.55 : e.wind > 0 && e.pending && e.pending.kind === 'dash' ? -0.35 : 0;
     if (e.wind > 0) u.body.rotation.z = Math.sin(time * 42) * 0.14;
-    u.hold.visible = e.wind > 0 && !!e.pending && e.pending.kind === 'bomb';
+    u.hold.visible = e.wind > 0 && !!e.pending && (e.pending.kind === 'bomb' || e.pending.kind === 'barrage');
     if (u.hold.visible) { u.hold.position.y = (1.1 + (0.55 - e.wind) * 0.3) * u.big; u.hold.children[1].visible = Math.floor(time * 30) % 2 === 0; }
     grp.position.y = (e.air || 0) * 0.9;                                   // riders jumping off the motorbike
     if (u.bottle) { const up = e.wind > 0 && e.pending && e.pending.kind === 'molo'; u.bottle.position.set(up ? 0.1 : 0.2, up ? 0.95 + Math.sin(time * 30) * 0.02 : 0.3, up ? 0 : 0.05); }   // bottle held up while winding up
@@ -1775,8 +1971,8 @@ export class View {
       } else if (crash) this.puff(e.x, e.y, 0.5, 0x55556a, 0.8, 1.0, 0.8); }
     }
     if (u.door) {                                                            // Door Robber: shield door up front; raised overhead for the slam, gone once it breaks
-      u.door.visible = e.shield > 0;
-      const slamming = e.wind > 0 && e.pending && e.pending.kind === 'slam', want = slamming ? 1 : 0;
+      u.door.visible = e.shield > 0 && !e.doorOut;   // the door is in the air
+      const slamming = e.wind > 0 && e.pending && (e.pending.kind === 'slam' || e.pending.kind === 'doorThrow'), want = slamming ? 1 : 0;
       m.dl = (m.dl || 0) + (want - (m.dl || 0)) * Math.min(1, dt * (slamming ? 6 : 22));
       u.door.position.y = 0.02 + m.dl * 0.55; u.door.position.z = 0.34 - m.dl * 0.18; u.door.rotation.x = -m.dl * 1.1;
       if (e.shield > 0 && e.shieldMax) { const k = e.shield / e.shieldMax; u.door.rotation.z = k < 0.35 ? Math.sin(time * 30) * 0.03 : 0; }
