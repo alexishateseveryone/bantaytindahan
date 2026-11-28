@@ -38,6 +38,32 @@ const $ = id => document.getElementById(id);
   }
 })();
 
+// ---------- screen-size readout: tap the top-left corner 5 times quickly to show / hide it (for checking the full-screen fit on a device) ----------
+(() => {
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)';
+  document.body.appendChild(probe);
+  const box = document.createElement('pre');
+  box.style.cssText = 'position:fixed;left:8px;top:8px;z-index:99999;margin:0;padding:8px 10px;border-radius:8px;background:rgba(0,0,0,.82);color:#7dff9a;font:12px/1.35 monospace;pointer-events:none;white-space:pre;display:none';
+  document.body.appendChild(box);
+  const r = el => { if (!el) return '-'; const b = el.getBoundingClientRect(); return Math.round(b.left) + ',' + Math.round(b.top) + '  ' + Math.round(b.width) + 'x' + Math.round(b.height); };
+  const upd = () => {
+    const vv = window.visualViewport, cs = getComputedStyle(probe), cv = $('view');
+    box.textContent = [
+      'inner      ' + innerWidth + 'x' + innerHeight, 'visualVP   ' + (vv ? Math.round(vv.width) + 'x' + Math.round(vv.height) + ' top ' + Math.round(vv.offsetTop) : '-'),
+      'screen     ' + screen.width + 'x' + screen.height + '  avail ' + screen.availWidth + 'x' + screen.availHeight, 'docEl      ' + document.documentElement.clientWidth + 'x' + document.documentElement.clientHeight,
+      '#app       ' + r($('app')), '#stage     ' + r($('stage')), '#view      ' + r(cv) + '  buf ' + (cv ? cv.width + 'x' + cv.height : '-'),
+      'safe T/R/B/L ' + [cs.paddingTop, cs.paddingRight, cs.paddingBottom, cs.paddingLeft].join(' '),
+      'standalone ' + (navigator.standalone === true) + '  dpr ' + devicePixelRatio, 'display-mode ' + ['fullscreen', 'standalone', 'minimal-ui', 'browser'].find(m => matchMedia('(display-mode: ' + m + ')').matches)].join('\n');
+  };
+  let n = 0, t0 = 0, iv = 0;
+  document.addEventListener('pointerdown', e => {
+    if (e.clientX > 90 || e.clientY > 90) return;
+    const now = performance.now(); n = now - t0 < 1500 ? n + 1 : 1; t0 = now;
+    if (n >= 5) { n = 0; const on = box.style.display === 'none'; box.style.display = on ? 'block' : 'none'; clearInterval(iv); if (on) { upd(); iv = setInterval(upd, 400); } }
+  }, true);
+})();
+
 // ---------- save (permanent paychecks) ----------
 const KEY = 'shelf-defense-closing-time-v1';
 let save = { bank: 0, levels: {}, best: 0, shifts: 0, run: null };   // run = the current store, saved between days
