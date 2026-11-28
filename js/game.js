@@ -53,7 +53,7 @@ export const FRUIT_DMG = 18, FRUIT_RADIUS = 1.15;   // one scattered fruit explo
 export const STATUE_RANGE = 5;      // the soda statue repairs everything within this many tiles (an 11x11 square around it)
 export const STATUE_HEAL = 0.10;    // share of max HP it restores per second to each damaged item
 export const STATUE_UNIT_HP = 150;
-// ---------- Bosses: one every 10th day, in the LAST wave of the night. They rotate: day 10, 20, 30, 40, then it starts over ----------
+// ---------- Bosses: one every 15th day, in the LAST wave of the night. They rotate: day 15, 30, 45, 60, then it starts over ----------
 // Bosses have 2 phases: below half HP they ENRAGE (no banner): they walk faster and everything they do (tricks, wind-ups, shots, summons) comes faster
 export const RAGE_HP = 0.5, RAGE_SPEED = 1.3, RAGE_RATE = 1.6;
 export const BOSS_ORDER = ['bombexpert', 'gunslinger', 'motoduo', 'doorrobber'];
@@ -63,7 +63,8 @@ export const BOSS_INFO = {
   motoduo:    { title: 'RIDING IN TANDEM', sub: 'Drives through the door and wrecks everything', icon: '🏍️' },
   doorrobber: { title: 'DOOR ROBBER', sub: 'His door tanks shots, slams the floor and flies like a boomerang', icon: '🚪' },
 };
-export const bossForDay = n => (n > 0 && n % 10 === 0) ? BOSS_ORDER[(n / 10 - 1) % BOSS_ORDER.length] : null;
+export const BOSS_EVERY = 15;   // a boss night every this many days
+export const bossForDay = n => (n > 0 && n % BOSS_EVERY === 0) ? BOSS_ORDER[(n / BOSS_EVERY - 1) % BOSS_ORDER.length] : null;
 // money is kept in dollars inside the game (saves and balance stay the same); everything the player sees is shown in pesos
 export const PESO = 64;
 export const pesoN = n => Math.round(n * PESO).toLocaleString('en-US');
@@ -97,7 +98,7 @@ export const ITEMS = {
     desc: 'Customers grab an egg. When burglars are near it rolls out 5 eggs that stop at different distances: step on one and it explodes, hurting everyone around it.' },
   mop: { id: 'mop', kind: 'trap', name: 'Mop & Bucket', cost: 20, uses: 12, color: 0xf2c94c,
     desc: 'Floor trap (not a wall). Slips burglars: stun + damage.' },
-  hotdog: { id: 'hotdog', kind: 'tower', name: 'Hot Dog Launcher', cost: 130, range: 3.2, dmg: 9, rate: 1.1, bounces: 3, wear: 1 / 120, color: 0xe8a33d, sale: [3, 6],
+  hotdog: { id: 'hotdog', kind: 'tower', name: 'Hot Dog Launcher', cost: 130, range: 3.4, dmg: 15, rate: 1.3, bounces: 4, wear: 1 / 120, color: 0xe8a33d, sale: [3, 6],
     desc: 'Customers grab a hot dog. At night it fires hot dogs that BOUNCE from burglar to burglar.' },
   fridge: { id: 'fridge', kind: 'tower', name: 'Fridge', cost: 230, range: 3.2, dmg: 7, rate: 0.9, iceChance: 0.22, wear: 1 / 110, color: 0x9fd8ee, sale: [4, 7],
     desc: 'Customers buy frozen treats. Shoots milk and ice cream (chill + slow) and sometimes ice cubes that scatter on the floor and freeze burglars.' },
@@ -142,6 +143,8 @@ ITEMS.statue = { id: 'statue', kind: 'shelf', name: 'Soda Statue', cost: 150, hp
   desc: 'A big 3x3 soda statue. While it has stock it keeps repairing every damaged shelf and machine within 5 tiles. Restock it when it runs dry.' };
 ITEMS.fence = { id: 'fence', kind: 'shelf', name: 'Security Fence', cost: 10, hp: 140, cap: 0, color: 0xc9ced6,
   desc: 'A cheap, sturdy steel barrier. Burglars have to walk around it or smash through. Use it to build a maze.' };
+export const BUILD_PRICE_MUL = 0.7;   // everything you build / place is 30% cheaper than the base prices above
+for (const it of Object.values(ITEMS)) if (it.cost > 0) it.cost = Math.max(1, Math.round(it.cost * BUILD_PRICE_MUL));
 export const SELLABLES = ['shelf', 'fence', 'cans', 'gum', 'fruit', 'sauce', 'soda', 'cola', 'steel', 'hotdog', 'micro', 'atm', 'statue', 'fridge', 'water', 'donut', 'cereal', 'tissue', 'coffee', 'noodle', 'eggtray'];   // shelves + turrets: the things customers buy from
 export const SKILLS = ['mop', 'shakecola', 'cigs', 'icecubes', 'bananas', 'burger', 'goldapple'];
 // Day one: only the shelf, the vending machine and the bubble gum machine. Everything else has to be reached (a day) AND bought (store profit).
@@ -210,7 +213,7 @@ export const UPGRADES = [
   { id: 'defrost', icon: '⏱️', name: 'Turbo Defrost', desc: 'Microwaves pulse 10% faster.', apply: g => g.mods.rate.micro *= 1.1, avail: g => hasTower(g, 'micro') },
   { id: 'fork', icon: '🍴', name: 'Metal Fork Inside', desc: 'Microwave damage +12%.', apply: g => g.mods.dmg.micro *= 1.12, avail: g => hasTower(g, 'micro') },
   { id: 'bounce', icon: '🌭', name: 'Extra Long Hot Dogs', desc: 'Hot dogs bounce 1 more time.', apply: g => g.mods.bounce += 1, avail: g => hasTower(g, 'hotdog') },
-  { id: 'mustard', icon: '🟡', name: 'Spicy Mustard', desc: 'Hot Dog Launcher damage +10%.', apply: g => g.mods.dmg.hotdog *= 1.1, avail: g => hasTower(g, 'hotdog') },
+  { id: 'mustard', icon: '🟡', name: 'Spicy Mustard', desc: 'Hot Dog Launcher damage +18%.', apply: g => g.mods.dmg.hotdog *= 1.18, avail: g => hasTower(g, 'hotdog') },
   { id: 'cold', icon: '❄️', name: 'Deep Freeze', desc: 'Fridges shoot ice cubes +5% more often.', apply: g => g.mods.ice += 0.05, avail: g => hasTower(g, 'fridge') },
   { id: 'dairy', icon: '🥛', name: 'Fresh Dairy', desc: 'Fridge damage +10%.', apply: g => g.mods.dmg.fridge *= 1.1, avail: g => hasTower(g, 'fridge') },
   { id: 'gumpack', icon: '🍬', name: 'Family Size Pack', desc: 'Bubblegum Machines fire 1 more gumball per burst.', apply: g => g.mods.gumExtra += 1, avail: g => hasTower(g, 'gum') },
@@ -229,20 +232,46 @@ export const UPGRADES = [
   { id: 'breakfast', icon: '🥣', name: 'Breakfast Rush', desc: 'Cereal Shelves fire 8% faster.', apply: g => g.mods.rate.cereal *= 1.08, avail: g => hasTower(g, 'cereal') },
   { id: 'triple', icon: '🧻', name: 'Triple Ply', desc: 'Tissue Dispenser damage +10%.', apply: g => g.mods.dmg.tissue *= 1.1, avail: g => hasTower(g, 'tissue') },
   { id: 'quickroll', icon: '📏', name: 'Quick Unroll', desc: 'Tissue Dispensers fire 8% faster.', apply: g => g.mods.rate.tissue *= 1.08, avail: g => hasTower(g, 'tissue') },
-  { id: 'maint', icon: '🔧', name: 'Maintenance Contract', desc: 'Turrets wear out 12% slower.', apply: g => g.mods.wear *= 0.88, avail: g => g.towers.some(t => t.kind === 'tower') },
-  { id: 'casing', icon: '🛡️', name: 'Reinforced Casing', desc: 'Turrets +15% HP vs bombs and dashes (heals them).', apply: g => { g.mods.towerHp *= 1.15; g.towers.forEach(t => { if (t.kind === 'tower') { t.maxhp *= 1.15; t.hp = t.maxhp; } }); }, avail: g => g.towers.some(t => t.kind === 'tower') },
+  { id: 'maint', icon: '🔧', name: 'Maintenance Contract', desc: 'Turrets wear out 18% slower.', apply: g => g.mods.wear *= 0.82, avail: g => g.towers.some(t => t.kind === 'tower') },
+  { id: 'casing', icon: '🛡️', name: 'Reinforced Casing', desc: 'Turrets +30% HP vs bombs and dashes (heals them).', apply: g => { g.mods.towerHp *= 1.3; g.towers.forEach(t => { if (t.kind === 'tower') { t.maxhp *= 1.3; t.hp = t.maxhp; } }); }, avail: g => g.towers.some(t => t.kind === 'tower') },
   { id: 'mirror', icon: '🪞', name: 'Convex Mirror', desc: 'All tower range +4%.', apply: g => g.mods.range *= 1.04 },
   { id: 'coffee', icon: '☕', name: 'Bottomless Coffee', desc: 'All towers fire 3% faster.', apply: g => g.mods.rateAll *= 1.03 },
-  { id: 'bulk', icon: '📦', name: 'Bulk Order', desc: 'Everything costs 3% less (restocking too).', apply: g => g.mods.cost *= 0.97 },
-  { id: 'cash', icon: '💵', name: 'Employee Discount', desc: `+${'₱' + (6 * 64).toLocaleString('en-US')} right now.`, apply: g => g.cash += 6 },
-  { id: 'tips', icon: '🫙', name: 'Tip Jar', desc: 'Burglar bounties +6%.', apply: g => g.mods.cash *= 1.06 },
-  { id: 'bestseller', icon: '📈', name: 'Bestseller', desc: 'Customers spend 5% more on every purchase.', apply: g => g.mods.shelfPay *= 1.05 },
-  { id: 'rush', icon: '🛒', name: 'Rush Hour', desc: '5% more customers each morning.', apply: g => g.mods.crowd *= 1.05 },
-  { id: 'bolts', icon: '🔩', name: 'Bolted Down', desc: 'All shelves +15% HP (heals them).', apply: g => { g.mods.shelfHp *= 1.15; g.shelves.forEach(s => { s.maxhp *= 1.15; s.hp = s.maxhp; }); } },
+  { id: 'bulk', icon: '📦', name: 'Bulk Order', desc: 'Everything costs 5% less (restocking too).', apply: g => g.mods.cost *= 0.95 },
+  { id: 'cash', icon: '💵', name: 'Employee Discount', desc: `+${'₱' + (12 * 64).toLocaleString('en-US')} right now.`, apply: g => g.cash += 12 },
+  { id: 'tips', icon: '🫙', name: 'Tip Jar', desc: 'Burglar bounties +10%.', apply: g => g.mods.cash *= 1.1 },
+  { id: 'bestseller', icon: '📈', name: 'Bestseller', desc: 'Customers spend 9% more on every purchase.', apply: g => g.mods.shelfPay *= 1.09 },
+  { id: 'rush', icon: '🛒', name: 'Rush Hour', desc: '9% more customers each morning.', apply: g => g.mods.crowd *= 1.09 },
+  { id: 'bolts', icon: '🔩', name: 'Bolted Down', desc: 'All shelves +30% HP (heals them).', apply: g => { g.mods.shelfHp *= 1.3; g.shelves.forEach(s => { s.maxhp *= 1.3; s.hp = s.maxhp; }); } },
   { id: 'sign', icon: '⚠️', name: 'Wet Floor Sign', desc: 'Mops last +2 slips and stun a bit longer.', apply: g => { g.mods.mopUses += 2; g.mods.mopStun += 0.1; g.traps.forEach(t => t.uses += 2); } },
-  { id: 'lucky', icon: '🎟️', name: 'Lucky Scratcher', desc: '+4% chance to crit (x2) with all towers.', apply: g => g.mods.crit += 0.04 },
+  { id: 'lucky', icon: '🎟️', name: 'Lucky Scratcher', desc: '+6% chance to crit (x2) with all towers.', apply: g => g.mods.crit += 0.06 },
   { id: 'overtime', icon: '⏫', name: 'Overtime', desc: 'Fully services one random turret (repairs it, resets wear).', apply: g => { const c = g.towers.filter(t => t.kind === 'tower' && !t.broken); const t = c[Math.floor(g.rng() * c.length)]; if (t) { t.wear = 0; t.hp = t.maxhp; t.warned = false; } }, avail: g => g.towers.some(t => t.kind === 'tower' && !t.broken) },
 ];
+
+// ---------- PERMANENT run cards: the morning of every 16th day you draw from these instead. They last for the whole run and are NOT kept in other saves ----------
+export const PERMA_EVERY = 16;
+const nShelves = g => g.shelves.filter(s => s.ttl === undefined && (ITEMS[s.type].cap || 0) > 0).length;
+export const PERMA = [
+  { id: 'p_greed', icon: '🤑', name: 'GREED', desc: `Every morning gain ${'₱' + (10 * 64).toLocaleString('en-US')} for every shelf in your store.` },
+  { id: 'p_iceRain', icon: '🧊', name: 'Rain of Ice', desc: 'Every 20 defeated burglars, 3 Ice Cube Drops fall on burglars for free.' },
+  { id: 'p_midas', icon: '👑', name: 'Midas Touch', desc: 'Burglar bounties +30%, permanently.', apply: g => g.mods.cash *= 1.3 },
+  { id: 'p_pickpocket', icon: '🪙', name: 'Loose Change', desc: `Every defeated burglar drops an extra ${'₱' + (1 * 64)}.` },
+  { id: 'p_nightshift', icon: '🌙', name: 'Night Shift Pay', desc: 'The bonus for clearing a night is doubled.' },
+  { id: 'p_bossbounty', icon: '🏆', name: 'Bounty Hunter', desc: 'Bosses pay out 3x their bounty.' },
+  { id: 'p_loyalty', icon: '💳', name: 'Loyalty Program', desc: 'Customers spend 20% more on every purchase.', apply: g => g.mods.shelfPay *= 1.2 },
+  { id: 'p_grand', icon: '🎉', name: 'Grand Reopening', desc: '25% more customers every morning.', apply: g => g.mods.crowd *= 1.25 },
+  { id: 'p_wholesale', icon: '🏷️', name: 'Wholesale Deal', desc: 'Everything costs 12% less, permanently.', apply: g => g.mods.cost *= 0.88 },
+  { id: 'p_concrete', icon: '🧱', name: 'Concrete Shelves', desc: 'All shelves +50% HP (heals them).', apply: g => { g.mods.shelfHp *= 1.5; g.shelves.forEach(s => { s.maxhp *= 1.5; s.hp = s.maxhp; }); } },
+  { id: 'p_plating', icon: '🛡️', name: 'Armor Plating', desc: 'All machines +50% HP (heals them).', apply: g => { g.mods.towerHp *= 1.5; g.towers.forEach(t => { if (t.kind === 'tower') { t.maxhp *= 1.5; t.hp = t.maxhp; } }); } },
+  { id: 'p_overclock', icon: '⚡', name: 'Overclock', desc: 'All machines fire 12% faster.', apply: g => g.mods.rateAll *= 1.12 },
+  { id: 'p_sharp', icon: '🎯', name: 'Sharpshooter', desc: 'All machine damage +15%.', apply: g => g.mods.globalDmg *= 1.15 },
+  { id: 'p_reach', icon: '🔭', name: 'Long Reach', desc: 'All machine range +10%.', apply: g => g.mods.range *= 1.1 },
+  { id: 'p_lucky', icon: '🍀', name: 'Four-Leaf Clover', desc: '+10% chance to crit (x2) with all machines.', apply: g => g.mods.crit += 0.1 },
+  { id: 'p_frost', icon: '❄️', name: 'Permafrost', desc: 'Slows are stronger and fridges throw ice cubes +10% more often.', apply: g => { g.mods.slow = Math.min(0.85, g.mods.slow + 0.1); g.mods.ice += 0.1; } },
+  { id: 'p_maint', icon: '🔧', name: 'Maintenance Crew', desc: 'Machines wear out 35% slower.', apply: g => g.mods.wear *= 0.65 },
+  { id: 'p_inspect', icon: '🧰', name: 'Morning Inspection', desc: 'At the start of every day all machines and shelves are fully repaired and un-worn.' },
+  { id: 'p_chain', icon: '💥', name: 'Chain Reaction', desc: 'Every 15 defeated burglars, a shockwave hurts every burglar in the store.' },
+  { id: 'p_supplier', icon: '📦', name: 'Supplier Contract', desc: '+1 card to choose from every morning and +1 reroll now.', apply: g => { g.mods.choiceBonus = (g.mods.choiceBonus || 0) + 1; g.rerolls += 1; } },
+].map(p => ({ perma: true, apply: () => {}, ...p }));
 
 // ---------- Permanent "paycheck" upgrades ----------
 export const META = [
@@ -295,6 +324,7 @@ export class Game {
     this.lives = this.maxLives;
     this.kills = 0; this.served = 0; this.sales = 0; this.daySales = 0; this.dayServed = 0; this.paidOut = 0;
     this.rerolls = meta.reroll || 0;
+    this.perma = [];                // permanent cards won this run (every 16th day); part of the run save only
     this.unlocked = new Set(BASE_UNLOCKS); this.nightIn = 0;
     this.mods = {
       dmg: { cans: 1, sauce: 1, soda: 1, micro: 1, hotdog: 1, fridge: 1, gum: 1, cola: 1, atm: 1, water: 1, donut: 1, cereal: 1, tissue: 1, coffee: 1, noodle: 1, eggtray: 1 }, rate: { cans: 1, sauce: 1, soda: 1, micro: 1, hotdog: 1, fridge: 1, gum: 1, cola: 1, atm: 1, water: 1, donut: 1, cereal: 1, tissue: 1, coffee: 1, noodle: 1, eggtray: 1 },
@@ -1017,7 +1047,7 @@ export class Game {
     const list = [];
     for (let i = 0; i < count; i++) list.push(pickType());
     const bk = boss ? bossForDay(n) : null;
-    if (bk) list.splice(Math.floor(list.length * 0.55), 0, bk);   // a boss every 10th night, in the last wave: Bomb Expert, Gunslinger, Riding in Tandem, Door Robber
+    if (bk) list.splice(Math.floor(list.length * 0.55), 0, bk);   // a boss every 15th night, in the last wave: Bomb Expert, Gunslinger, Riding in Tandem, Door Robber
     const gap = Math.max(0.8, 1.6 - n * 0.03);
     let t = 0; const q = [];
     const sp = this.activeSpawns;
@@ -1095,11 +1125,32 @@ export class Game {
   kill(e) {
     if (e.dead) return;
     e.dead = true; this.kills++;
-    const c = Math.round(e.bounty * this.mods.cash);
+    let c = Math.round(e.bounty * this.mods.cash);
+    if (this.perma.includes('p_pickpocket')) c += 1;
+    if (e.boss && this.perma.includes('p_bossbounty')) c *= 3;
     this.cash += c;
     this.emit('kill', { enemy: e, cash: c });
+    this.permaKill(e);
     if (e.type === 'molotov') this.molotovFire(e.x, e.y, 2, true);   // the Molotov robber bursts into a 2x2 fire
     else if (e.type === 'moto') this.motoRiders(e);             // shot off the bike: the two riders still bail out
+  }
+
+  // permanent cards that trigger on kills
+  permaKill(e) {
+    const P = this.perma; if (!P.length) return;
+    if (P.includes('p_iceRain') && this.kills % 20 === 0) {
+      const live = this.enemies.filter(o => !o.dead && o !== e && o.x > 0 && o.y > 0 && o.x < COLS - 1 && o.y < ROWS - 1), def = ITEMS.icecubes;
+      for (let i = 0; i < 3 && live.length; i++) {
+        const o = live.splice(Math.floor(this.rng() * live.length), 1)[0];
+        const sk = { id: this.nextId++, kind: 'skill', type: 'icecubes', x: Math.round(o.x), y: Math.round(o.y), t: def.fuse, max: def.fuse, left: 0, gap: 0, kick: 0 };
+        this.skills.push(sk); this.emit('skillPlace', { skill: sk });
+      }
+    }
+    if (P.includes('p_chain') && this.kills % 15 === 0 && !this._chain) {
+      this._chain = true;
+      for (const o of [...this.enemies]) if (!o.dead) this.damage(o, 15 * this.mods.globalDmg, true);
+      this._chain = false; this.emit('perma', { id: 'p_chain' });
+    }
   }
 
   progress(e) {
@@ -2622,7 +2673,7 @@ export class Game {
     if (this.phase === 'wave' && !this.spawnQueue.length && !this.enemies.length && this.gapT <= 0) {
       if (this.sandbox) { this.phase = 'prep'; this.emit('newDay', { n: this.wave + 1 }); return; }   // dev sandbox: the night just ends, the day counter stays put
       this.wave++;
-      const bonus = Math.round((20 + this.wave * 4) * 1.05);
+      const bonus = Math.round((20 + this.wave * 4) * 1.05) * (this.perma.includes('p_nightshift') ? 2 : 1);
       this.cash += bonus;
       this.emit('waveClear', { bonus });
       this.phase = 'restock'; this.rollChoices(); this.emit('restock', {});
@@ -2757,17 +2808,28 @@ export class Game {
 
   // ---------- Restock (upgrade pick after each night) ----------
   rollChoices() {
-    const n = 3 + (this.meta.choice || 0);
-    const pool = UPGRADES.filter(u => !u.avail || u.avail(this));
+    const n = 3 + (this.meta.choice || 0) + (this.mods.choiceBonus || 0);
+    const permaDay = (this.wave + 1) % PERMA_EVERY === 0;
+    const pool = permaDay && PERMA.some(u => !this.perma.includes(u.id)) ? PERMA.filter(u => !this.perma.includes(u.id)) : UPGRADES.filter(u => !u.avail || u.avail(this));
     const out = [];
     while (out.length < n && pool.length) out.push(pool.splice(Math.floor(this.rng() * pool.length), 1)[0]);
     this.choices = out;
+  }
+  // permanent cards that act when a new day begins
+  permaDayStart() {
+    if (this.perma.includes('p_greed')) { const c = 10 * nShelves(this); if (c > 0) { this.cash += c; this.emit('perma', { id: 'p_greed', cash: c }); } }
+    if (this.perma.includes('p_inspect')) {
+      for (const t of this.towers) if (t.kind === 'tower') { t.wear = 0; t.hp = t.maxhp; t.warned = false; t.broken = null; }
+      for (const sh of this.shelves) sh.hp = sh.maxhp;
+    }
   }
   reroll() { if (this.phase !== 'restock' || this.rerolls <= 0) return false; this.rerolls--; this.rollChoices(); return true; }
   pickUpgrade(id) {
     if (this.phase !== 'restock') return false;
     const u = this.choices.find(c => c.id === id); if (!u) return false;
     u.apply(this); this.phase = 'prep'; this.choices = [];
+    if (u.perma) this.perma.push(u.id);
+    this.permaDayStart();
     this.emit('newDay', { n: this.wave + 1 });
     return true;
   }
@@ -2779,7 +2841,7 @@ export class Game {
     return c({
       v: 3, seed: this.seed, rng: this.rng.get(), room: this.room, permit: this.permit, wave: this.wave, cash: this.cash, lives: this.lives, maxLives: this.maxLives,
       kills: this.kills, served: this.served, sales: this.sales, paidOut: this.paidOut, rerolls: this.rerolls, unlocked: [...this.unlocked],
-      mods: this.mods, nextId: this.nextId, phase: this.phase === 'restock' ? 'restock' : 'prep', choices: this.choices.map(u => u.id),
+      mods: this.mods, perma: this.perma, nextId: this.nextId, phase: this.phase === 'restock' ? 'restock' : 'prep', choices: this.choices.map(u => u.id),
       counterSide: this.counterSide, doorSide: this.doorSide, counterPos: this.counterPos, tills: this.tills, spawns: this.spawns,
       shelves: this.shelves.filter(s => s.ttl === undefined), towers: this.towers, traps: this.traps,
     });
@@ -2792,7 +2854,7 @@ export class Game {
     if (!o.retry) { this.seed = s.seed; this.rng = mulberry32(s.seed); this.rng.set(s.rng); this.paidOut = s.paidOut; }
     this.wave = s.wave; this.cash = s.cash; this.maxLives = 1; this.lives = Math.min(1, s.lives);   // older saves had a stack of Till: it is one life now
     this.kills = s.kills; this.served = s.served; this.sales = s.sales; this.rerolls = s.rerolls;
-    this.unlocked = new Set(s.unlocked); this.mods = c(s.mods); this.nextId = Math.max(this.nextId, s.nextId);
+    this.unlocked = new Set(s.unlocked); this.mods = c(s.mods); this.perma = c(s.perma || []); this.nextId = Math.max(this.nextId, s.nextId);
     {   // saves made before the Bubblegum / Cola / ATM machines don't have their modifiers yet
       const m = this.mods, one = { cans: 1, sauce: 1, soda: 1, micro: 1, hotdog: 1, fridge: 1, gum: 1, cola: 1, atm: 1, water: 1, donut: 1, cereal: 1, tissue: 1, coffee: 1, noodle: 1, eggtray: 1 };
       m.dmg = { ...one, ...m.dmg }; m.rate = { ...one, ...m.rate };
@@ -2806,7 +2868,7 @@ export class Game {
     this.enemies = []; this.projectiles = []; this.fires = []; this.bombs = []; this.ice = []; this.zones = []; this.swirls = []; this.skills = []; this.fruits = []; this.donuts = []; this.flyDoors = []; this.rolls = []; this.eggs = []; this.noodleCups = []; this.tornados = []; this.customers = []; this.walkers = [];
     this.spawnQueue = []; this.gapT = 0; this.subWave = 1; this.subWaves = 1; this.dayQueue = []; this.waveTime = 0; this.dayTime = 0; this.waveTotal = 0; this.nightIn = 0;
     this.phase = s.phase; this.daySnap = null;
-    this.choices = (s.choices || []).map(id => UPGRADES.find(u => u.id === id)).filter(Boolean);
+    this.choices = (s.choices || []).map(id => UPGRADES.find(u => u.id === id) || PERMA.find(u => u.id === id)).filter(Boolean);
     this.refreshPaths();
   }
 
