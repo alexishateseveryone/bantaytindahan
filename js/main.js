@@ -12,7 +12,16 @@ let save = { bank: 0, levels: {}, best: 0, shifts: 0, run: null };   // run = th
 try { Object.assign(save, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) { /* storage may be blocked */ }
 save.settings = Object.assign({ music: 0.3, sfx: 1 }, save.settings || {});   // volume sliders (0..1)
 const settings = save.settings;
-const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(save)); } catch (e) { /* ignore */ } };
+// 5 save slots: each one keeps its own store (save.run) and tutorial progress. The paycheck bank and shop upgrades are shared by all slots.
+const SLOTS = 5;
+if (!Array.isArray(save.slots)) { save.slots = [null, null, null, null, null]; if (save.run) save.slots[0] = { run: save.run, tutDone: save.tutDone, tutStep: save.tutStep, t: Date.now() }; save.slot = 0; }
+while (save.slots.length < SLOTS) save.slots.push(null);
+if (!(save.slot >= 0 && save.slot < SLOTS)) save.slot = 0;
+{ const s0 = save.slots[save.slot]; save.run = s0 ? s0.run : null; if (s0) { save.tutDone = s0.tutDone; save.tutStep = s0.tutStep; } }   // the active slot's store
+const persist = () => {
+  save.slots[save.slot] = (save.run || save.tutStep) ? { run: save.run, tutDone: save.tutDone, tutStep: save.tutStep, t: Date.now() } : null;
+  try { localStorage.setItem(KEY, JSON.stringify(save)); } catch (e) { /* ignore */ }
+};
 
 // ---------- audio: synthesized sfx (every machine sounds different) + background music ----------
 let ac = null, master = null, echo = null, noiseBuf = null, muted = false, outGain = null;
@@ -88,6 +97,9 @@ const sfx = {
     else if (k === 'gum') { for (let i = 0; i < 5; i++) { tone(620 + i * 70, 0.05, 'triangle', 0.04, 260, i * 0.11); noise(0.02, 0.025, { f: 2400, delay: i * 0.11 }); } }   // pop-pop-pop-pop-pop
     else if (k === 'cola') { noise(0.16, 0.05, { f: 5200, q: 0.6, type: 'highpass', slide: -2400 }); tone(260, 0.1, 'sine', 0.03, 140); }                   // fizzy pshh
     else if (k === 'atm') { for (let i = 0; i < 4; i++) { tone(1050 + (i % 2) * 120, 0.03, 'square', 0.025, 0, i * 0.045); noise(0.025, 0.02, { f: 3200, q: 3, delay: i * 0.045 }); } tone(1760, 0.12, 'sine', 0.025, 0, 0.19, true); }   // printer brrt + ding
+    else if (k === 'coffee') { noise(0.3, 0.06, { f: 2600, q: 0.7, type: 'highpass', slide: -1400 }); tone(180, 0.25, 'sawtooth', 0.03, -60); tone(880, 0.1, 'sine', 0.03, 0, 0.22, true); }   // psssh + ding
+    else if (k === 'noodle') { tone(210, 0.12, 'sine', 0.08, -90); noise(0.1, 0.04, { f: 1500, q: 1 }); tone(640, 0.06, 'triangle', 0.03, 200, 0.05); }   // thwoop
+    else if (k === 'eggtray') { for (let i = 0; i < 4; i++) tone(240 + i * 40, 0.06, 'triangle', 0.04, 120, i * 0.06); noise(0.18, 0.03, { f: 1800, q: 1, slide: -600 }); }   // clack-clack-clack
     else if (k === 'water') { for (let i = 0; i < 3; i++) { tone(420 + i * 60, 0.12, 'sine', 0.05, 380, i * 0.3); noise(0.1, 0.03, { f: 1400, q: 1.2, delay: i * 0.3 }); } }   // glug-glug-glug
     else if (k === 'donut') { tone(300, 0.09, 'triangle', 0.06, 260); tone(300, 0.09, 'triangle', 0.06, 260, 0.3); noise(0.05, 0.03, { f: 1500 }); }                          // fwip fwip
     else if (k === 'cereal') { noise(0.14, 0.06, { f: 700, q: 0.8 }); tone(180, 0.14, 'triangle', 0.07, -90); tone(90, 0.1, 'sine', 0.06, -40, 0.12); }                       // rattle + thunk
@@ -213,7 +225,7 @@ function newStore(fresh = false, sandbox = false) {
   view.setGame(game); view.menu = true; view.tod = 0; view.resetView();
   running = false; selected = null; pickedTower = null; moving = null; drag = null; preview = null; speed = 1;
   $('speed').textContent = '1x'; setPaused(false);
-  $('hud').classList.add('off'); $('info').classList.add('off'); $('dock').classList.add('off'); $('skillSlots').classList.add('off'); closeTray(); setTab('stocks'); $('title').classList.remove('off', 'pop'); $('stage').classList.add('menu'); $('t-restart').classList.toggle('off', !save.run);
+  $('hud').classList.add('off'); $('info').classList.add('off'); $('dock').classList.add('off'); $('skillSlots').classList.add('off'); closeTray(); setTab('stocks'); $('title').classList.remove('off', 'pop', 'slotsOut'); closeSlots(false); $('stage').classList.add('menu'); $('t-restart').classList.add('off');
   closeModal(); hideTarot(); buildCards(); refresh(); tutStop(); hideBossBanner(true);
 }
 
@@ -222,7 +234,7 @@ function startRun() {
   $('stage').classList.remove('menu'); $('title').classList.add('pop'); setTimeout(() => { if (running) $('title').classList.add('off'); }, 480);
   $('hud').classList.remove('off'); $('info').classList.remove('off'); $('dock').classList.remove('off'); $('skillSlots').classList.remove('off');
   banner(game.sandbox ? '🛠 SANDBOX: unlimited money, everything unlocked' : game.wave ? `☀ Day ${game.wave + 1} — welcome back` : '☀ Day 1 — stock up, then open the store!'); refresh();
-  if (game.phase === 'restock') showRestock();
+  if (game.phase === 'restock') restockFlow();
   tutStart();
 }
 
@@ -275,6 +287,58 @@ function shootOne(x, y) {
 }
 function banner(t) { const b = $('banner'); b.innerHTML = pxText(t); b.classList.remove('show'); void b.offsetWidth; b.classList.add('show'); }
 
+
+// ---------- victory banner: the item that becomes available today (pixel card, white, centred, with a GOT IT! button) ----------
+const niCss = document.createElement('style');
+niCss.textContent = `
+#newItem{position:fixed;inset:0;z-index:70;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.66);padding:14px;box-sizing:border-box;font-family:var(--cf)}
+#newItem.on{display:flex}
+/* the same paper receipt as the build tray: cream paper, hard pixel shadow, torn bottom edge */
+#newItem .nw{position:relative;isolation:isolate;animation:niIn .4s cubic-bezier(.22,1.2,.36,1) both;will-change:transform,opacity}
+#newItem .nw::before{content:'';position:absolute;inset:0;z-index:-1;transform:translate(6px,6px);background:rgba(0,0,0,.65);--u:4px;clip-path:polygon(0 calc(var(--u)*2),var(--u) calc(var(--u)*2),var(--u) var(--u),calc(var(--u)*2) var(--u),calc(var(--u)*2) 0,calc(100% - var(--u)*2) 0,calc(100% - var(--u)*2) var(--u),calc(100% - var(--u)) var(--u),calc(100% - var(--u)) calc(var(--u)*2),100% calc(var(--u)*2),100% 100%,0 100%)}
+#newItem .nw::after{content:'';position:absolute;left:0;right:0;top:100%;height:12px;z-index:-1;transform:translate(6px,6px);background:repeating-linear-gradient(90deg,rgba(0,0,0,.65) 0 12px,transparent 12px 24px)}
+#newItem .nc{--u:4px;width:min(340px,88vw);box-sizing:border-box;position:relative;background:#fffdf4;color:#2a2622;text-align:center;padding:24px 22px 26px;border-radius:0;
+  display:flex;flex-direction:column;align-items:center;gap:10px;font-family:var(--cf);
+  clip-path:polygon(0 calc(var(--u)*2),var(--u) calc(var(--u)*2),var(--u) var(--u),calc(var(--u)*2) var(--u),calc(var(--u)*2) 0,calc(100% - var(--u)*2) 0,calc(100% - var(--u)*2) var(--u),calc(100% - var(--u)) var(--u),calc(100% - var(--u)) calc(var(--u)*2),100% calc(var(--u)*2),100% calc(100% + 12px),0 calc(100% + 12px))}
+#newItem .nc::before{content:'';position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 0 2px rgba(42,38,34,.22)}
+#newItem .nc::after{content:'';position:absolute;left:0;right:0;top:100%;height:12px;background:repeating-linear-gradient(90deg,#fffdf4 0 12px,transparent 12px 24px)}
+@keyframes niIn{0%{transform:translateY(26px) scale(.82);opacity:0}100%{transform:none;opacity:1}}
+#newItem .nt{font:700 22px/1 var(--cf);letter-spacing:2px;color:#d4452a;text-transform:uppercase}
+#newItem .ns{font:600 13px/1 var(--cf);letter-spacing:.8px;color:#8b8277;text-transform:uppercase}
+#newItem hr{width:100%;border:0;border-top:2px dashed rgba(42,38,34,.28);margin:2px 0}
+#newItem .pic{--u:3px;width:112px;height:112px;border-radius:0;display:grid;place-items:center;background:rgba(42,38,34,.07);clip-path:polygon(0 calc(var(--u)*2),var(--u) calc(var(--u)*2),var(--u) var(--u),calc(var(--u)*2) var(--u),calc(var(--u)*2) 0,calc(100% - var(--u)*2) 0,calc(100% - var(--u)*2) var(--u),calc(100% - var(--u)) var(--u),calc(100% - var(--u)) calc(var(--u)*2),100% calc(var(--u)*2),100% calc(100% - var(--u)*2),calc(100% - var(--u)) calc(100% - var(--u)*2),calc(100% - var(--u)) calc(100% - var(--u)),calc(100% - var(--u)*2) calc(100% - var(--u)),calc(100% - var(--u)*2) 100%,calc(var(--u)*2) 100%,calc(var(--u)*2) calc(100% - var(--u)),var(--u) calc(100% - var(--u)),var(--u) calc(100% - var(--u)*2),0 calc(100% - var(--u)*2))}
+#newItem .ni{width:80%;height:80%;object-fit:contain;image-rendering:pixelated}
+#newItem .nn{font:600 24px/1.05 var(--cf);letter-spacing:.6px;text-transform:uppercase;color:#2a2622}
+#newItem .nd{font:600 15px/1.2 var(--cf);color:#5b534a}
+#newItem .np{width:100%;display:flex;justify-content:space-between;align-items:baseline;font:600 15px/1 var(--cf);letter-spacing:.6px;text-transform:uppercase;color:#5b534a}
+#newItem .np b{font:700 20px/1 var(--cf);color:#1e8a52}
+#newItem button{margin-top:4px;min-width:150px;font:600 17px/1 var(--cf);letter-spacing:.6px;text-transform:uppercase;padding:13px 20px 11px;border:0;border-radius:0;color:#fffdf4;background:#d4452a;cursor:pointer;-webkit-tap-highlight-color:transparent;--u:3px;box-shadow:inset 0 -4px 0 rgba(0,0,0,.28);clip-path:polygon(0 calc(var(--u)*2),var(--u) calc(var(--u)*2),var(--u) var(--u),calc(var(--u)*2) var(--u),calc(var(--u)*2) 0,calc(100% - var(--u)*2) 0,calc(100% - var(--u)*2) var(--u),calc(100% - var(--u)) var(--u),calc(100% - var(--u)) calc(var(--u)*2),100% calc(var(--u)*2),100% calc(100% - var(--u)*2),calc(100% - var(--u)) calc(100% - var(--u)*2),calc(100% - var(--u)) calc(100% - var(--u)),calc(100% - var(--u)*2) calc(100% - var(--u)),calc(100% - var(--u)*2) 100%,calc(var(--u)*2) 100%,calc(var(--u)*2) calc(100% - var(--u)),var(--u) calc(100% - var(--u)),var(--u) calc(100% - var(--u)*2),0 calc(100% - var(--u)*2))}
+#newItem button:active{transform:translateY(2px);box-shadow:inset 0 -2px 0 rgba(0,0,0,.28)}`;
+document.head.appendChild(niCss);
+const newItemEl = document.createElement('div'); newItemEl.id = 'newItem';
+newItemEl.innerHTML = '<div class="nw"><div class="nc"><div class="nt">NEW ITEM!</div><div class="ns" id="niSub"></div><hr><div class="pic"><img class="ni" alt=""></div><div class="nn"></div><div class="nd"></div><hr><div class="np"><span>Build price</span><b></b></div><button type="button">GOT IT!</button></div></div>';
+document.body.appendChild(newItemEl);
+let newItemThen = null;
+newItemEl.querySelector('button').onclick = () => { newItemEl.classList.remove('on'); const f = newItemThen; newItemThen = null; if (f) f(); };   // GOT IT! -> then the tarot cards come up
+let newItemDay = 0;
+// shows the new-item receipt for this day (if there is one) and returns true; `then` runs after GOT IT!
+function showNewItem(day, then) {
+  if (!game || game.sandbox || day <= 1 || newItemDay === day) return false;
+  const id = Object.keys(UNLOCK_DAY).find(k => UNLOCK_DAY[k] === day && ITEMS[k]);
+  if (!id || game.isUnlocked(id)) return false;
+  newItemDay = day; newItemThen = then || null;
+  const q = s => newItemEl.querySelector(s);
+  q('#niSub').textContent = 'Day ' + day + ' delivery';
+  q('.ni').src = icons[id] || view.makeIcon(id); q('.nn').textContent = ITEMS[id].name; q('.nd').textContent = ITEMS[id].desc;
+  q('.np b').textContent = peso(game.costOf(id));   // the BUILD price, not the unlock price
+  newItemEl.classList.add('on');
+  return true;
+}
+// the morning delivery: the new item comes first, the tarot cards after GOT IT!
+function restockFlow() {
+  if (!game || game.phase !== 'restock') return;
+  if (!showNewItem(game.wave + 1, showRestock)) showRestock();
+}
 
 // ---------- boss banner: just the boss name and its health bar, bottom centre. No plate, no warning, no subtitle ----------
 const bbCss = document.createElement('style');
@@ -361,7 +425,7 @@ function onEvent(type, d) {
     case 'empty': floatText(d.x, d.y, '😕 nothing to buy', 'bad', 1.2); break;
     case 'dayStart': sfx.day(); banner(`☀ Day ${d.n}`); break;
     case 'evening': banner(`Store closed: +${peso(d.sales)}`); break;
-    case 'newDay': banner(`☀ Day ${d.n} — restock and open up`); break;
+    case 'newDay': banner(`☀ Day ${d.n} — restock and open up`); setTimeout(() => showNewItem(d.n), 350); break;
     case 'shelfBreak': sfx.crash(); floatText(d.shelf.x, d.shelf.y, 'Shelf smashed!', 'bad', 1.4); break;
     case 'shoot': sfx.shoot(d.tower.type); break;
     case 'kill': sfx.kill(); floatText(d.enemy.x, d.enemy.y, '+' + peso(d.cash)); if (d.enemy === bb.ref) { floatText(d.enemy.x, d.enemy.y, 'BOSS DOWN!', 'good', 2.4); sfx.win(); hideBossBanner(); } break;
@@ -372,6 +436,12 @@ function onEvent(type, d) {
     case 'summon': sfx.summon(); floatText(d.x, d.y, d.label, 'bad', 2.4); break;
     case 'slamWarn': sfx.slamWarn(); break;
     case 'slam': sfx.slam(); floatText(d.x, d.y, 'SLAM!', 'bad', 1.9); break;
+    case 'sodaRapid': sfx.upgrade(); floatText(d.tower.x, d.tower.y, 'RAPID FIRE!', 'good', 1.5); break;
+    case 'overheat': sfx.warn(); floatText(d.tower.x, d.tower.y, 'OVERHEAT!', 'bad', 1.5); break;
+    case 'cooled': break;
+    case 'barrage': sfx.slamWarn(); floatText(d.enemy.x, d.enemy.y, 'BOMB RAIN!', 'bad', 1.8); break;
+    case 'doorThrow': sfx.slamWarn(); floatText(d.x, d.y, 'DOOR!', 'bad', 1.6); break;
+    case 'doorHit': sfx.slam(); break;
     case 'shieldHit': sfx.clink(); break;
     case 'shieldBreak': sfx.crash(); floatText(d.x, d.y, 'Shield broken!', 'good', 2.4); break;
     case 'park': sfx.engine(); floatText(d.x, d.y, '🏍️ parked', 'bad', 2.2); break;
@@ -382,13 +452,16 @@ function onEvent(type, d) {
     case 'bossSmash': sfx.crash(); sfx.thud(); break;
     case 'leak': if (d.enemy === bb.ref) hideBossBanner(); sfx.leak(); floatText(d.enemy.x, d.enemy.y, '-' + d.enemy.steal + ' 🧾', 'bad'); break;
     case 'pulse': sfx.pulse(); break;
+    case 'eggBoom': sfx.fruitBoom(); break;
+    case 'noodleLand': sfx.wet(); break;
+    case 'noodleSplash': sfx.wet(); sfx.fruitBoom(); break;
+    case 'coffeeSplash': sfx.shoot('coffee'); break;
     case 'sauceSplash': sfx.splat(); break;
-    case 'panic': break;
     case 'windup': sfx.tick(); break;
     case 'throw': sfx.whistle(); floatText(d.enemy.x, d.enemy.y, d.kind === 'molo' ? '🔥 !' : '💣 !', 'bad', 1.4); break;
     case 'molotovSplash': sfx.splat(); break;
     case 'doorCrash': sfx.crash(); floatText(d.x, d.y, '🏍️ CRASH!', 'bad', 1.8); break;
-    case 'motoCrash': sfx.crash(); if (d.kind >= 2) sfx.thud(); break;
+    case 'motoCrash': sfx.crash(); if (d.kind >= 2) sfx.thud(); if (d.crit) { sfx.thud(); floatText(d.x, d.y, 'CRITICAL CRASH!', 'bad', 2.2); } break;
     case 'riders': floatText(d.x, d.y, '2 robbers!', 'bad', 1.6); break;
     case 'smash': sfx.thud(); break;
     case 'deflect': sfx.bounce(); break;
@@ -410,7 +483,7 @@ function onEvent(type, d) {
     case 'freeze': sfx.freeze(); break;
     case 'bounce': sfx.bounce(); break;
     case 'retry': hideBossBanner(true); banner(`☀ Day ${d.n} again — you've got this`); break;
-    case 'restock': setTimeout(showRestock, 900); break;
+    case 'restock': setTimeout(restockFlow, 900); break;
     case 'lost': hideBossBanner(); sfx.lost(); setTimeout(showLost, 700); break;
   }
   if (SAVE_EVENTS.has(type)) saveRun();
@@ -589,9 +662,12 @@ function buildCards() {
 }
 // the STOCKS tab has two sub-tabs: SELLABLES (shelves + turrets) and SKILL ITEMS (mop, shaken cola, cigarettes)
 let subTab = 'sell';
+// items whose unlock day has not been reached yet are NOT shown on the receipt card at all
+const visibleIds = () => BUILD_ORDER.filter(id => !game || game.isUnlocked(id) || game.canUnlock(id));
+let visKey = '';
 function applySub() {
   syncTabs();
-  const box = $('trayGrid'), ids = BUILD_ORDER.filter(id => (SKILLS.includes(id) ? 'skill' : 'sell') === subTab);
+  const box = $('trayGrid'), ids = visibleIds().filter(id => (SKILLS.includes(id) ? 'skill' : 'sell') === subTab);
   box.innerHTML = '';
   if (!ids.includes(focusId)) focusId = ids[0];
   ids.forEach(id => box.appendChild(cells.get(id)));
@@ -773,6 +849,8 @@ function refresh() {
   $('clock').classList.toggle('night', game.isNight);
   const rs = $('restockAll'), cost = game.restockCost();
   $('rsCost').textContent = pesoN(cost); rs.disabled = cost === 0 || game.cash < cost || game.phase === 'lost';   // restock-all only when you can afford the whole refill
+  const vk = visibleIds().join(',') + '|' + subTab;
+  if (vk !== visKey) { visKey = vk; applySub(); return; }   // a new day reached: re-list the receipt (applySub calls refresh again)
   const av = available();
   for (const [id, c] of cells) {
     const locked = !game.isUnlocked(id), cost = game.costOf(id);
@@ -909,10 +987,23 @@ window.addEventListener('orientationchange', () => setTimeout(() => game && refr
 
 // ---------- input ----------
 const cv = $('view');
+// what is under the pointer? With nothing selected to build, items are picked by their real 3D shape (so a tall machine never hits the floor behind it);
+// a mouse over bare floor is simply "nothing". Placing / moving works on floor cells; touch keeps the forgiving floor cell.
+function pickAt(e) {
+  const at = c => c && (game.towerAt(c.x, c.y) || game.shelfAt(c.x, c.y) || game.trapAt(c.x, c.y));
+  if (!selected && !moving) {
+    const ia = view.pickItem(e.clientX, e.clientY);
+    if (ia) return { c: { x: ia.x, y: ia.y }, item: ia.item };
+    const c = view.pick(e.clientX, e.clientY);
+    return { c, item: e.pointerType === 'mouse' ? null : at(c) };
+  }
+  const c = view.pick(e.clientX, e.clientY);
+  return { c, item: at(c) };
+}
 cv.addEventListener('pointermove', e => {
   if (e.pointerType !== 'mouse' || !game || !running) return;
-  hover = view.pick(e.clientX, e.clientY);
-  view.setHover(hover ? (game.towerAt(hover.x, hover.y) || game.shelfAt(hover.x, hover.y) || game.trapAt(hover.x, hover.y)) : null);
+  const pk = pickAt(e); hover = pk.c;
+  view.setHover(pk.item || null);
   if (moving && hover) view.setCursor(hover, game.canMove(moving, hover.x, hover.y).ok, fpOf(moving.type || 'shelf'));
   else if (selected && hover) view.setCursor(hover, game.canPlace(selected, hover.x, hover.y).ok, fpOf(selected)); else view.setCursor(null);
   view.setRange(...rangeFor());
@@ -940,9 +1031,9 @@ cv.addEventListener('pointerleave', () => { hover = null; view.setHover(null); i
 function cvDown(e) {
   if (!game || !running || game.phase === 'lost') return;
   closeTray();
-  const c = view.pick(e.clientX, e.clientY);
+  const pk = pickAt(e), c = pk.c;
   if (!c) return;
-  const existing = game.towerAt(c.x, c.y) || game.shelfAt(c.x, c.y) || game.trapAt(c.x, c.y);
+  const existing = pk.item;
   if (moving) {   // tap-to-move: pick the new spot (touch: first tap previews, the ✔ confirms)
     if (existing === moving) { moving = null; preview = null; view.setCursor(null); refresh(); return; }
     const touch = e.pointerType !== 'mouse';
@@ -981,7 +1072,7 @@ cv.addEventListener('pointerdown', e => {
   }
   if (e.button === 1 || e.button === 2) { tap = null; panning = true; try { cv.setPointerCapture(e.pointerId); } catch (_) {} e.preventDefault(); return; }
   // pressing the already-picked item starts moving it (its own drag logic), everything else waits for the release
-  const c = view.pick(e.clientX, e.clientY), ex = c && (game.towerAt(c.x, c.y) || game.shelfAt(c.x, c.y) || game.trapAt(c.x, c.y));
+  const ex = pickAt(e).item;
   if (moving || (ex && ex === pickedTower && !selected && game.canMoveItem(ex))) { tap = null; cvDown(e); return; }
   tap = { id: e.pointerId, sx: e.clientX, sy: e.clientY, ev: e }; panning = false;
   try { cv.setPointerCapture(e.pointerId); } catch (_) {}
@@ -1588,7 +1679,7 @@ function devAct(a, arg) {
   else if (a === 'count') devN = devN === 1 ? 5 : devN === 5 ? 10 : 1;
   else if (a === 'open') { if (g.phase === 'prep') g.startDay(); else banner('The store is already open'); }
   else if (a === 'night') { if (g.phase === 'prep' || g.phase === 'morning') { g.customers = []; g.dayQueue = []; g.phase = 'evening'; } if (g.phase === 'evening') g.startWave(); }
-  else if (a === 'prep') { g.enemies = []; g.customers = []; g.dayQueue = []; g.spawnQueue = []; g.projectiles = []; g.fires = []; g.bombs = []; g.skills = []; g.zones = []; g.fruits = []; g.donuts = []; g.rolls = []; g.tornados = []; g.swirls = []; g.gapT = 0; if (g.phase !== 'restock') g.phase = 'prep'; hideBossBanner(true); }
+  else if (a === 'prep') { g.enemies = []; g.customers = []; g.dayQueue = []; g.spawnQueue = []; g.projectiles = []; g.fires = []; g.bombs = []; g.skills = []; g.zones = []; g.fruits = []; g.donuts = []; g.rolls = []; g.eggs = []; g.tornados = []; g.swirls = []; g.gapT = 0; if (g.phase !== 'restock') g.phase = 'prep'; hideBossBanner(true); }
   else if (a === 'kill') { for (const e of g.enemies) e.dead = true; hideBossBanner(true); }
   else if (a === 'day') { g.wave = Math.max(0, g.wave + arg); }
   else if (a === 'heal') { for (const t of g.towers) if (t.kind === 'tower') { t.broken = null; t.fuse = null; t.wear = 0; t.hp = t.maxhp; t.warned = false; } for (const s of g.shelves) { s.hp = s.maxhp; s.units = g.capOf(s); } }
@@ -1644,7 +1735,60 @@ window.addEventListener('keydown', e => {   // M on the title screen = sandbox
   newStore(false, true); startRun();
 });
 
-$('t-start').onclick = startRun;
+// ---------- PLAY: choose one of 5 save slots ----------
+const slotCss = document.createElement('style');
+slotCss.textContent = `#title.slotsOut{animation:slotsOut .38s cubic-bezier(.6,-.28,.74,.05) forwards;pointer-events:none}
+@keyframes slotsOut{0%{transform:translateY(-50%) scale(1);opacity:1}100%{transform:translateY(-50%) scale(0);opacity:0}}
+#slotsPane{position:fixed;inset:0;z-index:9;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;pointer-events:none}
+#slotsPane>*{pointer-events:auto}
+#slotsPane .slotRow{display:flex;gap:6px;align-items:stretch;width:min(270px,66vw);filter:drop-shadow(4px 4px 0 rgba(0,0,0,.65));opacity:0;transform:scale(0);animation:slotPop .38s cubic-bezier(.3,1.5,.5,1) forwards;animation-delay:calc(var(--i)*60ms + 250ms)}
+#slotsPane .slotRow .choice{flex:1;width:auto;margin:0;min-width:0;padding:8px 10px}
+#slotsPane .slotRow .pxb.sq{flex:none;align-self:center}
+#slotsPane .slotBack{width:min(150px,40vw);filter:drop-shadow(4px 4px 0 rgba(0,0,0,.65));opacity:0;transform:scale(0);animation:slotPop .38s cubic-bezier(.3,1.5,.5,1) forwards;animation-delay:600ms}
+@keyframes slotPop{0%{opacity:0;transform:scale(0)}100%{opacity:1;transform:scale(1)}}
+.slotRow .choice.cur{--ol:#ffd23f}.slotRow .tag{display:inline-block;margin-left:6px;padding:2px 7px;border-radius:99px;background:#ffd23f;color:#5a3a00;font:700 11px/1.2 var(--cf);vertical-align:2px}`;
+document.head.appendChild(slotCss);
+function slotInfo(s) {
+  if (!s) return 'Empty — start a new store';
+  const r = s.run, d = s.t ? new Date(s.t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '';
+  return (r ? `Day ${r.wave + 1} · ${peso(r.cash)} · ${r.towers ? r.towers.filter(t => t.kind === 'tower').length : 0} machines` : 'Day 1 · just started') + (d ? ` · ${d}` : '');
+}
+function closeSlots(restore) {
+  const p = $('slotsPane'); if (p) p.remove();
+  if (restore) $('title').classList.remove('slotsOut');
+}
+function showSlots() {
+  if (running) return;
+  $('title').classList.add('slotsOut');
+  let pane = $('slotsPane');
+  if (!pane) { pane = document.createElement('div'); pane.id = 'slotsPane'; document.body.appendChild(pane); }
+  const rows = save.slots.map((s, i) => `<div class="slotRow" style="--i:${i}"><button class="choice pxb ${i === save.slot && s ? 'cur' : ''}" data-slot="${i}"><span class="ic">${s ? '💾' : '➕'}</span><span><div class="nm">SLOT ${i + 1}${i === save.slot && s ? '<span class="tag">LAST</span>' : ''}</div><div class="ds">${slotInfo(s)}</div></span></button>${s ? `<button class="pxb red sq" data-del="${i}" title="Delete slot">🗑</button>` : ''}</div>`).join('');
+  pane.innerHTML = rows + '<button class="pxb slotBack" id="s-back">BACK</button>';
+  pane.querySelectorAll('[data-slot]').forEach(b => b.onclick = () => playSlot(+b.dataset.slot));
+  pane.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
+    const i = +b.dataset.del;
+    openModal(`<h2>Delete slot ${i + 1}?</h2><p>${slotInfo(save.slots[i])}<br>This store can't be brought back. Your paycheck bank stays.</p>
+      <div class="row"><button class="pxb red" id="m-yes">Delete</button><button class="pxb gold" id="m-no">Cancel</button></div>`);
+    $('m-no').onclick = closeModal;
+    $('m-yes').onclick = () => {
+      const active = i === save.slot;
+      if (active) { save.run = null; save.tutStep = 0; save.tutDone = undefined; }
+      save.slots[i] = null; persist();
+      if (active) newStore();
+      closeModal(); showSlots();
+    };
+  });
+  $('s-back').onclick = () => closeSlots(true);
+}
+addEventListener('keydown', e => { if (e.key === 'Escape' && $('slotsPane') && !$('modal').classList.contains('on')) closeSlots(true); });
+function playSlot(i) {
+  closeModal(); closeSlots(false);
+  const s = save.slots[i];
+  if (s) { save.slot = i; save.run = s.run; save.tutDone = s.tutDone; save.tutStep = s.tutStep; persist(); newStore(); }
+  else { save.slot = i; newStore(true); }   // an empty slot: a brand new store (and Sara's tutorial)
+  startRun();
+}
+$('t-start').onclick = showSlots;
 const tRestart = document.createElement('button'); tRestart.id = 't-restart'; tRestart.className = 'pxb red off'; tRestart.textContent = '↻ RESTART RUN';
 $('t-start').after(tRestart);
 tRestart.onclick = () => {
