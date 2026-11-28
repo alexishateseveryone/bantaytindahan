@@ -293,6 +293,13 @@
   #dockTop, #dockBot { align-items:stretch; gap:10px; }
   #dock #restockAll { flex:none; padding:10px 16px; }
   #dock .pxb.sq { width:auto !important; height:auto !important; min-width:52px; padding:0 14px; border-radius:99px; font-size:17px; }
+  /* dock scales with the screen: big on PC / iPad, compact on phones so the receipt gets the room */
+  #dock { font-size:clamp(11px, 3.3vh, 18px); gap:.55em !important; bottom:max(8px, env(safe-area-inset-bottom)); }
+  #dockTop, #dockBot { gap:.55em !important; }
+  #dock #go { font-size:1em !important; padding:.8em 1.2em !important; min-width:0 !important; border-radius:.9em !important; }
+  #dock #restockAll { font-size:1em !important; padding:.7em .9em !important; gap:.3em; border-radius:.9em !important; }
+  #dock #speed { font-size:1em !important; min-width:2.8em !important; padding:0 .8em !important; border-radius:.9em !important; }
+  #dock #restockAll img { width:1.3em; height:1.3em; }
 </style>
 </head>
 <body>
