@@ -8,21 +8,34 @@ const $ = id => document.getElementById(id);
 
 // ---------- full screen on phones and tablets ----------
 (() => {
-  // old browsers without dvh units: size the app to the real visible height (and keep it in sync when the address bar hides)
-  const fit = () => { const app = $('app'); if (app && !(window.CSS && CSS.supports && CSS.supports('height', '100dvh'))) app.style.height = (window.visualViewport ? visualViewport.height : innerHeight) + 'px'; };
-  fit(); window.addEventListener('resize', fit); if (window.visualViewport) visualViewport.addEventListener('resize', fit);
-  // real full screen on the first touch where the browser allows it (Android, iPad). iPhone Safari has no such API: add the game to the Home Screen there.
+  // iPad / iPhone settle their visible area late (address bar, fullscreen, rotation, home indicator), so the canvas is re-measured several times
+  // and whenever the stage itself changes size. (Only visualViewport / the stage are listened to here, never window 'resize', so this can't loop.)
+  let rq = 0;
+  const kick = () => { if (rq) return; rq = requestAnimationFrame(() => { rq = 0; window.dispatchEvent(new Event('resize')); }); };
+  const settle = () => [0, 120, 400, 900, 1500, 2500].forEach(ms => setTimeout(kick, ms));   // same timings the old game used: iOS only reports the real size after the rotation / fullscreen animation
+  if (window.visualViewport) { visualViewport.addEventListener('resize', kick); visualViewport.addEventListener('scroll', kick); }
+  try { new ResizeObserver(kick).observe($('stage')); } catch (e) { /* old browser: the settle() calls still cover it */ }
+  window.addEventListener('orientationchange', settle);
+  window.addEventListener('pageshow', settle);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) settle(); });
+  window.addEventListener('load', settle);
+  // real full screen on a touch where the browser allows it (Android, iPad). iPhone Safari has no such API: add the game to the Home Screen there.
+  // Not needed when the game is already installed (standalone / fullscreen). Keeps trying on later touches if the first one is refused.
   const el = document.documentElement, fsOk = !!(el.requestFullscreen || el.webkitRequestFullscreen);
   const isFs = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
-  if (window.matchMedia && matchMedia('(pointer:coarse)').matches && fsOk) {
-    document.addEventListener('pointerup', () => {
-      if (isFs()) return;
-      try { const p = el.requestFullscreen ? el.requestFullscreen({ navigationUI: 'hide' }) : el.webkitRequestFullscreen(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* not allowed */ }
-    }, { once: true, passive: true });
-    const poke = () => setTimeout(() => window.dispatchEvent(new Event('resize')), 150);
-    document.addEventListener('fullscreenchange', poke); document.addEventListener('webkitfullscreenchange', poke);
+  const installed = (window.matchMedia && (matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches)) || window.navigator.standalone === true;
+  if (window.matchMedia && matchMedia('(pointer:coarse)').matches && fsOk && !installed) {
+    const tryFs = () => {
+      if (isFs()) { document.removeEventListener('pointerup', tryFs); return; }
+      try {
+        const p = el.requestFullscreen ? el.requestFullscreen({ navigationUI: 'hide' }) : el.webkitRequestFullscreen();
+        if (p && p.then) p.then(() => document.removeEventListener('pointerup', tryFs)).catch(() => {});
+        else document.removeEventListener('pointerup', tryFs);
+      } catch (e) { /* not allowed */ }
+    };
+    document.addEventListener('pointerup', tryFs, { passive: true });
+    document.addEventListener('fullscreenchange', settle); document.addEventListener('webkitfullscreenchange', settle);
   }
-  window.addEventListener('orientationchange', () => setTimeout(() => window.dispatchEvent(new Event('resize')), 250));
 })();
 
 // ---------- save (permanent paychecks) ----------
