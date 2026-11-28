@@ -1830,7 +1830,7 @@ export class View {
     }
   }
   glowItem(o, m, time) {
-    const r = o.broken ? 0 : o.maxhp ? o.hp / o.maxhp : 1, lvl = r < 0.3 ? 2 : r < 0.6 ? 1 : 0, g = m.group;
+    const r = o.broken ? 0 : o.maxhp ? o.hp / o.maxhp : 1, noGlow = o.kind !== 'tower' || o.type === 'gum', lvl = noGlow ? 0 : r < 0.3 ? 2 : r < 0.6 ? 1 : 0, g = m.group;   // the damage pulse is only for attacking machines: no shelves, and no bubblegum machine (it keeps just its warning sign)
     if (lvl === 0) {
       if (m.glowing) {
         g.traverse(x => { if (x.userData.origMat) { if (x.material !== x.userData.origMat) x.material.dispose(); x.material = x.userData.origMat; delete x.userData.origMat; } });

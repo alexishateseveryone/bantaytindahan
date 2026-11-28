@@ -1,5 +1,5 @@
 // UI, input, save data, audio and the main loop
-import { Game, peso, pesoN, ITEMS, BUILD_ORDER, SKILLS, META, ROOM_UPGRADE, UNLOCKS, MAX_LEVEL, MAX_STOCK, MAX_ROOM, ROOM_BASE, ROOM_STEP, RENO_COST, STATUE_RANGE, MAX_PERMIT, PERMIT_FOR_RENO, ITEM_LIMITS, UNLOCK_DAY, BOSS_INFO } from './game.js';
+import { Game, peso, pesoN, ITEMS, BUILD_ORDER, SKILLS, META, ROOM_UPGRADE, UNLOCKS, SKILL_UNLOCKS, MAX_LEVEL, MAX_STOCK, MAX_ROOM, ROOM_BASE, ROOM_STEP, RENO_COST, STATUE_RANGE, MAX_PERMIT, PERMIT_FOR_RENO, ITEM_LIMITS, UNLOCK_DAY, BOSS_INFO } from './game.js';
 import { View } from './view.js';
 import { pxText, setHTML, pxEmoji, pxifyStatic } from './ui/icons.js';
 import { loader } from './loadingscreen.js';   // install screen on phones, loading screen otherwise
@@ -226,6 +226,7 @@ function newStore(fresh = false, sandbox = false) {
   running = false; selected = null; pickedTower = null; moving = null; drag = null; preview = null; speed = 1;
   $('speed').textContent = '1x'; setPaused(false);
   $('hud').classList.add('off'); $('info').classList.add('off'); $('dock').classList.add('off'); $('skillSlots').classList.add('off'); closeTray(); setTab('stocks'); $('title').classList.remove('off', 'pop', 'slotsOut'); closeSlots(false); $('stage').classList.add('menu'); $('t-restart').classList.add('off');
+  niQueue.length = 0; newItemEl.classList.remove('on'); newItemThen = null; newItemDay = 0;
   closeModal(); hideTarot(); buildCards(); refresh(); tutStop(); hideBossBanner(true);
 }
 
@@ -319,7 +320,24 @@ const newItemEl = document.createElement('div'); newItemEl.id = 'newItem';
 newItemEl.innerHTML = '<div class="nw"><div class="nc"><div class="nt">NEW ITEM!</div><div class="ns" id="niSub"></div><hr><div class="pic"><img class="ni" alt=""></div><div class="nn"></div><div class="nd"></div><hr><div class="np"><span>Build price</span><b></b></div><button type="button">GOT IT!</button></div></div>';
 document.body.appendChild(newItemEl);
 let newItemThen = null;
-newItemEl.querySelector('button').onclick = () => { newItemEl.classList.remove('on'); const f = newItemThen; newItemThen = null; if (f) f(); };   // GOT IT! -> then the tarot cards come up
+newItemEl.querySelector('button').onclick = () => { newItemEl.classList.remove('on'); const f = newItemThen; newItemThen = null; if (f) f(); drainNewItems(); };   // GOT IT! -> then the tarot cards come up
+// skill items unlocked by a goal: their NEW ITEM card waits here if another card is already open
+const niQueue = [];
+const overlayOpen = () => newItemEl.classList.contains('on') || tarot.classList.contains('on');
+function drainNewItems() { if (niQueue.length && !overlayOpen()) showSkillUnlock(niQueue.shift()); }
+function fillNewItem(id, sub) {
+  const q = s => newItemEl.querySelector(s);
+  q('#niSub').textContent = sub;
+  q('.ni').src = icons[id] || view.makeIcon(id); q('.nn').textContent = ITEMS[id].name; q('.nd').textContent = ITEMS[id].desc;
+  q('.np span').textContent = SKILLS.includes(id) ? 'Use price' : 'Build price';
+  q('.np b').textContent = peso(game.costOf(id));   // the BUILD price, not the unlock price
+  newItemEl.classList.add('on');
+}
+function showSkillUnlock(id) {
+  if (!game || game.sandbox || !ITEMS[id]) return;
+  if (overlayOpen()) { if (!niQueue.includes(id)) niQueue.push(id); return; }
+  newItemThen = null; fillNewItem(id, 'Skill unlocked!');
+}
 let newItemDay = 0;
 // shows the new-item receipt for this day (if there is one) and returns true; `then` runs after GOT IT!
 function showNewItem(day, then) {
@@ -327,11 +345,7 @@ function showNewItem(day, then) {
   const id = Object.keys(UNLOCK_DAY).find(k => UNLOCK_DAY[k] === day && ITEMS[k]);
   if (!id || game.isUnlocked(id)) return false;
   newItemDay = day; newItemThen = then || null;
-  const q = s => newItemEl.querySelector(s);
-  q('#niSub').textContent = 'Day ' + day + ' delivery';
-  q('.ni').src = icons[id] || view.makeIcon(id); q('.nn').textContent = ITEMS[id].name; q('.nd').textContent = ITEMS[id].desc;
-  q('.np b').textContent = peso(game.costOf(id));   // the BUILD price, not the unlock price
-  newItemEl.classList.add('on');
+  fillNewItem(id, 'Day ' + day + ' delivery');
   return true;
 }
 // the morning delivery: the new item comes first, the tarot cards after GOT IT!
@@ -418,7 +432,7 @@ function onEvent(type, d) {
     case 'statueDry': floatText(d.x, d.y, 'Statue empty!', 'bad', 2.4); break;
     case 'refund': sfx.sell(); floatText(d.x, d.y, '+' + peso(d.amount) + ' refund', 'good', 1.8); break;
     case 'slip': sfx.slip(); break;
-    case 'unlock': sfx.unlock(); banner(`🔓 ${ITEMS[d.type].name} unlocked!`); break;
+    case 'unlock': sfx.unlock(); banner(`🔓 ${ITEMS[d.type].name} unlocked!`); if (d.skill) { noteSkill(d.type, true); noteRecent(d.type); showSkillUnlock(d.type); } break;
     case 'buy': sfx.buy(); floatText(d.x, d.y, '🛒', 'sale', 1.5); break;
     case 'pay': sfx.sale(); floatText(d.x, d.y, '+' + peso(d.amount), 'sale', 1.5); moneyShot(d.x, d.y, d.amount); break;
     case 'soldout': floatText(d.x, d.y, 'Sold out!', 'bad', 1.5); break;
@@ -663,7 +677,7 @@ function buildCards() {
 // the STOCKS tab has two sub-tabs: SELLABLES (shelves + turrets) and SKILL ITEMS (mop, shaken cola, cigarettes)
 let subTab = 'sell';
 // items whose unlock day has not been reached yet are NOT shown on the receipt card at all
-const visibleIds = () => BUILD_ORDER.filter(id => !game || game.isUnlocked(id) || game.canUnlock(id));
+const visibleIds = () => BUILD_ORDER.filter(id => !game || SKILLS.includes(id) || game.isUnlocked(id) || game.canUnlock(id));   // skills are always listed (with their goal)
 let visKey = '';
 function applySub() {
   syncTabs();
@@ -685,7 +699,7 @@ function syncTabs() {
 let detailKey = '';
 function renderDetail() {
   const id = focusId, def = ITEMS[id]; if (!def || !game) return;
-  const locked = !game.isUnlocked(id), cost = game.costOf(id), uc = UNLOCKS[id], reach = !locked || game.canUnlock(id), ud = UNLOCK_DAY[id] || 1;
+  const locked = !game.isUnlocked(id), cost = game.costOf(id), uc = UNLOCKS[id], reach = !locked || game.canUnlock(id), ud = UNLOCK_DAY[id] || 1, sk = SKILL_UNLOCKS[id];
   const key = id + '|' + locked; if (key !== detailKey) {
     detailKey = key;
     $('dImg').src = icons[id] || ''; $('dNm').textContent = def.name; $('dDs').textContent = def.desc; $('dDs').scrollTop = 0;
@@ -694,10 +708,10 @@ function renderDetail() {
   const act = $('dAct');
   act.className = 'pxb ' + (locked ? 'gold' : selected === id ? 'green' : '');
   const lm = game.limitOf(id), cn = game.countOf(id), full = !locked && lm !== Infinity && cn >= lm;
-  act.disabled = locked ? (!reach || game.cash < uc) : (cost > game.cash || (full && selected !== id));
-  const txt = locked ? (reach ? `Unlock  ${peso(uc)}` : `🔒 Day ${ud}`) : selected === id ? 'Selected ✓' : full ? 'Limit reached' : `Build  ${peso(cost)}`;
+  act.disabled = locked ? (!!sk || !reach || game.cash < uc) : (cost > game.cash || (full && selected !== id));
+  const txt = locked ? (sk ? '🔒 Locked' : reach ? `Unlock  ${peso(uc)}` : `🔒 Day ${ud}`) : selected === id ? 'Selected ✓' : full ? 'Limit reached' : `Build  ${peso(cost)}`;
   if (act.dataset.t !== txt) { act.dataset.t = txt; act.textContent = txt; }
-  const info = locked ? `<b>${def.name}</b>${reach ? 'Locked · buy it to use it' : 'Unlocks on day ' + ud}` : `<b>${def.name}</b>${selected === id ? 'Tap the store to place it' : 'Cost ' + peso(cost)}${lm === Infinity ? '' : ' · Placed ' + cn + '/' + lm}`;
+  const info = locked ? `<b>${def.name}</b>${sk ? sk.text + ' (' + sk.prog(game).join('/') + ')' : reach ? 'Locked · buy it to use it' : 'Unlocks on day ' + ud}` : `<b>${def.name}</b>${selected === id ? 'Tap the store to place it' : 'Cost ' + peso(cost)}${lm === Infinity ? '' : ' · Placed ' + cn + '/' + lm}`;
   if ($('gInfo').dataset.k !== info) { $('gInfo').dataset.k = info; $('gInfo').innerHTML = info; }
   renderRecent();
 }
@@ -720,7 +734,7 @@ function renderRecent() {
 }
 $('dAct').onclick = () => {
   const id = focusId;
-  if (!game.isUnlocked(id)) { if (!game.canUnlock(id)) { sfx.bad(); banner(`🔒 ${ITEMS[id].name} unlocks on day ${UNLOCK_DAY[id]}`); return; } if (!game.unlock(id)) { sfx.bad(); banner(`Need ${peso(UNLOCKS[id])} to unlock ${ITEMS[id].name}`); } else { noteSkill(id, true); noteRecent(id); } return; }   // unlocking costs store profit
+  if (!game.isUnlocked(id)) { if (SKILL_UNLOCKS[id]) { sfx.bad(); banner(`🔒 ${SKILL_UNLOCKS[id].text} (${SKILL_UNLOCKS[id].prog(game).join('/')})`); return; } if (!game.canUnlock(id)) { sfx.bad(); banner(`🔒 ${ITEMS[id].name} unlocks on day ${UNLOCK_DAY[id]}`); return; } if (!game.unlock(id)) { sfx.bad(); banner(`Need ${peso(UNLOCKS[id])} to unlock ${ITEMS[id].name}`); } else { noteSkill(id, true); noteRecent(id); } return; }   // unlocking costs store profit
   selected = selected === id ? null : id; if (selected) noteSkill(id, true); pickedTower = null; moving = null; preview = null; view.setCursor(null); closeTray(); refresh();
 };
 $('subSell').onclick = () => { subTab = 'sell'; setTab('stocks'); applySub(); };
@@ -856,7 +870,7 @@ function refresh() {
     const locked = !game.isUnlocked(id), cost = game.costOf(id);
     c.classList.toggle('lock', locked); c.classList.toggle('sel', !locked && selected === id); c.classList.toggle('foc', focusId === id);
     c.querySelector('[data-k]').textContent = locked ? '' : av.indexOf(id) + 1;
-    c.querySelector('[data-pr]').textContent = locked && !game.canUnlock(id) ? 'Day ' + UNLOCK_DAY[id] : peso(locked ? UNLOCKS[id] : cost);
+    c.querySelector('[data-pr]').textContent = locked && SKILL_UNLOCKS[id] ? '🔒' : locked && !game.canUnlock(id) ? 'Day ' + UNLOCK_DAY[id] : peso(locked ? UNLOCKS[id] : cost);
     const lm = game.limitOf(id), ct = c.querySelector('[data-ct]'), cn = game.countOf(id);
     ct.textContent = locked || lm === Infinity ? '' : cn + '/' + lm; ct.classList.toggle('full', cn >= lm);
   }
@@ -1253,7 +1267,7 @@ tarotCss.textContent = `
 @media (max-height:520px){#tarot .tc{--w:min(150px,25vh)}#tarot .tt{gap:6px}}`;
 document.head.appendChild(tarotCss);
 const tarot = document.createElement('div'); tarot.id = 'tarot'; document.body.appendChild(tarot);
-const hideTarot = () => tarot.classList.remove('on');
+const hideTarot = () => { tarot.classList.remove('on'); setTimeout(drainNewItems, 0); };
 let tarotTimers = [];
 function showRestock() {
   if (!game || game.phase !== 'restock') return;
@@ -1648,7 +1662,7 @@ function frame(now) {
   musicTick(dt); bossBannerTick();
   if (game) {
     if (game.sandbox) { game.cash = 999999; game.lives = 999; }   // dev sandbox: unlimited money, can't lose
-    const was = game.phase; game.update(paused || tutHold() ? 0 : dt * speed);
+    const was = game.phase; game.update(paused || tutHold() || overlayOpen() ? 0 : dt * speed);   // the game freezes while a NEW ITEM card or the tarot cards are open
     if (game.phase === 'wave' || game.phase === 'morning' || game.phase === 'evening' || was !== game.phase) { if (Math.floor(clock * 4) !== Math.floor((clock - dt) * 4)) refresh(); }
   }
   view.render(dt, clock);

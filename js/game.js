@@ -19,8 +19,8 @@ export const HOURS = ['10 PM', '11 PM', '12 AM', '1 AM', '2 AM', '3 AM', '4 AM',
 export const SUB_GAP = 6;         // seconds of calm between the waves of one night
 export const NIGHT_DELAY = 3;      // seconds between the store closing and the night starting by itself
 export const DAY_LEN = 18;        // seconds during which new customers keep arriving on day 1
-export const dayLenFor = n => DAY_LEN + 1 * Math.floor(n / 2);   // the buying time grows by only 1 s every 2 days (nerfed from 4 s)
-export const CUSTOMER_PAY = 0.55;   // every customer purchase pays this share of the old price (money nerf)
+export const dayLenFor = n => Math.round((DAY_LEN + 1 * Math.floor(n / 2)) * 1.05 * 10) / 10;   // the buying time grows by 1 s every 2 days, and everything is 5% longer than before
+export const CUSTOMER_PAY = 0.5775;   // every customer purchase pays this share of the old price (+5% income buff)
 export const ROUTES = 6;          // how many different routes burglars spread over
 export const SHELF_COST = 400;    // path weight of a shelf: burglars only push through when nothing else is open
 export const SHELF_HP = 80;
@@ -145,20 +145,32 @@ export const SKILLS = ['mop', 'shakecola', 'cigs', 'icecubes', 'bananas', 'burge
 // Day one: only the shelf, the vending machine and the bubble gum machine. Everything else has to be reached (a day) AND bought (store profit).
 export const BASE_UNLOCKS = ['shelf', 'cans', 'gum'];
 // Unlocking is paid with the run's own cash (store profit), from the build menu. Each run starts with only the base items.
-export const UNLOCKS = { fence: 300, fruit: 400, sauce: 500, mop: 500, soda: 600, steel: 800, shakecola: 900, hotdog: 1000, cola: 1000, water: 1200, cereal: 1200, tissue: 1500, donut: 1800, micro: 1800, cigs: 2000, icecubes: 1300, bananas: 1700, burger: 2200, goldapple: 2800, atm: 2500, fridge: 2500, statue: 3000, coffee: 1900, noodle: 1400, eggtray: 1300 };
-// The first day each item can be bought, ordered by how strong it is for its price (cheap helpers first, the big machines last):
-// 2 items one day, 1 item the next, and so on. Before that day it is locked and cannot be bought, after it you still have to pay its price.
+export const UNLOCKS = { hotdog: 35, sauce: 40, soda: 45, micro: 80, cola: 55, water: 60, fence: 25, steel: 70, fruit: 30, fridge: 90, cereal: 70, eggtray: 80, tissue: 85, noodle: 90, donut: 100, coffee: 110, atm: 130, statue: 150 };   // much cheaper than before. Skill items are NOT here: they unlock by goals (SKILL_UNLOCKS)
+// The first day each item can be bought. Each one arrives with the robber that needs it (robbers appear: runner day 3, jacket 4, vest 5, molotov 6, bruiser 7, motor bandit 8, bat 9).
 export const UNLOCK_DAY = {   // exactly ONE new item per day
-  fence: 2, fruit: 3, sauce: 4, mop: 5, soda: 6, steel: 7, hotdog: 8, shakecola: 9, cola: 10, water: 11, cereal: 12, eggtray: 13, tissue: 14, noodle: 15, icecubes: 16, donut: 17, micro: 18, coffee: 19, cigs: 20, bananas: 21, atm: 22, fridge: 23, burger: 24, statue: 25, goldapple: 26,
+  hotdog: 2, sauce: 3, soda: 4, micro: 5, cola: 6, water: 7, fence: 8, steel: 9, fruit: 10, fridge: 11, cereal: 12, eggtray: 13, tissue: 14, noodle: 15, donut: 16, coffee: 17, atm: 18, statue: 19,
 };
-// the build menu lists everything in the order it unlocks: day 1 items first, then day 2, day 3 ... (same-day items keep the order above)
-const dayKey = id => (UNLOCK_DAY[id] ?? 1) * 100 + (Object.keys(UNLOCK_DAY).indexOf(id) + 1);
+// Skill items unlock by doing things, never by money or day. done() is checked all the time; prog() is [have, need] for the menu.
+const maxed = (g, ...ids) => ids.every(t => g.countOf(t) >= g.limitOf(t));
+export const SKILL_UNLOCKS = {
+  mop:       { text: 'Finish day 10', done: g => g.wave >= 10, prog: g => [Math.min(g.wave, 10), 10] },
+  shakecola: { text: 'Have the max Soda Fizz and Cola Dispensers in your store', done: g => maxed(g, 'soda', 'cola'),
+               prog: g => [Math.min(g.countOf('soda'), g.limitOf('soda')) + Math.min(g.countOf('cola'), g.limitOf('cola')), g.limitOf('soda') + g.limitOf('cola')] },
+  icecubes:  { text: 'Put a Fridge in your store', done: g => g.countOf('fridge') >= 1, prog: g => [Math.min(g.countOf('fridge'), 1), 1] },
+  cigs:      { text: 'Defeat 150 robbers', done: g => g.kills >= 150, prog: g => [Math.min(g.kills, 150), 150] },
+  bananas:   { text: 'Put 10 Fruit Basket Shelves in your store', done: g => g.countOf('fruit') >= 10, prog: g => [Math.min(g.countOf('fruit'), 10), 10] },
+  burger:    { text: 'Have 5 Hot Dog Launchers and 5 Hot Sauce Lobbers in your store', done: g => g.countOf('hotdog') >= 5 && g.countOf('sauce') >= 5,
+               prog: g => [Math.min(g.countOf('hotdog'), 5) + Math.min(g.countOf('sauce'), 5), 10] },
+  goldapple: { text: 'Put 20 Fruit Basket Shelves in your store', done: g => g.countOf('fruit') >= 20, prog: g => [Math.min(g.countOf('fruit'), 20), 20] },
+};
+// the build menu lists everything in the order it unlocks: day 1 items first, then day 2, day 3 ... then the skill items
+const dayKey = id => SKILLS.includes(id) ? 10000 + SKILLS.indexOf(id) : (UNLOCK_DAY[id] ?? 1) * 100 + (Object.keys(UNLOCK_DAY).indexOf(id) + 1);
 export const BUILD_ORDER = [...SELLABLES, ...SKILLS].sort((x, y) => dayKey(x) - dayKey(y));
 export const MAX_ROOM = 4;
 export const MAX_PERMIT = 12;
 export const PERMIT_FOR_RENO = [3, 6, 9, 12];   // store permit level you need for the 1st / 2nd / 3rd / 4th renovation
 // how many of each thing you may place before the first renovation; every renovation raises each limit (by half the base, at least 1)
-export const ITEM_LIMITS = { shelf: 20, fence: 20, fruit: 8, steel: 4, statue: 1, cans: 6, gum: 4, sauce: 4, soda: 4, cola: 3, hotdog: 3, micro: 2, atm: 2, fridge: 2, mop: 8, water: 3, donut: 3, cereal: 3, tissue: 3, coffee: 2, noodle: 3, eggtray: 3 };
+export const ITEM_LIMITS = { shelf: 20, fence: 20, fruit: 20, steel: 4, statue: 1, cans: 6, gum: 4, sauce: 5, soda: 4, cola: 3, hotdog: 5, micro: 2, atm: 2, fridge: 2, mop: 8, water: 3, donut: 3, cereal: 3, tissue: 3, coffee: 2, noodle: 3, eggtray: 3 };
 export const limitGrow = base => Math.max(1, Math.round(base / 2));
 export const RENO_COST = [500, 1200, 2200, 3600];   // cash price of the next room level (RENOVATE tab)
 export const MAX_LEVEL = 3;
@@ -286,7 +298,7 @@ export class Game {
       dmg: { cans: 1, sauce: 1, soda: 1, micro: 1, hotdog: 1, fridge: 1, gum: 1, cola: 1, atm: 1, water: 1, donut: 1, cereal: 1, tissue: 1, coffee: 1, noodle: 1, eggtray: 1 }, rate: { cans: 1, sauce: 1, soda: 1, micro: 1, hotdog: 1, fridge: 1, gum: 1, cola: 1, atm: 1, water: 1, donut: 1, cereal: 1, tissue: 1, coffee: 1, noodle: 1, eggtray: 1 },
       waterExtra: 0, waterR: 1, donutExtra: 0, boxLife: 0, boxHp: 1,
       gumExtra: 0, push: 1, soak: 1, swirlTime: 1, swirlDmg: 1, fruitDmg: 1, statueRate: 1,
-      bounce: 0, ice: 0, rateAll: 1, range: 1, cost: 1 - 0.04 * (meta.disc || 0), cash: 1.3, burn: 1, splash: 1, slow: 0, crit: 0,
+      bounce: 0, ice: 0, rateAll: 1, range: 1, cost: 1 - 0.04 * (meta.disc || 0), cash: 1.365, burn: 1, splash: 1, slow: 0, crit: 0,
       mopUses: 0, mopStun: 0, globalDmg: 1 + 0.06 * (meta.dmg || 0), shelfPay: 1, crowd: 1, shelfHp: 1, wear: 1, towerHp: 1,
     };
     // blocked: 0 free, 1 permanent wall/prop, 2 tower, 3 shelf (breakable by burglars)
@@ -408,7 +420,14 @@ export class Game {
   isUnlocked(type) { return this.unlocked.has(type); }
   unlockCost(type) { return UNLOCKS[type] ?? 0; }
   unlockDay(type) { return UNLOCK_DAY[type] ?? 1; }          // the first day it can be bought
-  canUnlock(type) { return this.wave + 1 >= this.unlockDay(type); }   // has this day been reached yet?
+  canUnlock(type) { return !SKILLS.includes(type) && this.wave + 1 >= this.unlockDay(type); }   // has this day been reached yet? (skills can never be bought)
+  // skill items unlock the moment their goal is reached
+  checkSkillUnlocks() {
+    for (const id of SKILLS) {
+      if (this.unlocked.has(id) || !SKILL_UNLOCKS[id].done(this)) continue;
+      this.unlocked.add(id); this.emit('unlock', { type: id, skill: true });
+    }
+  }
   unlock(type) {
     if (this.isUnlocked(type) || UNLOCKS[type] === undefined || !this.canUnlock(type)) return false;
     const c = this.unlockCost(type); if (c > this.cash) return false;
@@ -545,7 +564,7 @@ export class Game {
 
   canPlace(type, x, y, mv) {   // mv = checking a MOVE of an item you already own: no unlock / limit / cost checks
     const def = ITEMS[type];
-    if (!mv && !this.isUnlocked(type)) return { ok: false, reason: 'Locked: buy it in the shop' };
+    if (!mv && !this.isUnlocked(type)) return { ok: false, reason: SKILLS.includes(type) ? 'Locked: finish its goal first' : 'Locked: buy it in the shop' };
     if (!mv && this.countOf(type) >= this.limitOf(type)) return { ok: false, reason: `Limit reached (${this.limitOf(type)}): renovate for more` };
     if (def.foot > 1) return this.canPlaceBig(type, x, y, mv);
     if (x < 0 || y < 0 || x >= COLS || y >= ROWS || this.reserved(x, y)) return { ok: false, reason: 'Not buildable here' };
@@ -990,13 +1009,12 @@ export class Game {
     const pool = ['sneak']; if (n >= 3) pool.push('runner'); if (n >= 5) pool.push('vest'); if (n >= 7) pool.push('bruiser');
     if (n >= 4) pool.push('jacket'); if (n >= 6) pool.push('molotov'); if (n >= 8) pool.push('moto'); if (n >= 9) pool.push('bat');
     // endless: grows fast early, then settles into steady growth (enemy HP keeps scaling per night)
-    // the amount does NOT grow day by day: it is 6 burglars a night, doubled every 10 days (12 from day 10, 24 from day 20, 48 from day 30 ...)
-    const count = Math.max(1, Math.round(6 * Math.pow(2, this.tierOf(n)) * scale));
+    const count = Math.max(1, Math.round(6 * (1 + 0.08 * (n - 1) + 0.0015 * (n - 1) * (n - 1)) * scale));   // grows a little every day (day 10: 11, day 20: 18, day 30: 27) instead of doubling
     const list = [];
     for (let i = 0; i < count; i++) list.push(pool[Math.floor(this.rng() * pool.length)]);
     const bk = boss ? bossForDay(n) : null;
     if (bk) list.splice(Math.floor(list.length * 0.55), 0, bk);   // a boss every 10th night, in the last wave: Bomb Expert, Gunslinger, Riding in Tandem, Door Robber
-    const gap = Math.max(0.6, 1.25 - n * 0.05);
+    const gap = Math.max(0.8, 1.3 - n * 0.02);
     let t = 0; const q = [];
     const sp = this.activeSpawns;
     list.forEach((type, i) => {
@@ -1017,20 +1035,24 @@ export class Game {
     return true;
   }
   // with several waves in a night each one is smaller than a full night; the last one is the biggest (and brings the boss)
-  subScale(k) { return this.subWaves === 1 ? 1 : 0.5 + 0.15 * (k - 1); }
+  subScale(k) {   // the waves of one night share the night's burglars (the last one is the biggest), so day 10 is not a sudden jump
+    const S = this.subWaves; if (S === 1) return 1;
+    const w = j => 0.5 + 0.15 * (j - 1); let sum = 0; for (let j = 1; j <= S; j++) sum += w(j);
+    return w(k) / sum * (1 + 0.12 * (S - 1));
+  }
 
   // at = optional exact start (motor riders jumping off the bike): { x, y, tx, ty, hop }
   spawnEnemy(type, s, at) {
     const def = ENEMIES[type], n = this.wave + 1, out = (type === 'moto' || type === 'motoduo') ? 5.5 : 0.9;
     const tier = this.tierOf(n);
     const st0 = at ? null : (out > 2 ? { x: s.x + s.ox * out, y: s.y + s.oy * out } : this.sidewalkPoint(s, 2.2));   // burglars come along the sidewalk (bikes ride in from the street)
-    const hpMul = (def.boss ? 1 + 0.12 * (n - 1) + 0.002 * (n - 1) * (n - 1) : 1 + 0.26 * (n - 1) + 0.006 * (n - 1) * (n - 1)) * (def.boss ? 1 + 0.2 * tier : 1 + 0.45 * tier);   // tougher every night (+ a little more each night on top), +45% HP per tier
+    const hpMul = (def.boss ? 1 + 0.07 * (n - 1) + 0.0015 * (n - 1) * (n - 1) : 1 + 0.10 * (n - 1) + 0.002 * (n - 1) * (n - 1)) * (def.boss ? 1 + 0.12 * tier : 1 + 0.15 * tier);   // slow pace: day 10 burglars have ~2.4x HP (was 5.5x), +15% HP per tier
     const e = {
       id: this.nextId++, type, x: at ? at.x : st0.x, y: at ? at.y : st0.y, hp: def.hp * hpMul, maxhp: def.hp * hpMul,
-      speed: def.speed * 0.88 * Math.min(1.5, 1 + 0.06 * tier), push: def.push * (1 + 0.2 * tier), pushT: 0, armor: def.boss ? Math.min(def.armor + 1, def.armor + Math.floor((tier + 1) / 2)) : def.armor + Math.floor((tier + 1) / 2), steal: def.steal, bounty: Math.round(def.bounty * (1 + 0.1 * tier)), tier,   // faster, shove harder, tougher armor, a bit more bounty
+      speed: def.speed * 0.88 * Math.min(1.3, 1 + 0.03 * tier), push: def.push * (1 + 0.1 * tier), pushT: 0, armor: def.boss ? Math.min(def.armor + 1, def.armor + Math.floor(tier / 2)) : def.armor + Math.floor(tier / 2), steal: def.steal, bounty: Math.round(def.bounty * (1 + 0.1 * tier)), tier,   // faster, shove harder, tougher armor, a bit more bounty
       tx: at ? at.tx : s.x, ty: at ? at.ty : s.y, noSlow: !!def.noSlow, burn: 0, burnDps: 0, soak: 0, soakDps: 0, kvx: 0, kvy: 0, slow: 0, slowF: 0, stun: 0, slipped: new Set(), iced: new Set(), angle: 0,
       jitter: (this.rng() - 0.5) * 0.0, route: Math.floor(Math.random() * ROUTES),
-      flee: 0, wind: 0, pending: null, dash: null, abCd: def.cd * (0.5 + this.rng() * 0.8) * (1.15 - 0.03 * n), dashMul: def.dashMul || 1,
+      flee: 0, wind: 0, pending: null, dash: null, abCd: def.cd * (0.5 + this.rng() * 0.8) * Math.max(0.5, 1.15 - 0.015 * n), dashMul: def.dashMul || 1,
     };
     e.boss = !!def.boss; e.bk = def.bk || null;
     if (st0) e.apr = [this.sidewalkPoint(s, 2.2, 0)];   // sidewalk first, then in through the door
@@ -2044,7 +2066,7 @@ export class Game {
     // bombers are rare early on and get more common every night (none before night 4)
     const bombMul = n < 4 ? 0 : Math.min(2.2, 0.2 + (n - 4) * 0.22);
     const wb = (def.abil.bomb || 0) * bombMul, wd = def.abil.dash || 0, wm = def.abil.molo || 0, ws = def.abil.smash || 0, tot = wb + wd + wm + ws;
-    e.abCd = def.cd * (1.15 - 0.03 * n) * (0.7 + this.rng() * 0.7) * Math.pow(0.92, this.tierOf(n));   // tricks come 8% sooner per tier
+    e.abCd = def.cd * Math.max(0.5, 1.15 - 0.015 * n) * (0.7 + this.rng() * 0.7) * Math.pow(0.92, this.tierOf(n));   // tricks come 8% sooner per tier
     if (e.type === 'bombexpert' && this.rng() < 0.4) {   // the big move: 5 bombs at random items
       e.abCd *= 1.5; e.pending = { kind: 'barrage', n: 5 }; e.wind = 0.9;
       this.emit('windup', { enemy: e, kind: 'barrage' }); return true;
@@ -2471,6 +2493,7 @@ export class Game {
     this.stepWalkers(dt);
     if (this.phase === 'lost') return;
     this.time += dt;
+    this._skT = (this._skT || 0) - dt; if (this._skT <= 0) { this._skT = 0.3; this.checkSkillUnlocks(); }
     if (this.phase === 'morning') {
       this.dayTime += dt;
       while (this.dayQueue.length && this.dayQueue[0].t <= this.dayTime) this.spawnCustomer(this.dayQueue.shift().spawn);
@@ -2594,7 +2617,7 @@ export class Game {
     if (this.phase === 'wave' && !this.spawnQueue.length && !this.enemies.length && this.gapT <= 0) {
       if (this.sandbox) { this.phase = 'prep'; this.emit('newDay', { n: this.wave + 1 }); return; }   // dev sandbox: the night just ends, the day counter stays put
       this.wave++;
-      const bonus = 20 + this.wave * 4;
+      const bonus = Math.round((20 + this.wave * 4) * 1.05);
       this.cash += bonus;
       this.emit('waveClear', { bonus });
       this.phase = 'restock'; this.rollChoices(); this.emit('restock', {});
