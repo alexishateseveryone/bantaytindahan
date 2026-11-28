@@ -6,6 +6,25 @@ import { loader } from './loadingscreen.js';   // install screen on phones, load
 
 const $ = id => document.getElementById(id);
 
+// ---------- full screen on phones and tablets ----------
+(() => {
+  // old browsers without dvh units: size the app to the real visible height (and keep it in sync when the address bar hides)
+  const fit = () => { const app = $('app'); if (app && !(window.CSS && CSS.supports && CSS.supports('height', '100dvh'))) app.style.height = (window.visualViewport ? visualViewport.height : innerHeight) + 'px'; };
+  fit(); window.addEventListener('resize', fit); if (window.visualViewport) visualViewport.addEventListener('resize', fit);
+  // real full screen on the first touch where the browser allows it (Android, iPad). iPhone Safari has no such API: add the game to the Home Screen there.
+  const el = document.documentElement, fsOk = !!(el.requestFullscreen || el.webkitRequestFullscreen);
+  const isFs = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+  if (window.matchMedia && matchMedia('(pointer:coarse)').matches && fsOk) {
+    document.addEventListener('pointerup', () => {
+      if (isFs()) return;
+      try { const p = el.requestFullscreen ? el.requestFullscreen({ navigationUI: 'hide' }) : el.webkitRequestFullscreen(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* not allowed */ }
+    }, { once: true, passive: true });
+    const poke = () => setTimeout(() => window.dispatchEvent(new Event('resize')), 150);
+    document.addEventListener('fullscreenchange', poke); document.addEventListener('webkitfullscreenchange', poke);
+  }
+  window.addEventListener('orientationchange', () => setTimeout(() => window.dispatchEvent(new Event('resize')), 250));
+})();
+
 // ---------- save (permanent paychecks) ----------
 const KEY = 'shelf-defense-closing-time-v1';
 let save = { bank: 0, levels: {}, best: 0, shifts: 0, run: null };   // run = the current store, saved between days
