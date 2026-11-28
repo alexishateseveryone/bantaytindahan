@@ -1,10 +1,10 @@
 {
-  "name": "Tindang Sara",
-  "short_name": "Tindang Sara : Money Defense!",
+ "name": "Tindang Sara : Money Defense!",
+  "short_name": "Tindang Sara : MD",
   "description": "Shelf Defense: Closing Time. Stock the shelves by day, defend the till by night.",
-  "start_url": "./index-b.html",
+  "start_url": "./",
   "scope": "./",
-  "id": "./test-b",
+  "id": "./",
   "display": "standalone",
   "display_override": [
     "standalone"
