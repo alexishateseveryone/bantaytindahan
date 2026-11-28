@@ -600,7 +600,7 @@ export class Game {
     if (t.x === x && t.y === y) return { ok: false, reason: 'Already here' };
     const own = t.kind === 'trap' ? [] : this.cellsOf(t), saved = own.map(([cx, cy]) => this.blocked[idx(cx, cy)]);
     own.forEach(([cx, cy]) => { this.blocked[idx(cx, cy)] = 0; });   // its own cells are free while we test the new spot
-    const r = this.canPlace(t.type, x, y, true);
+    const r = this.canPlace(t.type || 'shelf', x, y, true);
     own.forEach(([cx, cy], i) => { this.blocked[idx(cx, cy)] = saved[i]; });
     return r;
   }
@@ -839,9 +839,19 @@ export class Game {
     return out;
   }
 
+  // a spot on the sidewalk outside door s: 'out' tiles from the wall, 'off' tiles along it (random side when off is omitted)
+  sidewalkPoint(s, out, off) {
+    const horiz = s.side === 'bottom', LEN = horiz ? COLS : ROWS;
+    if (off === undefined) off = (this.rng() < 0.5 ? -1 : 1) * (2.5 + this.rng() * 2);
+    let along = (horiz ? s.x : s.y) + off;
+    along = Math.max(-0.6, Math.min(LEN - 0.4, along));
+    return horiz ? { x: along, y: s.y + s.oy * out } : { x: s.x + s.ox * out, y: along };
+  }
+
   spawnCustomer(s) {
+    const sw = this.sidewalkPoint(s, 2.2);
     const c = {
-      id: this.nextId++, kind: 'customer', x: s.x + s.ox * 0.9, y: s.y + s.oy * 0.9, tx: s.x, ty: s.y, state: 'enter', door: s,
+      id: this.nextId++, kind: 'customer', x: sw.x, y: sw.y, tx: s.x, ty: s.y, state: 'enter', door: s,
       stops: this.pickStops(), si: 0, cart: 0, bags: [], path: [], next: '', timer: 0, slot: null, age: 0, paid: false,
       angle: Math.PI / 2, speed: 2.9 + this.rng() * 0.7, look: Math.floor(this.rng() * 100000),
     };
@@ -915,7 +925,11 @@ export class Game {
     c.age += dt;
     if (c.age > 90) { c.dead = true; return; }   // never get stuck forever
     switch (c.state) {
-      case 'enter': if (this.stepMove(c, dt, c.door.x, c.door.y)) c.state = 'plan'; break;
+      case 'enter': {   // walk along the sidewalk to the spot in front of the door, then straight in (never cut across the wall)
+        if (!c.apr) c.apr = [this.sidewalkPoint(c.door, 2.2, 0)];
+        if (c.apr.length) { if (this.stepMove(c, dt, c.apr[0].x, c.apr[0].y)) c.apr.shift(); break; }
+        if (this.stepMove(c, dt, c.door.x, c.door.y)) c.state = 'plan'; break;
+      }
       case 'plan': this.planCustomer(c); break;
       case 'walk': {
         if (!c.path.length) { this.arriveCustomer(c); break; }
@@ -939,7 +953,10 @@ export class Game {
           c.cart = 0; c.paid = true; c.slot = null; c.state = 'plan';
         }
         break;
-      case 'exit': if (this.stepMove(c, dt, c.door.x + c.door.ox * 1.6, c.door.y + c.door.oy * 1.6)) c.dead = true; break;
+      case 'exit': {   // out the door, then off along the sidewalk
+        if (!c.exitPts) c.exitPts = [this.sidewalkPoint(c.door, 2.2, 0), this.sidewalkPoint(c.door, 2.2, (this.rng() < 0.5 ? -1 : 1) * 4.5)];
+        if (this.stepMove(c, dt, c.exitPts[0].x, c.exitPts[0].y)) { c.exitPts.shift(); if (!c.exitPts.length) c.dead = true; } break;
+      }
     }
   }
 
@@ -986,15 +1003,17 @@ export class Game {
   spawnEnemy(type, s, at) {
     const def = ENEMIES[type], n = this.wave + 1, out = (type === 'moto' || type === 'motoduo') ? 5.5 : 0.9;
     const tier = this.tierOf(n);
+    const st0 = at ? null : (out > 2 ? { x: s.x + s.ox * out, y: s.y + s.oy * out } : this.sidewalkPoint(s, 2.2));   // burglars come along the sidewalk (bikes ride in from the street)
     const hpMul = (def.boss ? 1 + 0.18 * (n - 1) : 1 + 0.15 * (n - 1)) * (1 + 0.35 * tier);   // +35% HP per tier
     const e = {
-      id: this.nextId++, type, x: at ? at.x : s.x + s.ox * out, y: at ? at.y : s.y + s.oy * out, hp: def.hp * hpMul, maxhp: def.hp * hpMul,
+      id: this.nextId++, type, x: at ? at.x : st0.x, y: at ? at.y : st0.y, hp: def.hp * hpMul, maxhp: def.hp * hpMul,
       speed: def.speed * 0.88 * Math.min(1.5, 1 + 0.06 * tier), push: def.push * (1 + 0.2 * tier), pushT: 0, armor: def.armor + Math.floor((tier + 1) / 2), steal: def.steal, bounty: Math.round(def.bounty * (1 + 0.1 * tier)), tier,   // faster, shove harder, tougher armor, a bit more bounty
       tx: at ? at.tx : s.x, ty: at ? at.ty : s.y, noSlow: !!def.noSlow, burn: 0, burnDps: 0, soak: 0, soakDps: 0, kvx: 0, kvy: 0, slow: 0, slowF: 0, stun: 0, slipped: new Set(), iced: new Set(), angle: 0,
       jitter: (this.rng() - 0.5) * 0.0, route: Math.floor(Math.random() * ROUTES),
       flee: 0, wind: 0, pending: null, dash: null, abCd: def.cd * (0.5 + this.rng() * 0.8) * (1.15 - 0.03 * n), dashMul: def.dashMul || 1,
     };
     e.boss = !!def.boss; e.bk = def.bk || null;
+    if (st0) e.apr = [this.sidewalkPoint(s, 2.2, 0)];   // sidewalk first, then in through the door
     if (def.shield) { e.shield = e.shieldMax = e.maxhp * def.shield; }   // Door Robber: the door soaks shots until it breaks
     if (e.bk === 'gunslinger') { e.sumCd = 2.5; e.gunFor = null; e.gunT = 0; }
     if (e.bk === 'gunner') e.gunCd = 0.4 + this.rng() * 0.6;
@@ -2160,6 +2179,11 @@ export class Game {
     const wasPush = e.pushing; e.pushing = null; if (!wasPush) e.gunFor = null;
     const fleeing = e.flee > 0;
     let move = e.speed * (e.slow > 0 ? 1 - e.slowF : 1) * (fleeing ? 1.45 : 1) * dt;
+    if (e.apr && e.apr.length) {   // still on the sidewalk: walk to the spot in front of the door, then straight in
+      const a = e.apr[0], ax = a.x - e.x, ay = a.y - e.y, ad = Math.hypot(ax, ay);
+      if (ad > move) { e.x += ax / ad * move; e.y += ay / ad * move; e.angle = Math.atan2(ax, ay); return; }
+      e.x = a.x; e.y = a.y; e.apr.shift(); return;
+    }
     let guard = 0;
     while (move > 0 && guard++ < 4) {
       const dx = e.tx - e.x, dy = e.ty - e.y, d = Math.hypot(dx, dy);
