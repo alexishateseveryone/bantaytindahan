@@ -54,6 +54,8 @@ export const STATUE_RANGE = 5;      // the soda statue repairs everything within
 export const STATUE_HEAL = 0.10;    // share of max HP it restores per second to each damaged item
 export const STATUE_UNIT_HP = 150;
 // ---------- Bosses: one every 10th day, in the LAST wave of the night. They rotate: day 10, 20, 30, 40, then it starts over ----------
+// Bosses have 2 phases: below half HP they ENRAGE (no banner): they walk faster and everything they do (tricks, wind-ups, shots, summons) comes faster
+export const RAGE_HP = 0.5, RAGE_SPEED = 1.3, RAGE_RATE = 1.6;
 export const BOSS_ORDER = ['bombexpert', 'gunslinger', 'motoduo', 'doorrobber'];
 export const BOSS_INFO = {
   bombexpert: { title: 'BOMB EXPERT', sub: 'Lobs bombs, and sometimes rains 5 at once', icon: '💣' },
@@ -1006,15 +1008,17 @@ export class Game {
   tierOf(n) { return Math.floor(n / 10); }
   get tier() { return this.tierOf(this.wave + 1); }
   makeWave(n, scale = 1, boss = true) {
-    const pool = ['sneak']; if (n >= 3) pool.push('runner'); if (n >= 5) pool.push('vest'); if (n >= 7) pool.push('bruiser');
-    if (n >= 4) pool.push('jacket'); if (n >= 6) pool.push('molotov'); if (n >= 8) pool.push('moto'); if (n >= 9) pool.push('bat');
+    // every robber type shows up on its day, but rarely at first: its share grows over the next days (so a new type is never a sudden wall)
+    const INTRO = { sneak: 1, runner: 3, jacket: 4, vest: 5, molotov: 6, bruiser: 7, moto: 8, bat: 9 };
+    const pool = []; for (const [t, d] of Object.entries(INTRO)) if (n >= d) pool.push([t, t === 'sneak' ? 1 : Math.min(1, 0.25 + 0.15 * (n - d))]);
+    const pickType = () => { let r = this.rng() * pool.reduce((a, p) => a + p[1], 0); for (const [t, w] of pool) { r -= w; if (r <= 0) return t; } return 'sneak'; };
     // endless: grows fast early, then settles into steady growth (enemy HP keeps scaling per night)
-    const count = Math.max(1, Math.round(6 * (1 + 0.08 * (n - 1) + 0.0015 * (n - 1) * (n - 1)) * scale));   // grows a little every day (day 10: 11, day 20: 18, day 30: 27) instead of doubling
+    const count = Math.max(1, Math.round(5 * (1 + 0.07 * (n - 1) + 0.0028 * (n - 1) * (n - 1)) * scale));   // starts at 5 and grows every day, faster the later it gets (day 10: 9, day 20: 19, day 30: 33, day 50: 70)
     const list = [];
-    for (let i = 0; i < count; i++) list.push(pool[Math.floor(this.rng() * pool.length)]);
+    for (let i = 0; i < count; i++) list.push(pickType());
     const bk = boss ? bossForDay(n) : null;
     if (bk) list.splice(Math.floor(list.length * 0.55), 0, bk);   // a boss every 10th night, in the last wave: Bomb Expert, Gunslinger, Riding in Tandem, Door Robber
-    const gap = Math.max(0.8, 1.3 - n * 0.02);
+    const gap = Math.max(0.8, 1.6 - n * 0.03);
     let t = 0; const q = [];
     const sp = this.activeSpawns;
     list.forEach((type, i) => {
@@ -1046,13 +1050,13 @@ export class Game {
     const def = ENEMIES[type], n = this.wave + 1, out = (type === 'moto' || type === 'motoduo') ? 5.5 : 0.9;
     const tier = this.tierOf(n);
     const st0 = at ? null : (out > 2 ? { x: s.x + s.ox * out, y: s.y + s.oy * out } : this.sidewalkPoint(s, 2.2));   // burglars come along the sidewalk (bikes ride in from the street)
-    const hpMul = (def.boss ? 1 + 0.07 * (n - 1) + 0.0015 * (n - 1) * (n - 1) : 1 + 0.10 * (n - 1) + 0.002 * (n - 1) * (n - 1)) * (def.boss ? 1 + 0.12 * tier : 1 + 0.15 * tier);   // slow pace: day 10 burglars have ~2.4x HP (was 5.5x), +15% HP per tier
+    const hpMul = (def.boss ? 1 + 0.06 * (n - 1) + 0.0022 * (n - 1) * (n - 1) : 1 + 0.07 * (n - 1) + 0.004 * (n - 1) * (n - 1)) * (def.boss ? 1 + 0.2 * tier : 1 + 0.3 * tier);   // slow pace: day 10 burglars have ~2x HP (was 5.5x), and it keeps climbing smoothly, +15% HP per tier
     const e = {
       id: this.nextId++, type, x: at ? at.x : st0.x, y: at ? at.y : st0.y, hp: def.hp * hpMul, maxhp: def.hp * hpMul,
-      speed: def.speed * 0.88 * Math.min(1.3, 1 + 0.03 * tier), push: def.push * (1 + 0.1 * tier), pushT: 0, armor: def.boss ? Math.min(def.armor + 1, def.armor + Math.floor(tier / 2)) : def.armor + Math.floor(tier / 2), steal: def.steal, bounty: Math.round(def.bounty * (1 + 0.1 * tier)), tier,   // faster, shove harder, tougher armor, a bit more bounty
+      speed: def.speed * (0.8 + Math.min(0.08, 0.008 * n)) * Math.min(1.4, 1 + 0.045 * tier), push: def.push * (1 + 0.15 * tier), pushT: 0, armor: def.boss ? Math.min(def.armor + 1, def.armor + Math.floor(tier / 2)) : def.armor + Math.floor(tier / 2), steal: def.steal, bounty: Math.round(def.bounty * (1 + 0.1 * tier)), tier,   // faster, shove harder, tougher armor, a bit more bounty
       tx: at ? at.tx : s.x, ty: at ? at.ty : s.y, noSlow: !!def.noSlow, burn: 0, burnDps: 0, soak: 0, soakDps: 0, kvx: 0, kvy: 0, slow: 0, slowF: 0, stun: 0, slipped: new Set(), iced: new Set(), angle: 0,
       jitter: (this.rng() - 0.5) * 0.0, route: Math.floor(Math.random() * ROUTES),
-      flee: 0, wind: 0, pending: null, dash: null, abCd: def.cd * (0.5 + this.rng() * 0.8) * Math.max(0.5, 1.15 - 0.015 * n), dashMul: def.dashMul || 1,
+      flee: 0, wind: 0, pending: null, dash: null, abCd: def.cd * (0.5 + this.rng() * 0.8) * Math.max(0.5, 1.15 - 0.015 * n) * (1 + Math.max(0, 5 - n) * 0.2), dashMul: def.dashMul || 1,
     };
     e.boss = !!def.boss; e.bk = def.bk || null;
     if (st0) e.apr = [this.sidewalkPoint(s, 2.2, 0)];   // sidewalk first, then in through the door
@@ -1984,7 +1988,7 @@ export class Game {
         const ix = item || wall ? cx : px, iy = item || wall ? cy : py;
         if (this.rng() < MOTO_CRIT) crit = true;
         if (item) { const t0 = this.towerAt(cx, cy); kind = t0 && t0.kind === 'tower' ? 2 : 3; if (this.motoHitItem(cx, cy, crit)) wrecked++; }
-        if (crit) wrecked += this.motoWreckAround(ix, iy);
+        // the bandit only wrecks what it actually hit: a crit just finishes a tough item in one hit (no more area wrecking)
         if (crit) kind = Math.max(kind, 2);
         e.moto = 'crash'; e.crashT = 0.9;
         this.emit('motoCrash', { x: ix, y: iy, ex: px, ey: py, kind, crit, wrecked });
@@ -2066,7 +2070,7 @@ export class Game {
     // bombers are rare early on and get more common every night (none before night 4)
     const bombMul = n < 4 ? 0 : Math.min(2.2, 0.2 + (n - 4) * 0.22);
     const wb = (def.abil.bomb || 0) * bombMul, wd = def.abil.dash || 0, wm = def.abil.molo || 0, ws = def.abil.smash || 0, tot = wb + wd + wm + ws;
-    e.abCd = def.cd * Math.max(0.5, 1.15 - 0.015 * n) * (0.7 + this.rng() * 0.7) * Math.pow(0.92, this.tierOf(n));   // tricks come 8% sooner per tier
+    e.abCd = def.cd * Math.max(0.5, 1.15 - 0.015 * n) * (1 + Math.max(0, 5 - n) * 0.2) * (0.7 + this.rng() * 0.7) * Math.pow(0.92, this.tierOf(n));   // tricks come 8% sooner per tier
     if (e.type === 'bombexpert' && this.rng() < 0.4) {   // the big move: 5 bombs at random items
       e.abCd *= 1.5; e.pending = { kind: 'barrage', n: 5 }; e.wind = 0.9;
       this.emit('windup', { enemy: e, kind: 'barrage' }); return true;
@@ -2138,7 +2142,7 @@ export class Game {
       case 'gunner': return this.gunnerAct(e, dt);
       case 'gunslinger': {
         if (e.wind > 0) return false;
-        e.sumCd -= dt;
+        e.sumCd -= dt * (e.enraged ? RAGE_RATE : 1);
         if (e.sumCd <= 0) {
           const alive = this.enemies.filter(o => !o.dead && o.owner === e.id).length, n = Math.min(3, 6 - alive);
           e.sumCd = n > 0 ? 18 : 3;
@@ -2171,11 +2175,12 @@ export class Game {
   // he doesn't just march to the register: any machine or shelf near him gets stopped, aimed at and shotgunned (2 blasts)
   gunslingerHunt(e, dt) {
     if (e.stun > 0) return false;
-    e.shotCd = (e.shotCd || 0) - dt;
+    const rg = e.enraged ? RAGE_RATE : 1;
+    e.shotCd = (e.shotCd || 0) - dt * rg;
     if (e.aimTgt) {
       const t = e.aimTgt, alive = t.kind === 'tower' ? this.towers.includes(t) && !t.broken : this.shelves.includes(t);
       if (!alive) { e.aimTgt = null; return false; }
-      e.angle = Math.atan2(t.x - e.x, t.y - e.y); e.pushing = t; e.aimT -= dt;
+      e.angle = Math.atan2(t.x - e.x, t.y - e.y); e.pushing = t; e.aimT -= dt * rg;
       if (e.aimT > 0) return true;
       this.emit('shotgun', { enemy: e, x: e.x, y: e.y, tx: t.x, ty: t.y });
       if (t.kind === 'tower') this.hurtTower(t, t.maxhp * 0.55);
@@ -2375,7 +2380,7 @@ export class Game {
     else this.motoToGrid(e);
   }
   motoBoss(e, dt) {
-    e.life += dt; e.mt -= dt; e.wpT -= dt;
+    e.life += dt; e.mt -= dt * (e.enraged ? RAGE_RATE : 1); e.wpT -= dt;
     if (e.hitSlow > 0) e.hitSlow -= dt;
     const B = this.roamBounds(), sp = e.speed * (e.hitSlow > 0 ? 0.45 : 1);
     e.spin = false; e.parked = false; e.rev = false;
@@ -2632,7 +2637,9 @@ export class Game {
     this.applyKnock(e, dt);
     if (e.slow > 0) e.slow -= dt;
     if (e.flee > 0) e.flee -= dt;
-    if (e.abCd > 0) e.abCd -= dt;
+    if (e.boss && !e.enraged && e.hp > 0 && e.hp <= e.maxhp * RAGE_HP) { e.enraged = true; e.speed *= RAGE_SPEED; e.abCd = Math.min(e.abCd, 1); this.emit('rage', { enemy: e }); }
+    const rg = e.enraged ? RAGE_RATE : 1;   // phase 2: attacks and wind-ups run faster
+    if (e.abCd > 0) e.abCd -= dt * rg;
     if (e.swing > 0) e.swing -= dt;
     if (e.hop) {   // a rider jumping off the motorbike
       const H = e.hop; H.t -= dt; const k = 1 - Math.max(0, H.t) / H.max;
@@ -2654,7 +2661,7 @@ export class Game {
       }
     }
     if (e.bk && this.bossAct(e, dt)) return;
-    if (e.wind > 0) { e.wind -= dt; if (e.wind <= 0) this.doTrick(e); return; }   // winding up a bomb throw / dash
+    if (e.wind > 0) { e.wind -= dt * rg; if (e.wind <= 0) this.doTrick(e); return; }   // winding up a bomb throw / dash
     if (e.dash) { this.dashStep(e, dt); return; }
     const wasPush = e.pushing; e.pushing = null; if (!wasPush) e.gunFor = null;
     const fleeing = e.flee > 0;
