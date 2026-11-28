@@ -1,5 +1,5 @@
 // UI, input, save data, audio and the main loop
-import { Game, ITEMS, BUILD_ORDER, SKILLS, META, ROOM_UPGRADE, UNLOCKS, MAX_LEVEL, MAX_STOCK, MAX_ROOM, ROOM_BASE, ROOM_STEP, RENO_COST, STATUE_RANGE, MAX_PERMIT, PERMIT_FOR_RENO, ITEM_LIMITS, UNLOCK_DAY, BOSS_INFO } from './game.js';
+import { Game, peso, pesoN, ITEMS, BUILD_ORDER, SKILLS, META, ROOM_UPGRADE, UNLOCKS, MAX_LEVEL, MAX_STOCK, MAX_ROOM, ROOM_BASE, ROOM_STEP, RENO_COST, STATUE_RANGE, MAX_PERMIT, PERMIT_FOR_RENO, ITEM_LIMITS, UNLOCK_DAY, BOSS_INFO } from './game.js';
 import { View } from './view.js';
 import { pxText, setHTML, pxEmoji, pxifyStatic } from './ui/icons.js';
 import { loader } from './loadingscreen.js';   // install screen on phones, loading screen otherwise
@@ -10,7 +10,7 @@ const $ = id => document.getElementById(id);
 const KEY = 'shelf-defense-closing-time-v1';
 let save = { bank: 0, levels: {}, best: 0, shifts: 0, run: null };   // run = the current store, saved between days
 try { Object.assign(save, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) { /* storage may be blocked */ }
-save.settings = Object.assign({ music: 0.5, sfx: 0.7 }, save.settings || {});   // volume sliders (0..1)
+save.settings = Object.assign({ music: 0.3, sfx: 1 }, save.settings || {});   // volume sliders (0..1)
 const settings = save.settings;
 const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(save)); } catch (e) { /* ignore */ } };
 
@@ -97,6 +97,16 @@ const sfx = {
   gumHit: () => { if (gate('gumHit', 50)) { tone(900, 0.06, 'sine', 0.035, -350); tone(1350, 0.05, 'triangle', 0.02, -300, 0.04); } },
   colaBlast: () => { noise(0.4, 0.12, { f: 2600, q: 0.7, type: 'highpass', slide: -1800 }); tone(130, 0.3, 'sine', 0.09, -70); tone(520, 0.2, 'triangle', 0.04, -300, 0.02); },   // pssshHH-BOOM
   cigLaunch: () => { if (gate('cigLaunch', 55)) { noise(0.04, 0.03, { f: 2200, q: 1.5 }); tone(700, 0.05, 'triangle', 0.02, 300); } },
+  iceLand: () => { noise(0.18, 0.08, { f: 1200, q: 0.8 }); tone(90, 0.2, 'sine', 0.09, -40); tone(1800, 0.12, 'triangle', 0.03, -600, 0.02, true); },   // crunch-thud
+  iceSnap: () => { noise(0.35, 0.1, { f: 7000, type: 'highpass', q: 0.5 }); arp([2093, 2637, 3136, 2349, 3520], 0.035, 0.22, 'sine', 0.03); tone(220, 0.25, 'sawtooth', 0.05, -160); },   // glassy SNAP
+  bananaPop: () => { noise(0.12, 0.07, { f: 900, q: 0.8 }); tone(200, 0.14, 'square', 0.05, 260); tone(520, 0.1, 'triangle', 0.04, 300, 0.05); },   // crate pops open
+  bananaLaunch: () => { if (gate('bananaLaunch', 60)) { tone(380, 0.08, 'sine', 0.05, 260); noise(0.04, 0.03, { f: 1500 }); } },
+  bananaBoom: () => { if (gate('bananaBoom', 45)) { noise(0.1, 0.06, { f: 1800, q: 0.7 }); tone(260, 0.1, 'triangle', 0.05, -120); tone(700, 0.08, 'sine', 0.03, 200, 0.03); } },   // splat
+  burgerLand: () => { noise(0.22, 0.1, { f: 500, q: 0.8 }); tone(70, 0.28, 'sine', 0.12, -30); tone(180, 0.14, 'triangle', 0.05, -100, 0.02); noise(0.12, 0.05, { f: 2200, q: 0.7, delay: 0.04 }); },   // heavy squishy THUD
+  burgerPop: () => { noise(0.3, 0.1, { f: 1400, q: 0.6, slide: -900 }); tone(110, 0.25, 'square', 0.07, 200); tone(330, 0.16, 'triangle', 0.06, 420, 0.04); tone(660, 0.12, 'sine', 0.04, 300, 0.1); },   // pop + sauce
+  miniHit: () => { if (gate('miniHit', 50)) { noise(0.06, 0.04, { f: 1600, q: 1 }); tone(420, 0.06, 'triangle', 0.04, -150); } },
+  miniPop: () => { if (gate('miniPop', 45)) { noise(0.1, 0.06, { f: 1100, q: 0.8 }); tone(240, 0.1, 'square', 0.04, -120); tone(780, 0.08, 'sine', 0.03, 200, 0.03); } },
+  goldBlast: () => { noise(0.4, 0.11, { f: 3200, q: 0.7, type: 'highpass', slide: -1800 }); tone(130, 0.3, 'sine', 0.09, -70); arp([1319, 1568, 1976, 2637, 3136], 0.045, 0.25, 'sine', 0.035); tone(520, 0.2, 'triangle', 0.04, -300, 0.02); },   // gold BOOM + chime
   cigPop: () => { if (gate('cigPop', 45)) { noise(0.05, 0.04, { f: 3000, q: 1 }); tone(520, 0.05, 'square', 0.02, -300); } },
   swirl: () => { noise(0.5, 0.05, { f: 800, q: 1.2, slide: 2400 }); tone(400, 0.45, 'triangle', 0.03, 600, 0, true); },
   fruitScatter: () => { noise(0.2, 0.05, { f: 1500, q: 0.8, slide: 800 }); tone(300, 0.12, 'triangle', 0.05, 300); tone(450, 0.1, 'triangle', 0.04, 300, 0.07); },
@@ -185,7 +195,7 @@ pxifyStatic();
 // the run is saved in localStorage: at the start of every day (layout, machines, cash, upgrades) and while you build in prep.
 // Closing the game mid-day puts you back at the moment you opened that day.
 function saveRun() {
-  if (!game || !running) return;
+  if (!game || !running || game.sandbox) return;
   const snap = (game.phase === 'prep' || game.phase === 'restock') ? game.snapshot() : game.daySnap;
   if (!snap) return;
   snap.paidOut = game.paidOut;
@@ -194,12 +204,13 @@ function saveRun() {
 const SAVE_EVENTS = new Set(['place', 'sell', 'upgrade', 'stock', 'service', 'replace', 'unlock', 'renovate', 'permit', 'dayStart', 'newDay', 'restock', 'retry', 'waveClear', 'lost']);
 
 // every run starts in a freshly generated store (or your saved one), shown behind the title plate
-function newStore(fresh = false) {
+function newStore(fresh = false, sandbox = false) {
   if (fresh) { save.run = null; save.tutDone = false; save.tutStep = 0; persist(); }   // a brand new store plays Sara's tutorial again
   game = new Game({ meta: save.levels });
   game.on = onEvent;
-  if (save.run) { try { game.restore(save.run); } catch (e) { save.run = null; game = new Game({ meta: save.levels }); game.on = onEvent; } }
-  view.setGame(game); view.menu = true; view.tod = 0;
+  if (sandbox) devSetup(game);
+  else if (save.run) { try { game.restore(save.run); } catch (e) { save.run = null; game = new Game({ meta: save.levels }); game.on = onEvent; } }
+  view.setGame(game); view.menu = true; view.tod = 0; view.resetView();
   running = false; selected = null; pickedTower = null; moving = null; drag = null; preview = null; speed = 1;
   $('speed').textContent = '1x'; setPaused(false);
   $('hud').classList.add('off'); $('info').classList.add('off'); $('dock').classList.add('off'); $('skillSlots').classList.add('off'); closeTray(); setTab('stocks'); $('title').classList.remove('off', 'pop'); $('stage').classList.add('menu'); $('t-restart').classList.toggle('off', !save.run);
@@ -210,14 +221,14 @@ function startRun() {
   running = true; view.menu = false; selected = null;
   $('stage').classList.remove('menu'); $('title').classList.add('pop'); setTimeout(() => { if (running) $('title').classList.add('off'); }, 480);
   $('hud').classList.remove('off'); $('info').classList.remove('off'); $('dock').classList.remove('off'); $('skillSlots').classList.remove('off');
-  banner(game.wave ? `☀ Day ${game.wave + 1} — welcome back` : '☀ Day 1 — stock up, then open the store!'); refresh();
+  banner(game.sandbox ? '🛠 SANDBOX: unlimited money, everything unlocked' : game.wave ? `☀ Day ${game.wave + 1} — welcome back` : '☀ Day 1 — stock up, then open the store!'); refresh();
   if (game.phase === 'restock') showRestock();
   tutStart();
 }
 
 // the paycheck is banked night by night (and on a loss), so closing the game never loses it
 function bankProgress() {
-  if (!game) return 0;
+  if (!game || game.sandbox) return 0;   // sandbox never touches the paycheck bank
   const pay = Math.max(0, game.paycheck() - game.paidOut);
   game.paidOut += pay; save.bank += pay; save.best = Math.max(save.best, game.wave); persist();
   return pay;
@@ -327,23 +338,33 @@ function onEvent(type, d) {
     case 'colaBlast': sfx.colaBlast(); break;
     case 'cigLaunch': sfx.cigLaunch(); break;
     case 'cigBoom': sfx.cigPop(); break;
+    case 'iceLand': sfx.iceLand(); break;
+    case 'iceSnap': sfx.iceSnap(); break;
+    case 'bananaPop': sfx.bananaPop(); break;
+    case 'bananaLaunch': sfx.bananaLaunch(); break;
+    case 'bananaBoom': sfx.bananaBoom(); break;
+    case 'burgerLand': sfx.burgerLand(); break;
+    case 'burgerPop': sfx.burgerPop(); break;
+    case 'miniHit': sfx.miniHit(); break;
+    case 'miniPop': sfx.miniPop(); break;
+    case 'goldBlast': sfx.goldBlast(); break;
     case 'fruitScatter': sfx.fruitScatter(); break;
     case 'fruitBoom': sfx.fruitBoom(); break;
     case 'repair': sfx.repair(); break;
     case 'statueDry': floatText(d.x, d.y, 'Statue empty!', 'bad', 2.4); break;
-    case 'refund': sfx.sell(); floatText(d.x, d.y, '+$' + d.amount + ' refund', 'good', 1.8); break;
+    case 'refund': sfx.sell(); floatText(d.x, d.y, '+' + peso(d.amount) + ' refund', 'good', 1.8); break;
     case 'slip': sfx.slip(); break;
     case 'unlock': sfx.unlock(); banner(`🔓 ${ITEMS[d.type].name} unlocked!`); break;
     case 'buy': sfx.buy(); floatText(d.x, d.y, '🛒', 'sale', 1.5); break;
-    case 'pay': sfx.sale(); floatText(d.x, d.y, '+$' + d.amount, 'sale', 1.5); moneyShot(d.x, d.y, d.amount); break;
+    case 'pay': sfx.sale(); floatText(d.x, d.y, '+' + peso(d.amount), 'sale', 1.5); moneyShot(d.x, d.y, d.amount); break;
     case 'soldout': floatText(d.x, d.y, 'Sold out!', 'bad', 1.5); break;
     case 'empty': floatText(d.x, d.y, '😕 nothing to buy', 'bad', 1.2); break;
     case 'dayStart': sfx.day(); banner(`☀ Day ${d.n}`); break;
-    case 'evening': banner(`Store closed: +$${d.sales}`); break;
+    case 'evening': banner(`Store closed: +${peso(d.sales)}`); break;
     case 'newDay': banner(`☀ Day ${d.n} — restock and open up`); break;
     case 'shelfBreak': sfx.crash(); floatText(d.shelf.x, d.shelf.y, 'Shelf smashed!', 'bad', 1.4); break;
     case 'shoot': sfx.shoot(d.tower.type); break;
-    case 'kill': sfx.kill(); floatText(d.enemy.x, d.enemy.y, '+$' + d.cash); if (d.enemy === bb.ref) { floatText(d.enemy.x, d.enemy.y, 'BOSS DOWN!', 'good', 2.4); sfx.win(); hideBossBanner(); } break;
+    case 'kill': sfx.kill(); floatText(d.enemy.x, d.enemy.y, '+' + peso(d.cash)); if (d.enemy === bb.ref) { floatText(d.enemy.x, d.enemy.y, 'BOSS DOWN!', 'good', 2.4); sfx.win(); hideBossBanner(); } break;
     case 'bossSpawn': sfx.bossHorn(); showBossBanner(d.enemy, d.info); break;
     case 'aim': sfx.tick(); floatText(d.x, d.y, '🎯', 'bad', 1.3); break;
     case 'shotgun': sfx.shotgun(); break;
@@ -354,6 +375,8 @@ function onEvent(type, d) {
     case 'shieldHit': sfx.clink(); break;
     case 'shieldBreak': sfx.crash(); floatText(d.x, d.y, 'Shield broken!', 'good', 2.4); break;
     case 'park': sfx.engine(); floatText(d.x, d.y, '🏍️ parked', 'bad', 2.2); break;
+    case 'revStart': sfx.engine(); floatText(d.x, d.y, '💨 revving…', 'bad', 2.2); break;
+    case 'roamStart': sfx.whirl(); floatText(d.x, d.y, '🔥 ROAM DRIVE!', 'bad', 2.4); break;
     case 'spinStart': sfx.whirl(); floatText(d.x, d.y, '🌪️ !', 'bad', 2.2); break;
     case 'tornado': sfx.swirl(); break;
     case 'bossSmash': sfx.crash(); sfx.thud(); break;
@@ -383,7 +406,7 @@ function onEvent(type, d) {
     case 'waveStart': sfx.wave(); banner(d.subs > 1 ? `🌙 Night ${d.n} — wave 1/${d.subs}` : `🌙 Night ${d.n} — burglars!`); break;
     case 'subClear': sfx.win(); banner(`Wave ${d.sub}/${d.subs} cleared — next one in ${d.gap}s`); break;
     case 'subWave': sfx.wave(); banner(d.sub === d.subs ? `🌙 Final wave ${d.sub}/${d.subs}!` : `🌙 Wave ${d.sub}/${d.subs}`); break;
-    case 'waveClear': hideBossBanner(); bankProgress(); sfx.win(); banner('Clear! +$' + d.bonus); break;
+    case 'waveClear': hideBossBanner(); bankProgress(); sfx.win(); banner('Clear! +' + peso(d.bonus)); break;
     case 'freeze': sfx.freeze(); break;
     case 'bounce': sfx.bounce(); break;
     case 'retry': hideBossBanner(true); banner(`☀ Day ${d.n} again — you've got this`); break;
@@ -596,9 +619,9 @@ function renderDetail() {
   act.className = 'pxb ' + (locked ? 'gold' : selected === id ? 'green' : '');
   const lm = game.limitOf(id), cn = game.countOf(id), full = !locked && lm !== Infinity && cn >= lm;
   act.disabled = locked ? (!reach || game.cash < uc) : (cost > game.cash || (full && selected !== id));
-  const txt = locked ? (reach ? `Unlock  $${uc}` : `🔒 Day ${ud}`) : selected === id ? 'Selected ✓' : full ? 'Limit reached' : `Build  $${cost}`;
+  const txt = locked ? (reach ? `Unlock  ${peso(uc)}` : `🔒 Day ${ud}`) : selected === id ? 'Selected ✓' : full ? 'Limit reached' : `Build  ${peso(cost)}`;
   if (act.dataset.t !== txt) { act.dataset.t = txt; act.textContent = txt; }
-  const info = locked ? `<b>${def.name}</b>${reach ? 'Locked · buy it to use it' : 'Unlocks on day ' + ud}` : `<b>${def.name}</b>${selected === id ? 'Tap the store to place it' : 'Cost $' + cost}${lm === Infinity ? '' : ' · Placed ' + cn + '/' + lm}`;
+  const info = locked ? `<b>${def.name}</b>${reach ? 'Locked · buy it to use it' : 'Unlocks on day ' + ud}` : `<b>${def.name}</b>${selected === id ? 'Tap the store to place it' : 'Cost ' + peso(cost)}${lm === Infinity ? '' : ' · Placed ' + cn + '/' + lm}`;
   if ($('gInfo').dataset.k !== info) { $('gInfo').dataset.k = info; $('gInfo').innerHTML = info; }
   renderRecent();
 }
@@ -621,7 +644,7 @@ function renderRecent() {
 }
 $('dAct').onclick = () => {
   const id = focusId;
-  if (!game.isUnlocked(id)) { if (!game.canUnlock(id)) { sfx.bad(); banner(`🔒 ${ITEMS[id].name} unlocks on day ${UNLOCK_DAY[id]}`); return; } if (!game.unlock(id)) { sfx.bad(); banner(`Need $${UNLOCKS[id]} to unlock ${ITEMS[id].name}`); } else { noteSkill(id, true); noteRecent(id); } return; }   // unlocking costs store profit
+  if (!game.isUnlocked(id)) { if (!game.canUnlock(id)) { sfx.bad(); banner(`🔒 ${ITEMS[id].name} unlocks on day ${UNLOCK_DAY[id]}`); return; } if (!game.unlock(id)) { sfx.bad(); banner(`Need ${peso(UNLOCKS[id])} to unlock ${ITEMS[id].name}`); } else { noteSkill(id, true); noteRecent(id); } return; }   // unlocking costs store profit
   selected = selected === id ? null : id; if (selected) noteSkill(id, true); pickedTower = null; moving = null; preview = null; view.setCursor(null); closeTray(); refresh();
 };
 $('subSell').onclick = () => { subTab = 'sell'; setTab('stocks'); applySub(); };
@@ -643,8 +666,8 @@ function renderSlots() {
   for (let i = 0; i < 3; i++) {
     const id = ids[i];
     if (!id) { html += '<button class="slot empty" title="Skill items">+</button>'; continue; }
-    const def = ITEMS[id], cost = game.costOf(id), wait = def.kind === 'skill' && game.phase !== 'wave', dis = cost > game.cash || wait;
-    html += `<button class="slot ${selected === id ? 'sel' : ''} ${dis ? 'dis' : ''}" data-id="${id}" title="${def.name}"><img alt="" src="${icons[id] || ''}"><span class="cost">$${cost}</span>${wait ? '<span class="lk">🌙</span>' : ''}</button>`;
+    const def = ITEMS[id], cost = game.costOf(id), wait = def.kind === 'skill' && game.phase !== 'wave' && !game.sandbox, dis = cost > game.cash || wait;
+    html += `<button class="slot ${selected === id ? 'sel' : ''} ${dis ? 'dis' : ''}" data-id="${id}" title="${def.name}"><img alt="" src="${icons[id] || ''}"><span class="cost">${peso(cost)}</span>${wait ? '<span class="lk">🌙</span>' : ''}</button>`;
   }
   if (html !== slotHTML) { box.innerHTML = html; slotHTML = html; }
 }
@@ -674,18 +697,18 @@ function renderReno() {
   const dots = (n, on) => Array.from({ length: n }, (_, i) => `<span class="dot ${i < on ? 'on' : ''}"></span>`).join('');
   const lim = BUILD_ORDER.filter(id => ITEM_LIMITS[id] !== undefined && game.isUnlocked(id)).map(id => {
     const c = game.countOf(id), l = game.limitOf(id);
-    return `<div class="lr ${c >= l ? 'full' : ''}"><img alt="" src="${icons[id] || ''}"><div class="t"><div class="n"><span>${ITEMS[id].name}</span><i>${c}/${l}</i></div><div class="bar"><u style="width:${Math.min(100, c / l * 100)}%"></u></div></div></div>`;
+    return `<div class="lr ${c >= l ? 'full' : ''}"><img alt="" src="${icons[id] || ''}"><div class="t"><div class="n"><span>${ITEMS[id].name}</span><i>${c}/${l === Infinity ? '∞' : l}</i></div><div class="bar"><u style="width:${Math.min(100, c / l * 100)}%"></u></div></div></div>`;
   }).join('');
   const permitHint = maxed ? 'The store is fully renovated.' : permit >= need ? `Permit Lv ${need} unlocks the next renovation: you have it.` : `The next renovation needs Permit Lv ${need}.`;
   const renoHint = maxed ? 'The store is as big as it gets.' : `Next: ${size(lv + 1)}x${size(lv + 1)} (+${ROOM_STEP} columns and rows). Everything you built stays put, and every item limit goes up. Only before you open the store.`;
   const renoWarn = !maxed && !rChk.ok ? rChk.reason : '';
   const html = `<div class="stHd">STORE PERMIT</div>
     <div class="stCard"><div class="stRow"><div><b>Permit Level ${permit}</b><span>of ${MAX_PERMIT}</span></div>
-      <button class="pxb" id="permitBtn" ${pChk.ok ? '' : 'disabled'}>${pMax ? 'MAX PERMIT' : `Upgrade  $${pCost}`}</button></div>
+      <button class="pxb" id="permitBtn" ${pChk.ok ? '' : 'disabled'}>${pMax ? 'MAX PERMIT' : `Upgrade  ${peso(pCost)}`}</button></div>
       <div class="dots">${dots(MAX_PERMIT, permit)}</div><p class="${maxed || permit >= need ? 'ok' : ''}">${permitHint}</p></div>
     <div class="stHd">STORE SIZE</div>
     <div class="stCard"><div class="stRow"><div><b>${size(lv)} x ${size(lv)} store</b><span>Renovation ${lv} of ${MAX_ROOM}</span></div>
-      <button class="pxb" id="renoBtn" ${rChk.ok ? '' : 'disabled'}>${maxed ? 'MAX SIZE' : `Renovate  $${rCost}`}</button></div>
+      <button class="pxb" id="renoBtn" ${rChk.ok ? '' : 'disabled'}>${maxed ? 'MAX SIZE' : `Renovate  ${peso(rCost)}`}</button></div>
       <div class="dots">${dots(MAX_ROOM + 1, lv + 1)}</div><p>${renoHint}</p>${renoWarn ? `<p class="warn">${renoWarn}</p>` : ''}</div>
     <div class="stHd">ITEM LIMITS</div>
     <div class="stCard"><div class="lim">${lim}</div><p>Each renovation raises every limit.</p></div>`;
@@ -743,34 +766,35 @@ function renderTabletStatus() { placeBuild(); }
 
 function refresh() {
   if (!game) return;
-  $('lives').textContent = game.lives; $('cash').textContent = game.cash;
+  $('lives').textContent = game.lives; $('cash').textContent = pesoN(game.cash);
   const ck = game.clock();
   setHTML($('hour'), `${ck.icon} ${ck.text}`);
   $('waveTxt').textContent = game.phase === 'wave' ? (game.subWaves > 1 ? `NIGHT ${game.wave + 1} · WAVE ${game.subWave}/${game.subWaves}` : `NIGHT ${game.wave + 1}`) : `DAY ${game.wave + 1}`;
   $('clock').classList.toggle('night', game.isNight);
   const rs = $('restockAll'), cost = game.restockCost();
-  $('rsCost').textContent = cost; rs.disabled = cost === 0 || game.cash < cost || game.phase === 'lost';   // restock-all only when you can afford the whole refill
+  $('rsCost').textContent = pesoN(cost); rs.disabled = cost === 0 || game.cash < cost || game.phase === 'lost';   // restock-all only when you can afford the whole refill
   const av = available();
   for (const [id, c] of cells) {
     const locked = !game.isUnlocked(id), cost = game.costOf(id);
     c.classList.toggle('lock', locked); c.classList.toggle('sel', !locked && selected === id); c.classList.toggle('foc', focusId === id);
     c.querySelector('[data-k]').textContent = locked ? '' : av.indexOf(id) + 1;
-    c.querySelector('[data-pr]').textContent = locked && !game.canUnlock(id) ? 'Day ' + UNLOCK_DAY[id] : '$' + (locked ? UNLOCKS[id] : cost);
+    c.querySelector('[data-pr]').textContent = locked && !game.canUnlock(id) ? 'Day ' + UNLOCK_DAY[id] : peso(locked ? UNLOCKS[id] : cost);
     const lm = game.limitOf(id), ct = c.querySelector('[data-ct]'), cn = game.countOf(id);
     ct.textContent = locked || lm === Infinity ? '' : cn + '/' + lm; ct.classList.toggle('full', cn >= lm);
   }
   renderDetail();
   const go = $('go'), setGo = (cls, dis, txt) => { go.disabled = dis; go.className = 'pxb ' + cls; setHTML(go, txt); };
   // the label NEVER changes (always OPEN STORE); only the look does: gold = tap to open, grey = not available right now
-  const OPEN = '☀ OPEN<br>STORE';
+  const OPEN = '<svg class="sun" viewBox="0 0 9 9" shape-rendering="crispEdges"><path fill="currentColor" d="M4 0h1v1H4zM4 8h1v1H4zM0 4h1v1H0zM8 4h1v1H8zM1 1h1v1H1zM7 1h1v1H7zM1 7h1v1H1zM7 7h1v1H7zM3 2h3v1H3zM2 3h5v3H2zM3 6h3v1H3z"/></svg> OPEN STORE';
   if (game.phase === 'prep') setGo(game.canOpen().ok ? 'gold' : '', false, OPEN);   // an empty store can't open
   else if (game.phase === 'evening') setGo('gold', false, OPEN);                      // tapping still skips the wait for night
   else setGo('', true, OPEN);                                                          // store already open / night / lost
   musicWant = !running ? null : game.phase === 'wave' ? 'night' : game.phase === 'lost' ? null : 'day';
   renderInfo();
   renderReno(); renderSlots(); renderTabletStatus();
-  $('skillSlots').classList.toggle('dayHide', game.phase !== 'wave');   // skill items only work at night
+  $('skillSlots').classList.toggle('dayHide', game.phase !== 'wave' && !game.sandbox);   // skill items only work at night
   view.setRange(...rangeFor());
+  devSync();
 }
 
 const fpOf = id => (ITEMS[id].foot > 1 && !ITEMS[id].onShelves) ? ITEMS[id].foot : 1;   // size of the placement cursor (the soda statue is 3x3)
@@ -836,25 +860,25 @@ function renderInfo() {
     const s = pickedTower, cap = game.capOf(s), uc = game.unitCostOf(s), need = cap - s.units, can = Math.min(need, Math.floor(game.cash / uc));
     at = [s.x, s.y, s.type === 'statue' ? 2.6 : s.type === 'steel' ? 1.7 : 1.5];
     html = `<div class="hd">${ITEMS[s.type || 'shelf'].name} ${cap ? `<small>${s.units}/${cap}</small>` : ''}<div class="bars">${pbar(s.hp / s.maxhp < 0.35 ? 'lo' : '', s.hp / s.maxhp)}</div></div><div class="row">`
-      + (cap ? pbtn('rst', '📦', need === 0 ? 'FULL' : '$' + can * uc, can <= 0, 'green') : '') + (game.canMoveItem(s) ? pbtn('mov', '✥', 'MOVE', false, 'blue') : '') + (s.placed ? pbtn('sell', '💰', '$' + game.sellValue(s), false, 'red') : '') + '</div>';
+      + (cap ? pbtn('rst', '📦', need === 0 ? 'FULL' : peso(can * uc), can <= 0, 'green') : '') + (game.canMoveItem(s) ? pbtn('mov', '✥', 'MOVE', false, 'blue') : '') + (s.placed ? pbtn('sell', '💰', peso(game.sellValue(s)), false, 'red') : '') + '</div>';
   } else if (pickedTower && (game.towers.includes(pickedTower) || game.traps.includes(pickedTower))) {
     const t = pickedTower, def = ITEMS[t.type], isT = t.kind === 'tower', up = isT ? game.upgradeCost(t) : 0;
     at = [t.x, t.y, isT ? 1.9 : 0.8];
     const bars = isT ? `<div class="bars">${pbar(t.hp / t.maxhp < 0.35 ? 'lo' : '', t.hp / t.maxhp)}${pbar(t.wear > 0.7 ? 'hot' : 'wear', t.wear)}</div>` : '';
     const tag = !isT ? `${t.uses} left` : t.broken ? 'BROKEN' : `Lv ${t.level}/${MAX_LEVEL}`;
     let acts = '';
-    if (isT && t.broken) acts += pbtn('rpl', '🛠️', '$' + game.replaceCost(t), game.replaceCost(t) > game.cash, 'gold');
+    if (isT && t.broken) acts += pbtn('rpl', '🛠️', peso(game.replaceCost(t)), game.replaceCost(t) > game.cash, 'gold');
     if (isT && !t.broken) {
-      acts += pbtn('upg', '⏫', t.level >= MAX_LEVEL ? 'MAX' : '$' + up, t.level >= MAX_LEVEL || up > game.cash, 'green');
-      if (game.needsService(t)) acts += pbtn('svc', '🔧', '$' + game.serviceCost(t), game.serviceCost(t) > game.cash);
+      acts += pbtn('upg', '⏫', t.level >= MAX_LEVEL ? 'MAX' : peso(up), t.level >= MAX_LEVEL || up > game.cash, 'green');
+      if (game.needsService(t)) acts += pbtn('svc', '🔧', peso(game.serviceCost(t)), game.serviceCost(t) > game.cash);
     }
     acts += pbtn('mov', '✥', 'MOVE', false, 'blue');
-    acts += pbtn('sell', '💰', '$' + game.sellValue(t), false, 'red');
+    acts += pbtn('sell', '💰', peso(game.sellValue(t)), false, 'red');
     if (isT) acts += pbtn('rot', '🔄', 'TURN', false, 'blue');   // rightmost button
     html = `<div class="hd">${def.name} <small>${tag}</small>${bars}</div><div class="row">${acts}</div>`;
   } else if (selected && preview) {   // touch: first tap previews the spot, then confirm / cancel right on it
     at = [preview.x, preview.y, 1.3];
-    html = `<div class="hd">${ITEMS[selected].name} <small>$${game.costOf(selected)}</small></div><div class="row">${pbtn('place', '✔', '', !game.canPlace(selected, preview.x, preview.y).ok, 'green')}${pbtn('cancel', '✖', '', false, 'gray')}</div>`;
+    html = `<div class="hd">${ITEMS[selected].name} <small>${peso(game.costOf(selected))}</small></div><div class="row">${pbtn('place', '✔', '', !game.canPlace(selected, preview.x, preview.y).ok, 'green')}${pbtn('cancel', '✖', '', false, 'gray')}</div>`;
   } else if (selected) {   // mouse: nothing on the map to hang icons on, so just a small cancel chip
     hidePop(); return;
   } else { hidePop(); return; }
@@ -913,7 +937,7 @@ function dragEnd(e, cancel) {
 cv.addEventListener('pointerup', e => dragEnd(e, false));
 cv.addEventListener('pointercancel', e => dragEnd(e, true));
 cv.addEventListener('pointerleave', () => { hover = null; view.setHover(null); if (!preview) view.setCursor(null); });
-cv.addEventListener('pointerdown', e => {
+function cvDown(e) {
   if (!game || !running || game.phase === 'lost') return;
   closeTray();
   const c = view.pick(e.clientX, e.clientY);
@@ -931,7 +955,8 @@ cv.addEventListener('pointerdown', e => {
     drag = { item: existing, id: e.pointerId, sx: e.clientX, sy: e.clientY, on: false }; try { cv.setPointerCapture(e.pointerId); } catch (_) {}
   }
   const overShelf = selected && ITEMS[selected].onShelves && existing && existing.kind === 'shelf' && !existing.type;   // the steel shelf is built ON a plain shelf
-  if (existing && !overShelf && !(selected && ITEMS[selected].kind === 'trap' && !game.towerAt(c.x, c.y) && !game.shelfAt(c.x, c.y))) {
+  const overItem = selected && ITEMS[selected].onItems;   // the ice cubes drop on top of shelves and machines
+  if (existing && !overShelf && !overItem && !(selected && ITEMS[selected].kind === 'trap' && !game.towerAt(c.x, c.y) && !game.shelfAt(c.x, c.y))) {
     pickedTower = existing; preview = null; selected = null; view.setCursor(null); refresh(); return;
   }
   if (!selected) { pickedTower = null; refresh(); return; }
@@ -944,7 +969,48 @@ cv.addEventListener('pointerdown', e => {
   if (chk.ok) { game.place(selected, c.x, c.y); noteRecent(selected); noteSkill(selected, false); preview = null; view.setCursor(null); }
   else { sfx.bad(); floatText(c.x, c.y, chk.reason, 'bad'); }
   refresh();
+}
+// ---------- camera: drag the floor to pan, wheel / pinch to zoom (limits live in view.js). A press only counts as a tap on release, if it wasn't a drag. ----------
+const ptrs = new Map();   // active pointers on the canvas
+let tap = null, pinch = null, panning = false;
+cv.addEventListener('pointerdown', e => {
+  if (!game || !running || game.phase === 'lost') return;
+  ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (ptrs.size === 2) {   // second finger: pinch-zoom, forget any pending tap
+    const [a, b] = [...ptrs.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 }; tap = null; panning = true; return;
+  }
+  if (e.button === 1 || e.button === 2) { tap = null; panning = true; try { cv.setPointerCapture(e.pointerId); } catch (_) {} e.preventDefault(); return; }
+  // pressing the already-picked item starts moving it (its own drag logic), everything else waits for the release
+  const c = view.pick(e.clientX, e.clientY), ex = c && (game.towerAt(c.x, c.y) || game.shelfAt(c.x, c.y) || game.trapAt(c.x, c.y));
+  if (moving || (ex && ex === pickedTower && !selected && game.canMoveItem(ex))) { tap = null; cvDown(e); return; }
+  tap = { id: e.pointerId, sx: e.clientX, sy: e.clientY, ev: e }; panning = false;
+  try { cv.setPointerCapture(e.pointerId); } catch (_) {}
 });
+cv.addEventListener('pointermove', e => {
+  const p = ptrs.get(e.pointerId); if (!p) return;
+  const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
+  if (pinch && ptrs.size >= 2) {
+    const [a, b] = [...ptrs.values()], d = Math.hypot(a.x - b.x, a.y - b.y), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    if (pinch.d > 0 && d > 0) view.zoomBy(d / pinch.d);
+    view.panBy(mx - pinch.mx, my - pinch.my); pinch = { d, mx, my }; return;
+  }
+  if (tap && e.pointerId === tap.id && !panning && Math.hypot(e.clientX - tap.sx, e.clientY - tap.sy) > 9) { panning = true; tap = null; hidePop(); }
+  if (panning && !drag) { view.panBy(dx, dy); cv.style.cursor = 'grabbing'; }
+});
+function ptrEnd(e, cancel) {
+  ptrs.delete(e.pointerId);
+  if (ptrs.size < 2) pinch = null;
+  if (ptrs.size === 0) { panning = false; cv.style.cursor = ''; }
+  if (tap && e.pointerId === tap.id) {
+    const t = tap; tap = null; try { cv.releasePointerCapture(e.pointerId); } catch (_) {}
+    if (!cancel) cvDown(t.ev);   // it was a real tap: act on the spot where it started
+  }
+}
+cv.addEventListener('pointerup', e => ptrEnd(e, false));
+cv.addEventListener('pointercancel', e => ptrEnd(e, true));
+cv.addEventListener('contextmenu', e => e.preventDefault());
+cv.addEventListener('wheel', e => { if (!game || !running) return; e.preventDefault(); view.zoomBy(Math.exp(-e.deltaY * 0.0014)); }, { passive: false });
+window.addEventListener('keydown', e => { if (game && running && (e.key === 'v' || e.key === 'V') && !paused) view.resetView(); });   // V = recentre the camera
 window.addEventListener('keydown', e => {
   if (!game || !running) return;
   if (paused) { if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') $('pause').click(); return; }
@@ -1144,7 +1210,7 @@ function showLost(again = false) {
   if (!again) lastPay = bankProgress();
   openModal(`<h1>YOU HAVE BEEN ROBBED!</h1>
     <div class="sub">They cleaned you out on night ${game.wave + 1}. The cops showed up, the store is yours again. Nothing is lost.</div>
-    <p>Nights survived: <b>${game.wave}</b><br>Customers served: <b>${game.served}</b> ($${game.sales})<br>Burglars busted: <b>${game.kills}</b></p>
+    <p>Nights survived: <b>${game.wave}</b><br>Customers served: <b>${game.served}</b> (${peso(game.sales)})<br>Burglars busted: <b>${game.kills}</b></p>
     <p style="font-size:18px;color:#ffcf4a">Paycheck: 💰 ${lastPay} <span class="lvl">(banked: ${save.bank})</span></p>
     <div class="row"><button class="pxb gold" id="m-retry">▶ Retry day ${game.wave + 1}</button></div>
     <div class="row" style="margin-top:8px"><button class="pxb" id="m-new">↻ Brand new store</button></div>`);
@@ -1464,7 +1530,7 @@ function tutTick() {
   } else { tutHint(null); tutMarks(false); }
 }
 function tutStart() {
-  if (save.tutDone || tut.on || !game) return;
+  if (save.tutDone || tut.on || !game || game.sandbox) return;
   if (game.wave > 0 || (save.tutDone === undefined && save.best > 0)) { save.tutDone = true; persist(); return; }   // veterans who never saw it skip it; a restarted run replays it
   tutBuildUI(); tut.on = true; sara.classList.remove('off'); saraPose = ''; saraDraw = ''; saraLoad(); if (!saraAnim) saraAnim = requestAnimationFrame(saraFrame);
   let st = save.tutStep || 0;   // resume where we left off; a rolled-back day (no sales yet) goes back to opening the store
@@ -1490,12 +1556,94 @@ function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now; clock += dt;
   musicTick(dt); bossBannerTick();
   if (game) {
+    if (game.sandbox) { game.cash = 999999; game.lives = 999; }   // dev sandbox: unlimited money, can't lose
     const was = game.phase; game.update(paused || tutHold() ? 0 : dt * speed);
     if (game.phase === 'wave' || game.phase === 'morning' || game.phase === 'evening' || was !== game.phase) { if (Math.floor(clock * 4) !== Math.floor((clock - dt) * 4)) refresh(); }
   }
   view.render(dt, clock);
   requestAnimationFrame(frame);
 }
+// ---------- DEV SANDBOX: press M on the title screen. Unlimited money, everything unlocked, summon bosses, open the store ----------
+var devPanel = null, devN = 1;
+const DEV_BOSSES = [['bombexpert', '💣 Bomb Expert'], ['gunslinger', '🔫 Gunslinger'], ['motoduo', '🏍️ Riding in Tandem'], ['doorrobber', '🚪 Door Robber']];
+const DEV_FOES = [['sneak', 'Sneak'], ['runner', 'Runner'], ['vest', 'Vest'], ['bruiser', 'Bruiser'], ['jacket', 'Jacket'], ['molotov', 'Molotov'], ['moto', 'Motor Bandit'], ['bat', 'Bat']];
+function devSetup(g) {
+  g.sandbox = true; g.unlocked = new Set(BUILD_ORDER); g.permit = MAX_PERMIT; g.cash = 999999; g.lives = 999; g.maxLives = 999;
+}
+// turn the current moment into a night so burglars can be summoned any time
+function devForceNight() {
+  const g = game; if (g.phase === 'restock' || g.phase === 'lost') return false;
+  if (g.phase !== 'wave') { g.customers = []; g.dayQueue = []; g.walkers = []; g.phase = 'wave'; g.waveTime = 0; g.subWave = 1; g.subWaves = 1; g.gapT = 0; g.spawnQueue = []; g.waveTotal = 1; }
+  return true;
+}
+function devSummon(type, boss) {
+  if (!devForceNight()) return;
+  const g = game, n = boss ? 1 : devN;
+  for (let i = 0; i < n; i++) { const sp = g.activeSpawns; g.spawnEnemy(type, sp[Math.floor(Math.random() * sp.length)]); }
+}
+function devAct(a, arg) {
+  const g = game; if (!g || !g.sandbox) return;
+  if (a === 'boss') devSummon(arg, true);
+  else if (a === 'foe') devSummon(arg, false);
+  else if (a === 'count') devN = devN === 1 ? 5 : devN === 5 ? 10 : 1;
+  else if (a === 'open') { if (g.phase === 'prep') g.startDay(); else banner('The store is already open'); }
+  else if (a === 'night') { if (g.phase === 'prep' || g.phase === 'morning') { g.customers = []; g.dayQueue = []; g.phase = 'evening'; } if (g.phase === 'evening') g.startWave(); }
+  else if (a === 'prep') { g.enemies = []; g.customers = []; g.dayQueue = []; g.spawnQueue = []; g.projectiles = []; g.fires = []; g.bombs = []; g.skills = []; g.zones = []; g.fruits = []; g.donuts = []; g.rolls = []; g.tornados = []; g.swirls = []; g.gapT = 0; if (g.phase !== 'restock') g.phase = 'prep'; hideBossBanner(true); }
+  else if (a === 'kill') { for (const e of g.enemies) e.dead = true; hideBossBanner(true); }
+  else if (a === 'day') { g.wave = Math.max(0, g.wave + arg); }
+  else if (a === 'heal') { for (const t of g.towers) if (t.kind === 'tower') { t.broken = null; t.fuse = null; t.wear = 0; t.hp = t.maxhp; t.warned = false; } for (const s of g.shelves) { s.hp = s.maxhp; s.units = g.capOf(s); } }
+  else if (a === 'hurt') { for (const t of g.towers) if (t.kind === 'tower') { t.broken = null; t.fuse = null; t.hp = t.maxhp * arg; } for (const s of g.shelves) s.hp = s.maxhp * arg; }
+  else if (a === 'stock') { for (const s of g.shelves) s.units = g.capOf(s); }
+  else if (a === 'reno') { if (g.phase === 'prep' && g.room < MAX_ROOM) { if (g.renovate()) { view.setGame(g); pickedTower = null; preview = null; banner('🏠 Renovated'); } } else banner(g.room >= MAX_ROOM ? 'Fully renovated' : 'Renovate in prep only'); }
+  refresh();
+}
+function devBuildPanel() {
+  const css = document.createElement('style');
+  css.textContent = `
+#devPanel{position:fixed;left:max(12px,env(safe-area-inset-left));top:max(120px,18vh);z-index:5;width:198px;max-height:calc(100vh - 120px - 86px);overflow:auto;scrollbar-width:none;font-family:var(--cf);color:#fff;background:rgba(20,14,34,.9);border:2px solid #7e5bff;border-radius:16px;box-shadow:4px 4px 0 rgba(0,0,0,.6);padding:8px 8px 10px}
+#devPanel::-webkit-scrollbar{display:none}
+#devPanel .dh{display:flex;align-items:center;justify-content:space-between;font:700 14px/1 var(--cf);letter-spacing:1px;color:#c8b6ff;cursor:pointer;padding:2px 2px 6px}
+#devPanel .ds2{font:600 10px/1 var(--cf);letter-spacing:1.5px;color:#8f84b8;margin:8px 2px 4px}
+#devPanel .db{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+#devPanel .db.one{grid-template-columns:1fr}
+#devPanel button{all:unset;box-sizing:border-box;cursor:pointer;text-align:center;padding:7px 4px 6px;border-radius:9px;background:#3b2f66;font:600 12px/1.1 var(--cf);color:#fff;box-shadow:0 3px 0 #1d1538}
+#devPanel button:active{transform:translateY(2px);box-shadow:0 1px 0 #1d1538}
+#devPanel button.boss{background:#8a2d3a;box-shadow:0 3px 0 #4a1119}
+#devPanel button.go{background:#2f8a5a;box-shadow:0 3px 0 #164a2e}
+#devPanel button.warn{background:#9a6a1c;box-shadow:0 3px 0 #523608}
+#devPanel .dd{display:flex;align-items:center;justify-content:space-between;gap:5px}
+#devPanel .dd b{flex:1;text-align:center;font:700 13px/1 var(--cf);color:#ffd23f}
+#devPanel .dd button{width:30px}
+#devPanel.fold .dbody{display:none}`;
+  document.head.appendChild(css);
+  const p = document.createElement('div'); p.id = 'devPanel'; p.className = 'off';
+  const btn = (a, label, cls = '', arg = '') => `<button class="${cls}" data-a="${a}" data-arg="${arg}">${label}</button>`;
+  p.innerHTML = `<div class="dh" id="devHd"><span>🛠 SANDBOX</span><span id="devFold">▾</span></div><div class="dbody">
+    <div class="ds2">STORE</div><div class="db">${btn('open', '☀ Open store', 'go')}${btn('night', '🌙 Start night', 'go')}${btn('prep', '↺ Back to prep', 'warn')}${btn('reno', '🏠 Renovate', '')}</div>
+    <div class="ds2">DAY</div><div class="dd">${btn('day', '◀', '', -1)}<b id="devDay">DAY 1</b>${btn('day', '▶', '', 1)}</div>
+    <div class="ds2">BOSSES</div><div class="db one">${DEV_BOSSES.map(([id, n]) => btn('boss', n, 'boss', id)).join('')}</div>
+    <div class="ds2">BURGLARS <span id="devCnt"></span></div><div class="db">${DEV_FOES.map(([id, n]) => btn('foe', n, '', id)).join('')}${btn('count', 'Amount: x1', '', '')}${btn('kill', '✖ Kill all', 'warn', '')}</div>
+    <div class="ds2">ITEMS</div><div class="db">${btn('heal', '🔧 Heal all', 'go')}${btn('stock', '📦 Restock', 'go')}${btn('hurt', '🔥 HP 50%', 'warn', 0.5)}${btn('hurt', '💀 HP 20%', 'warn', 0.2)}</div></div>`;
+  document.body.appendChild(p);
+  p.addEventListener('click', e => {
+    const b = e.target.closest('button[data-a]'); if (b) { const a = b.dataset.a, v = b.dataset.arg; devAct(a, a === 'day' || a === 'hurt' ? Number(v) : v); sfx.click(); return; }
+    if (e.target.closest('#devHd')) p.classList.toggle('fold');
+  });
+  p.addEventListener('pointerdown', e => e.stopPropagation());
+  devPanel = p;
+}
+function devSync() {
+  if (!devPanel) { if (!game || !game.sandbox) return; devBuildPanel(); }
+  const on = !!game && game.sandbox && running;
+  devPanel.classList.toggle('off', !on); if (!on) return;
+  $('devDay').textContent = 'DAY ' + (game.wave + 1);
+  const c = devPanel.querySelector('[data-a="count"]'); if (c) c.textContent = 'Amount: x' + devN;
+}
+window.addEventListener('keydown', e => {   // M on the title screen = sandbox
+  if ((e.key !== 'm' && e.key !== 'M') || e.repeat || running || !$('stage').classList.contains('menu') || $('title').classList.contains('off') || $('title').classList.contains('pop') || $('modal').classList.contains('on')) return;
+  newStore(false, true); startRun();
+});
+
 $('t-start').onclick = startRun;
 const tRestart = document.createElement('button'); tRestart.id = 't-restart'; tRestart.className = 'pxb red off'; tRestart.textContent = '↻ RESTART RUN';
 $('t-start').after(tRestart);
@@ -1511,3 +1659,9 @@ requestAnimationFrame(frame);
 requestAnimationFrame(() => requestAnimationFrame(() => loader.ready()));   // first frame is drawn: the loading screen may fade out
 window.__game = () => game;   // debugging helpers
 window.__view = view;
+
+// money is shown in pesos: swap any leftover static '$' sign in the page (HUD cash, restock button...) for the peso sign
+(function fixCurrency() {
+  const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let n = w.nextNode(); n; n = w.nextNode()) if (n.nodeValue.includes('$')) n.nodeValue = n.nodeValue.replace(/\$/g, '₱');
+})();

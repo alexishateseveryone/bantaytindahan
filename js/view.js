@@ -8,6 +8,10 @@ import { makeItem, makeShelf, setShelfGoods, makeCan, makeEnemy, makeCustomer, m
 
 import { makeShakenCola, animShakenCola } from './model/colaShake.js';
 import { makeCigPack, animCigPack, makeLitCig } from './model/cigs.js';
+import { makeIceDrop, animIceDrop } from './model/iceDrop.js';
+import { makeBanana, makeBananaCrate, animBananaCrate } from './model/banana.js';
+import { makeBigBurger, animBigBurger, makeMiniBurger } from './model/burger.js';
+import { makeGoldApple, animGoldApple } from './model/goldApple.js';
 
 // Keep raw hex colors, no sRGB conversion: flat, predictable retro palette
 THREE.ColorManagement.enabled = false;
@@ -135,26 +139,58 @@ export class View {
     this.sx = w / (tw * P); this.sy = h / (th * P);
     this.quadMat.uniforms.uvScale.value.set(this.sx, this.sy);
     // frame the store: project the store's bounding box through the isometric camera and fit the ortho frustum around it
-    const aspect = tw / th, c = this.camera, ex = this.ext, cap = v => Math.min(v, 1.9);
+    const aspect = tw / th, c = this.camera, ex = this.ext, cap = v => Math.min(v, 1.0);   // only a little of the counter strip / sidewalk is framed: the room itself fills the screen
     const tx = (ex.right - ex.left) / 2, tz = (ex.bottom - ex.top) / 2;
     c.position.set(tx + this.camDir.x * 30, 0.2 + this.camDir.y * 30, tz + this.camDir.z * 30); c.lookAt(tx, 0.2, tz); c.updateMatrixWorld(true);
     const x0 = wx(-0.5) - cap(ex.left), x1 = wx(COLS - 0.5) + cap(ex.right), z0 = wz(-0.5) - cap(ex.top), z1 = wz(ROWS - 0.5) + cap(ex.bottom);
     let mnx = 1e9, mxx = -1e9, mny = 1e9, mxy = -1e9; const v = this._fv || (this._fv = new THREE.Vector3());
-    for (const x of [x0, x1]) for (const z of [z0, z1]) for (const y of [0, 1.8]) {
+    for (const x of [x0, x1]) for (const z of [z0, z1]) for (const y of [0, 1.2]) {
       v.set(x, y, z).applyMatrix4(c.matrixWorldInverse); mnx = Math.min(mnx, v.x); mxx = Math.max(mxx, v.x); mny = Math.min(mny, v.y); mxy = Math.max(mxy, v.y);
     }
     const cx = (mnx + mxx) / 2, cy = (mny + mxy) / 2;
-    let halfW = (mxx - mnx) / 2 + 0.6, halfH = (mxy - mny) / 2 + 0.6; const halfW0 = halfW, halfH0 = halfH;
+    let halfW = (mxx - mnx) / 2 + 0.2, halfH = (mxy - mny) / 2 + 0.2; const halfW0 = halfW, halfH0 = halfH;
     if (halfW / aspect > halfH) halfH = halfW / aspect; else halfW = halfH * aspect;
-    // the build receipt covers the right side: put the store in the middle of the free part of the screen (left of the receipt)
-    const res = Math.min(w * 0.6, Math.max(0, this.reserveRight || 0));
+    // zoom in: crop the empty corners of the isometric box. A renovated (bigger) store is cropped a little less so its tips stay visible,
+    // but it no longer zooms out as far as a full fit would.
+    const lvl = Math.max(0, Math.round((COLS - 9) / 2)), crop = Math.max(0.74, 0.84 - 0.025 * lvl);
+    // the build receipt covers the right side: the store may slide partly under it (only 55% of its width counts), so the picture doesn't shrink
+    const res = Math.min(w * 0.6, Math.max(0, (this.reserveRight || 0) * 0.55));
     let shift = 0;
     if (res > 0) {
       const free = (w - res) / w;
-      halfH = Math.max(halfH0, halfW0 / free / aspect) * 0.97; halfW = halfH * aspect; shift = halfW * (1 - free);
-    } else { halfW *= 0.97; halfH *= 0.97; }
-    c.left = cx - halfW + shift; c.right = cx + halfW + shift; c.top = cy + halfH; c.bottom = cy - halfH;
+      halfH = Math.max(halfH0, halfW0 / free / aspect) * crop; halfW = halfH * aspect; shift = halfW * (1 - free);
+    } else { halfW *= crop; halfH *= crop; }
+    this.base = { cx: cx + shift, cy, halfW, halfH };   // the auto-fitted frame; the player's zoom / pan is layered on top of it
+    this.applyView(true);
+  }
+
+  // ---------- player camera: drag to pan, wheel / pinch to zoom, both limited ----------
+  // zoom 1 = the auto-fit frame. Pan is in view units (right / up on screen) and is clamped so the store can never leave the screen.
+  panLimits() {
+    const b = this.base || { halfW: 5, halfH: 5 }, z = this.zoomT;
+    return { x: b.halfW * (Math.max(0, 1 - 1 / z) + 0.35), y: b.halfH * (Math.max(0, 1 - 1 / z) + 0.35) };
+  }
+  panBy(dxPx, dyPx) {   // screen pixels -> view units
+    const c = this.camera, u = (c.right - c.left) / Math.max(1, this.w);
+    this.panT.x -= dxPx * u; this.panT.y += dyPx * u; this.clampView();
+  }
+  zoomBy(f) { this.zoomT = Math.max(this.ZMIN, Math.min(this.ZMAX, this.zoomT * f)); this.clampView(); }
+  resetView() { this.zoomT = 1; this.panT.x = this.panT.y = 0; }
+  clampView() { const L = this.panLimits(); this.panT.x = Math.max(-L.x, Math.min(L.x, this.panT.x)); this.panT.y = Math.max(-L.y, Math.min(L.y, this.panT.y)); }
+  applyView(snap = false) {
+    if (!this.base) return;
+    if (!this.panT) { this.panT = { x: 0, y: 0 }; this.pan = { x: 0, y: 0 }; this.zoomT = 1; this.zoom = 1; this.ZMIN = 0.8; this.ZMAX = 2.4; }
+    if (snap) { this.zoom = this.zoomT; this.pan.x = this.panT.x; this.pan.y = this.panT.y; }
+    const c = this.camera, b = this.base, hw = b.halfW / this.zoom, hh = b.halfH / this.zoom;
+    c.left = b.cx - hw + this.pan.x; c.right = b.cx + hw + this.pan.x; c.top = b.cy + hh + this.pan.y; c.bottom = b.cy - hh + this.pan.y;
     c.updateProjectionMatrix();
+  }
+  stepView(dt) {   // ease towards the wanted zoom / pan
+    if (!this.panT) return;
+    const k = Math.min(1, dt * 14);
+    if (Math.abs(this.zoom - this.zoomT) + Math.abs(this.pan.x - this.panT.x) + Math.abs(this.pan.y - this.panT.y) < 1e-4) return;
+    this.zoom += (this.zoomT - this.zoom) * k; this.pan.x += (this.panT.x - this.pan.x) * k; this.pan.y += (this.panT.y - this.pan.y) * k;
+    this.applyView();
   }
 
   // px of the screen (from the right edge) that the build receipt covers; the camera re-frames the store around it
@@ -668,6 +704,10 @@ export class View {
       obj = makeShelf(this, { v: 0 }); setShelfGoods(this, obj, MAX_STOCK); obj.rotation.y = Math.PI / 2;
     } else if (type === 'shakecola') obj = makeShakenCola(this, 1, 0);
     else if (type === 'cigs') obj = makeCigPack(this, 1);
+    else if (type === 'icecubes') obj = makeIceDrop(this, { icon: true });
+    else if (type === 'bananas') obj = makeBananaCrate(this);
+    else if (type === 'burger') { obj = makeBigBurger(this, { icon: true }); obj.scale.setScalar(0.4); }
+    else if (type === 'goldapple') { obj = makeGoldApple(this, { icon: true }); obj.scale.setScalar(1.35); obj.userData.apple.position.y = 0.1; }
     else if (ITEMS[type] && ITEMS[type].kind === 'shelf') {   // steel shelf, fruit shelf, soda statue, fence
       obj = makeItem(this, { type, id: 1, dir: 'y', v: 0 });
       if (obj.userData.setGoods) obj.userData.setGoods(this, obj, ITEMS[type].cap);
@@ -680,7 +720,7 @@ export class View {
     else if (type === 'statue') obj.scale.setScalar(0.42);
     obj.position.set(0, 0, 0); scene.add(obj);
     const cam = new THREE.OrthographicCamera(-0.98, 0.98, 0.98, -0.98, 0.1, 20);
-    cam.position.set(2.4, 2.5, 3.0); cam.lookAt(0, type === 'mop' ? 0.35 : type === 'shakecola' || type === 'cigs' ? 0.36 : type === 'cans' || type === 'gum' || type === 'atm' ? 0.65 : 0.5, 0);
+    cam.position.set(2.4, 2.5, 3.0); cam.lookAt(0, type === 'mop' ? 0.35 : type === 'shakecola' || type === 'cigs' || type === 'icecubes' || type === 'bananas' || type === 'burger' || type === 'goldapple' ? 0.36 : type === 'cans' || type === 'gum' || type === 'atm' ? 0.65 : 0.5, 0);
     const prevClear = new THREE.Color(); this.renderer.getClearColor(prevClear); const prevA = this.renderer.getClearAlpha();
     this.renderer.setClearColor(0x000000, 0);
     this.renderer.setRenderTarget(rt); this.renderer.clear(); this.renderer.render(scene, cam); this.renderer.setRenderTarget(null);
@@ -726,6 +766,133 @@ export class View {
     const cubes = [[0, 0, 0, 0.2], [0.13, 0.05, 0.04, 0.13], [-0.1, -0.04, 0.08, 0.12], [0.02, 0.09, -0.1, 0.11]];
     for (const [x, y, z, s] of cubes) this.part(g, this.box, 0xbfeaff, s, s, s, x, y, z, false);
     return g;
+  }
+
+  // ---------- skill models + grid effects ----------
+  makeSkillModel(s) {
+    if (s.type === 'cigs') return makeCigPack(this, 1);
+    if (s.type === 'bananas') return makeBananaCrate(this);
+    if (s.type === 'goldapple') return makeGoldApple(this, { blast: true });
+    if (s.type === 'burger') {   // lands on top of whatever stands on the cell
+      const g = this.game, it = g.towerAt(s.x, s.y) || g.shelfAt(s.x, s.y), mm = it && it.type !== 'burgerwall' && this.meshes.get(it.id);
+      let landY = 0; if (mm && mm.group) landY = Math.min(1.8, Math.max(0, new THREE.Box3().setFromObject(mm.group).max.y));
+      return makeBigBurger(this, { landY });
+    }
+    if (s.type === 'icecubes') {   // lands on top of whatever stands on the cell
+      const g = this.game, it = g.towerAt(s.x, s.y) || g.shelfAt(s.x, s.y), mm = it && this.meshes.get(it.id);
+      let landY = 0; if (mm && mm.group) landY = Math.min(1.8, Math.max(0, new THREE.Box3().setFromObject(mm.group).max.y));
+      return makeIceDrop(this, { landY });
+    }
+    return makeShakenCola(this, 1, ITEMS.shakecola.radius);
+  }
+  animSkill(s, m, time) {
+    if (s.type === 'cigs') animCigPack(m.group, s, time, this);
+    else if (s.type === 'icecubes') animIceDrop(m.group, s, time, this, ITEMS.icecubes);
+    else if (s.type === 'bananas') animBananaCrate(m.group, s, time, this, ITEMS.bananas);
+    else if (s.type === 'burger') animBigBurger(m.group, s, time, this, ITEMS.burger);
+    else if (s.type === 'goldapple') animGoldApple(m.group, s, time);
+    else animShakenCola(m.group, s, time, this);
+  }
+  later(delay, fn) { (this.sched ||= []).push({ t: delay, fn }); }
+  // a flat tile-sized stain stuck to one grid cell; shrinks away like the other floor decals
+  cellStain(cx, cy, color, life = 2.6, size = 0.92, y = 0.052) {
+    const m = new THREE.Mesh(this.box, this.basic(color)); m.scale.set(size, 0.01, size); m.position.set(wx(cx), y, wz(cy)); m.castShadow = false; this.scene.add(m);
+    this.fx.push({ decal: true, m, sx: size, sz: size, life, t: 0 });
+  }
+  // the shaken bottle erupts: every grid cell in reach gets splashed, rippling outwards, and fizz jets run along 8 lanes leaving a trail of splashes
+  colaGridSplash(d) {
+    const rc = Math.ceil(d.r), cx0 = Math.round(d.x), cy0 = Math.round(d.y), pal = [0x4a2616, 0x6b3a22, 0x8a4b2a], inside = (x, y) => x >= 0 && y >= 0 && x < COLS && y < ROWS;
+    for (let i = -rc; i <= rc; i++) for (let j = -rc; j <= rc; j++) {
+      const dist = Math.hypot(i, j), cx = cx0 + i, cy = cy0 + j;
+      if (dist > d.r + 0.3 || !inside(cx, cy)) continue;
+      this.later(dist * 0.07, () => {
+        this.cellStain(cx, cy, pal[Math.abs(i * 3 + j * 5) % 3], d.time, 0.94);
+        for (let k = 0; k < 4; k++) {   // foam bubbles stuck in the puddle
+          const s = 0.06 + Math.random() * 0.1, b = new THREE.Mesh(this.cyl, this.basic(k % 2 ? 0xc98a5a : 0xffffff)); b.scale.set(s, 0.01, s); b.castShadow = false;
+          b.position.set(wx(cx) + (Math.random() - 0.5) * 0.7, 0.058 + k * 0.001, wz(cy) + (Math.random() - 0.5) * 0.7); this.scene.add(b);
+          this.fx.push({ decal: true, m: b, sx: s, sz: s, life: d.time * (0.5 + Math.random() * 0.5), t: 0 });
+        }
+        this.burst(cx, cy, 0.12, 0xffffff, 3, 1.6, 0.8); this.burst(cx, cy, 0.15, 0xc98a5a, 2, 1.8, 0.9);
+        if ((i + j) % 2 === 0) for (let n = 0; n < 5; n++) this.trailDrop(wx(cx), 0.1 + n * 0.14, wz(cy), COLA_PAL, 3, 1.1);   // little fizz geyser
+      });
+    }
+    for (let k = 0; k < 8; k++) {
+      const dx = Math.round(Math.cos(k * Math.PI / 4)), dy = Math.round(Math.sin(k * Math.PI / 4));
+      for (let st = 1; st <= rc + 1; st++) this.later(0.04 + st * 0.08, () => {
+        const x = cx0 + dx * st, y = cy0 + dy * st; if (!inside(x, y)) return;
+        this.cellStain(x, y, 0x3b1f14, d.time * 0.7, 0.55, 0.054);
+        for (let n = 0; n < 6; n++) this.trailDrop(wx(x), 0.15 + Math.random() * 0.8, wz(y), COLA_PAL, 4, 1.25);
+        this.puff(x, y, 0.15, 0xffffff, 0.6, 0.9, 0.45);
+      });
+    }
+  }
+  // the giant burger lands: a thud, ketchup and mustard splash over the 3x3 and the cells around it
+  burgerLandFx(d) {
+    const cx0 = Math.round(d.x), cy0 = Math.round(d.y), h = Math.floor(d.size / 2) + 1, inside = (x, y) => x >= 0 && y >= 0 && x < COLS && y < ROWS;
+    this.ringFx(d.x, d.y, d.size * 0.85, 0xffb347); this.ringFx(d.x, d.y, d.size * 0.5, 0xffffff);
+    this.burst(d.x, d.y, 0.3, 0xd2231a, 14, 3.4, 1.3); this.burst(d.x, d.y, 0.3, 0xffc833, 8, 3, 1.2); this.burst(d.x, d.y, 0.3, 0xd9963a, 6, 2.6, 1);
+    for (let i = 0; i < 4; i++) this.puff(d.x, d.y, 0.2, 0xf3e6c8, 1.4, 0.5, 0.6);
+    this.splat(d.x, d.y, d.size * 0.9, 0xd2231a);
+    for (let i = -h; i <= h; i++) for (let j = -h; j <= h; j++) {
+      const cx = cx0 + i, cy = cy0 + j, dist = Math.hypot(i, j); if (!inside(cx, cy) || dist > h + 0.3) continue;
+      this.later(dist * 0.05, () => { this.cellStain(cx, cy, (i + j) % 2 ? 0xd2231a : 0xffc833, 3.2, 0.55 + 0.3 * Math.random(), 0.052); this.burst(cx, cy, 0.15, (i + j) % 2 ? 0xd2231a : 0xffc833, 2, 1.6, 0.8); });
+    }
+    this.shake = Math.max(this.shake || 0, 0.35);
+  }
+  // Golden Apple bursts: the cola eruption in gold. Every cell of the 3x3 gets a golden splash rippling out from the middle, and gold jets run along 8 lanes.
+  goldBlastFx(d) {
+    const h = Math.floor(d.size / 2), cx0 = Math.round(d.x), cy0 = Math.round(d.y), pal = [0xffc83a, 0xffe27a, 0xd99a10], GOLD = [0xffc83a, 0xffe27a, 0xffffff, 0xd99a10], inside = (x, y) => x >= 0 && y >= 0 && x < COLS && y < ROWS;
+    this.flashFx(d.x, d.y, d.size * 1.1, 0.6); this.ringFx(d.x, d.y, d.size * 0.95, 0xffd23f); this.ringFx(d.x, d.y, d.size * 0.55, 0xffffff);
+    this.burst(d.x, d.y, 0.5, 0xffc83a, 26, 4.2, 1.6); this.burst(d.x, d.y, 0.6, 0xffe27a, 18, 3.4, 1.3); this.burst(d.x, d.y, 1.0, 0xffffff, 10, 2.6, 1);
+    for (let i = 0; i < 8; i++) this.puff(d.x + (Math.random() - 0.5) * 1.2, d.y + (Math.random() - 0.5) * 1.2, 0.4, 0xffe9a0, 1.5, 0.9, 0.7);
+    this.shake = Math.max(this.shake || 0, 0.3);
+    for (let i = -h; i <= h; i++) for (let j = -h; j <= h; j++) {
+      const dist = Math.hypot(i, j), cx = cx0 + i, cy = cy0 + j; if (!inside(cx, cy)) continue;
+      this.later(dist * 0.07, () => {
+        this.cellStain(cx, cy, pal[Math.abs(i * 3 + j * 5) % 3], d.time, 0.94);
+        for (let k = 0; k < 4; k++) {   // glittering gold flecks stuck in the puddle
+          const sz = 0.06 + Math.random() * 0.1, b = new THREE.Mesh(this.cyl, this.basic(k % 2 ? 0xffffff : 0xffe27a)); b.scale.set(sz, 0.01, sz); b.castShadow = false;
+          b.position.set(wx(cx) + (Math.random() - 0.5) * 0.7, 0.058 + k * 0.001, wz(cy) + (Math.random() - 0.5) * 0.7); this.scene.add(b);
+          this.fx.push({ decal: true, m: b, sx: sz, sz, life: d.time * (0.5 + Math.random() * 0.5), t: 0 });
+        }
+        this.burst(cx, cy, 0.12, 0xffe27a, 3, 1.6, 0.8); this.burst(cx, cy, 0.15, 0xffffff, 2, 1.8, 0.9);
+        if ((i + j) % 2 === 0) for (let n = 0; n < 5; n++) this.trailDrop(wx(cx), 0.1 + n * 0.14, wz(cy), GOLD, 3, 1.1);   // little gold geyser
+      });
+    }
+    for (let k = 0; k < 8; k++) {
+      const dx = Math.round(Math.cos(k * Math.PI / 4)), dy = Math.round(Math.sin(k * Math.PI / 4));
+      for (let st = 1; st <= h + 1; st++) this.later(0.04 + st * 0.08, () => {
+        const x = cx0 + dx * st, y = cy0 + dy * st; if (!inside(x, y)) return;
+        this.cellStain(x, y, 0xd99a10, d.time * 0.7, 0.55, 0.054);
+        for (let n = 0; n < 6; n++) this.trailDrop(wx(x), 0.15 + Math.random() * 0.8, wz(y), GOLD, 4, 1.25);
+        this.puff(x, y, 0.15, 0xffe9a0, 0.6, 0.9, 0.45);
+      });
+    }
+  }
+  // Ice Cube Drop snaps: a 3x3 of frost tiles, crystals shoot up tile by tile from the middle, then everything shatters and fades out
+  iceSnapFx(d) {
+    const cx0 = Math.round(d.x), cy0 = Math.round(d.y), h = Math.floor(d.size / 2);
+    const fl = new THREE.Mesh(this.sph, this.basic(0xdff6ff)); fl.position.set(wx(d.x), 0.5, wz(d.y)); fl.scale.setScalar(0.01); this.scene.add(fl);
+    this.fx.push({ flash: true, m: fl, r: d.size * 0.95, life: 0.3, t: 0 });
+    this.ringFx(d.x, d.y, d.size * 0.9, 0xbfeaff); this.ringFx(d.x, d.y, d.size * 0.55, 0xffffff);
+    for (let i = -h; i <= h; i++) for (let j = -h; j <= h; j++) {
+      const cx = cx0 + i, cy = cy0 + j, dist = Math.hypot(i, j);
+      this.later(dist * 0.05, () => {
+        this.cellStain(cx, cy, 0x9fd8f5, d.time, 0.97, 0.05); this.cellStain(cx, cy, 0xe6f8ff, d.time * 0.8, 0.72, 0.056);
+        const n = 2 + (Math.random() < 0.6 ? 1 : 0);
+        for (let k = 0; k < n; k++) this.iceSpike(cx + (Math.random() - 0.5) * 0.6, cy + (Math.random() - 0.5) * 0.6, 0.45 + Math.random() * 0.65 - dist * 0.08, d.time * 0.5);
+        this.burst(cx, cy, 0.2, 0xbfeaff, 6, 3, 1.2); this.burst(cx, cy, 0.3, 0xffffff, 3, 2.2, 0.9);
+        this.puff(cx, cy, 0.1, 0xeaf8ff, 1.3, 0.9, 0.7);
+      });
+    }
+    this.shake = Math.max(this.shake || 0, 0.25);
+  }
+  iceSpike(gx, gy, h, life) {
+    this._oct ||= new THREE.OctahedronGeometry(0.5);
+    const m = new THREE.Mesh(this._oct, this._iceSpikeMat ||= new THREE.MeshBasicMaterial({ color: 0xcdeeff, transparent: true, opacity: 0.8 })), w = 0.2 + Math.random() * 0.1;
+    m.castShadow = false; m.position.set(wx(gx), 0.05, wz(gy)); m.rotation.y = Math.random() * 3; m.scale.setScalar(0.01); this.scene.add(m);
+    this.fx.push({ spike: true, m, sx: w, sy: Math.max(0.3, h), sz: w, life, t: 0 });
+    this.later(life - 0.35, () => this.burst(gx, gy, 0.3, 0xbfeaff, 3, 2, 0.9));   // shatters as it vanishes
   }
 
   // ---------- picking ----------
@@ -996,15 +1163,65 @@ export class View {
       this.burst(d.x, d.y, 0.5, 0x6b3a22, 26, 4.2, 1.7); this.burst(d.x, d.y, 0.6, 0xffffff, 18, 3.4, 1.4); this.burst(d.x, d.y, 1.1, 0x3b1f14, 10, 2.6, 1.2);
       for (let i = 0; i < 8; i++) this.puff(d.x + (Math.random() - 0.5) * 1.2, d.y + (Math.random() - 0.5) * 1.2, 0.4, 0xffffff, 1.6, 0.9, 0.7);
       this.shake = Math.max(this.shake || 0, 0.3);
+      this.colaGridSplash(d);
     }
     else if (type === 'cigBoom') {                                                        // small pop where a cigarette lands
       this.ringFx(d.x, d.y, d.r, 0xffb347); this.burst(d.x, d.y, 0.25, 0xffd23f, 6, 2.2, 1); this.burst(d.x, d.y, 0.3, 0xff5a1f, 5, 1.8, 1);
       this.puff(d.x, d.y, 0.3, 0x55556a, 0.9, 0.6, 0.5);
+      this.burst(d.x, d.y, 0.3, 0xffffff, 3, 1.4, 0.8); this.ringFx(d.x, d.y, d.r * 1.35, 0xff8c1a);                        // bigger pop + a scorch mark on the grid
+      this.cellStain(Math.round(d.x), Math.round(d.y), 0x1a1410, 2.4, 0.8, 0.05); this.cellStain(Math.round(d.x), Math.round(d.y), 0xff6a1a, 0.7, 0.34, 0.056);
     }
+    else if (type === 'bananaLaunch') { const k = d.skill; this.burst(k.x, k.y, 0.55, 0xffd93b, 3, 2, 0.9); }
+    else if (type === 'bananaPop') {                                                      // the crate bursts open
+      this.ringFx(d.x, d.y, 1.3, 0xffd93b); this.burst(d.x, d.y, 0.4, 0xffd93b, 14, 3.4, 1.4); this.burst(d.x, d.y, 0.4, 0xc99a5a, 8, 3, 1.3); this.burst(d.x, d.y, 0.5, 0xffffff, 4, 2.2, 1);
+      for (let i = 0; i < 4; i++) this.puff(d.x, d.y, 0.4, 0xe9ddc0, 1.2, 0.8, 0.6);
+      this.shake = Math.max(this.shake || 0, 0.15);
+    }
+    else if (type === 'bananaBoom') {                                                     // banana goes splat: mush, flying halves, a peel on the floor
+      this.ringFx(d.x, d.y, d.r * 1.3, 0xffd93b); this.ringFx(d.x, d.y, d.r * 0.7, 0xffffff); this.splat(d.x, d.y, d.r, 0xffe27a);
+      this.burst(d.x, d.y, 0.3, 0xfff3b0, 8, 3.2, 1.2); this.burst(d.x, d.y, 0.3, 0xffd93b, 8, 2.8, 1.1); this.burst(d.x, d.y, 0.3, 0x6b4a20, 3, 2.4, 0.8);
+      for (let i = 0; i < 3; i++) {
+        const b = makeBanana(this, 0.55); b.position.set(wx(d.x), 0.3, wz(d.y)); b.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6); this.scene.add(b);
+        const a = Math.random() * 6.28, sp = 1.2 + Math.random() * 1.8;
+        this.fx.push({ m: b, vx: Math.cos(a) * sp, vy: 2.4 + Math.random() * 1.8, vz: Math.sin(a) * sp, life: 0.8 + Math.random() * 0.3, t: 0, s: 0.55, g: 9 });
+      }
+      const peel = new THREE.Mesh(this.box, this.basic(0xffd93b)); peel.scale.set(0.28, 0.01, 0.1); peel.rotation.y = Math.random() * 6; peel.castShadow = false;
+      peel.position.set(wx(d.x) + (Math.random() - 0.5) * 0.4, 0.06, wz(d.y) + (Math.random() - 0.5) * 0.4); this.scene.add(peel);
+      this.fx.push({ decal: true, m: peel, sx: 0.28, sz: 0.1, life: 2.4, t: 0 });
+      this.shake = Math.max(this.shake || 0, 0.1);
+    }
+    else if (type === 'iceLand') {                                                        // the pile hits the floor / the item
+      this.ringFx(d.x, d.y, 1.3, 0xbfeaff); this.burst(d.x, d.y, 0.3, 0xbfeaff, 10, 3, 1.2); this.burst(d.x, d.y, 0.3, 0xffffff, 5, 2.4, 0.9);
+      for (let i = 0; i < 3; i++) this.puff(d.x, d.y, 0.2, 0xeaf8ff, 1.2, 0.5, 0.6);
+      this.shake = Math.max(this.shake || 0, 0.2);
+    }
+    else if (type === 'iceSnap') this.iceSnapFx(d);
+    else if (type === 'burgerLand') this.burgerLandFx(d);
+    else if (type === 'burgerPop') {                                                      // the giant burger pops: buns, patty, lettuce and sauce fly, then the 4 tiny ones shoot out
+      this.flashFx(d.x, d.y, d.size * 0.9, 0.7); this.ringFx(d.x, d.y, d.size * 0.9, 0xffb347); this.ringFx(d.x, d.y, d.size * 0.5, 0xffffff);
+      for (const [c, n] of [[0xd9963a, 12], [0x5a2f1a, 8], [0x58b947, 8], [0xe0332a, 7], [0xffc833, 5], [0xd2231a, 10], [0xfff1cc, 8]]) this.burst(d.x, d.y, 0.7, c, n, 4, 1.5);
+      for (let i = 0; i < 5; i++) this.puff(d.x + (Math.random() - 0.5) * 1.6, d.y + (Math.random() - 0.5) * 1.6, 0.5, 0xf3e6c8, 1.7, 0.8, 0.8);
+      this.splat(d.x, d.y, d.size * 0.8, 0xd2231a);
+      this.shake = Math.max(this.shake || 0, 0.3);
+    }
+    else if (type === 'miniHit') { this.burst(d.x, d.y, 0.5, 0xd2231a, 4, 2, 0.9); this.burst(d.x, d.y, 0.5, 0xd9963a, 3, 1.8, 0.9); }
+    else if (type === 'miniPop') {                                                        // tiny burger smashed on the wall
+      this.ringFx(d.x, d.y, 0.9, 0xffb347); this.burst(d.x, d.y, 0.5, 0xd9963a, 7, 2.6, 1.1); this.burst(d.x, d.y, 0.5, 0xd2231a, 5, 2.2, 1); this.burst(d.x, d.y, 0.5, 0x58b947, 3, 2, 0.9);
+      this.puff(d.x, d.y, 0.4, 0xf3e6c8, 0.9, 0.6, 0.5); this.shake = Math.max(this.shake || 0, 0.06);
+    }
+    else if (type === 'goldBlast') this.goldBlastFx(d);
     else if (type === 'buy') { this.burst(d.x, d.y, 0.9, 0xffcf4a, 4, 1.6); const o = this.meshes.get(d.id); if (o) { o.kick = 0.18; o.flash = 0.35; if (d.kind === 'shelf') o.pop = 0.34; } }
     else if (type === 'pay') this.burst(d.x, d.y, 1.1, 0xffe45c, 7, 2.2, 1.2);
     else if (type === 'hit') this.burst(d.x, d.y, 0.5, d.crit ? 0xffee58 : 0xffffff, d.crit ? 6 : 3, 1.5);
-    else if (type === 'kill') this.burst(d.enemy.x, d.enemy.y, 0.4, 0xffcf4a, 8, 2.5);
+    else if (type === 'kill') {
+      this.burst(d.enemy.x, d.enemy.y, 0.4, 0xffcf4a, 8, 2.5);
+      const m = this.meshes.get(d.enemy.id);
+      if (m && m.group) {   // detach the model from the sync so it can sink instead of popping out
+        this.meshes.delete(d.enemy.id); if (this.hoverId === d.enemy.id) { this.hoverId = null; this.outline = []; }
+        if (m.group.userData.bar) m.group.userData.bar.visible = false;
+        m.hitT = 0.13; (this.dying || (this.dying = [])).push({ group: m.group, m, t: 0 });
+      }
+    }
     else if (type === 'splash') { this.ringFx(d.x, d.y, d.r, 0x7df0d8); this.burst(d.x, d.y, 0.45, 0x7df0d8, 10, 2.6, 1.2); this.burst(d.x, d.y, 0.5, 0xffffff, 5, 2, 0.9); }
     else if (type === 'pulse') { this.ringFx(d.tower.x, d.tower.y, d.r, 0xffee58); const o = this.meshes.get(d.tower.id); if (o) o.flash = 0.25; }
     else if (type === 'slip') this.burst(d.enemy.x, d.enemy.y, 0.2, 0x8fd3ff, 8, 2);
@@ -1127,6 +1344,8 @@ export class View {
       this.ringFx(d.x, d.y, 1.6, 0xc08a50); this.burst(d.x, d.y, 0.7, 0xa56a3a, 16, 3.4, 1.5); this.burst(d.x, d.y, 0.7, 0x9ad7ff, 8, 3, 1.2); this.burst(d.x, d.y, 0.7, 0x6e4423, 8, 2.6, 1.4);
       this.shake = Math.max(this.shake, 0.4);
     }
+    else if (type === 'revStart') { this.ringFx(d.x, d.y, 1.4, 0x9a9a9a); for (let i = 0; i < 6; i++) this.puff(d.x, d.y, 0.25, 0x6b6b72, 1.4, 0.9, 1.0); }
+    else if (type === 'roamStart') { this.ringFx(d.x, d.y, 2.0, 0xff5a3a); this.burst(d.x, d.y, 0.4, 0xffb347, 10, 3, 1.0); this.shake = Math.max(this.shake, 0.25); }
     else if (type === 'park') { for (let i = 0; i < 6; i++) this.puff(d.x, d.y, 0.2, 0xb9b3a4, 1, 0.6, 0.8); this.ringFx(d.x, d.y, 1.2, 0xe9ddc0); }
     else if (type === 'spinStart') { this.ringFx(d.x, d.y, 1.8, 0xc9b48a); for (let i = 0; i < 8; i++) this.puff(d.x, d.y, 0.2, 0xc9b48a, 1.2, 0.8, 0.9); }
     else if (type === 'tornado') { this.ringFx(d.x, d.y, 1.5, 0xc9b48a); this.burst(d.x, d.y, 0.3, 0xc9b48a, 10, 2.4, 1.1); }
@@ -1179,6 +1398,7 @@ export class View {
         if (!m) { const grp = make(o); this.dyn.add(grp); m = { group: grp, lvl: 0 }; this.meshes.set(o.id, m); grp.traverse(c => { if (c.isMesh && c.castShadow === undefined) c.castShadow = true; }); }
         if (m.group && (o.kind === 'tower' || o.kind === 'shelf' || o.kind === 'trap')) { m.group.position.x = wx(o.x); m.group.position.z = wz(o.y); }   // items can be moved
         upd(o, m);
+        if (o.kind === 'tower' || o.kind === 'shelf') this.glowItem(o, m, time);
       }
     };
     sync(g.towers, t => this.at(makeItem(this, t), t), (t, m) => this.updTower(t, m, dt));
@@ -1189,7 +1409,7 @@ export class View {
       m.group.scale.setScalar(1 + (left < 0.4 ? (0.4 - left) * 0.9 : 0));
       if (f.age < f.land) m.group.rotation.z += dt * 12;
     });
-    sync(g.shelves, sh => this.at(makeItem(this, sh), sh), (sh, m) => {
+    sync(g.shelves, sh => { if (sh.type === 'burgerwall') { const w = new THREE.Group(); w.userData = { body: new THREE.Group(), stock: 0 }; return this.at(w, sh); } return this.at(makeItem(this, sh), sh); }, (sh, m) => {
       const u = m.group.userData;
       if (u.stock !== sh.units) (u.setGoods || setShelfGoods)(this, m.group, sh.units);
       if (u.setLinks) {   // security fence: reach rails towards the fence pieces next to it
@@ -1223,8 +1443,10 @@ export class View {
       if (Math.random() < dt * 4) { const [cx, cy] = c[Math.floor(Math.random() * c.length)]; this.puff(cx, cy, 0.9, 0x3a3a46, 1.1, 0.9, 1.1); }
     }
     sync(g.bombs, b => this.at(makeGroundBomb(this, b), b), (b, m) => animGroundBomb(m.group, b, time));
-    sync(g.skills || [], s => this.at(s.type === 'cigs' ? makeCigPack(this, 1) : makeShakenCola(this, 1, ITEMS.shakecola.radius), s),
-      (s, m) => s.type === 'cigs' ? animCigPack(m.group, s, time, this) : animShakenCola(m.group, s, time, this));
+    sync(g.skills || [], s => this.at(this.makeSkillModel(s), s), (s, m) => this.animSkill(s, m, time));
+    if (g.goldBuff) {   // Golden Apple: every machine glitters while the power-up lasts
+      for (const t of g.towers) if (t.kind === 'tower' && !t.broken && Math.random() < dt * 5) { this.burst(t.x, t.y, 0.4 + Math.random() * 0.7, Math.random() < 0.5 ? 0xffe27a : 0xffffff, 1, 0.6, 0.7); if (Math.random() < 0.3) this.puff(t.x, t.y, 0.9, 0xffd23f, 0.35, 0.6, 0.5); }
+    }
     sync(g.swirls || [], s => this.at(this.makeSwirlModel(), s), (s, m) => this.animSwirl(m.group, s, time));
     sync(g.tornados || [], tn => this.at(this.makeTornado(), tn), (tn, m) => { m.group.position.set(wx(tn.x), 0, wz(tn.y)); this.animTornado(m.group, tn, time); });
     sync(g.donuts || [], d => makeProjectile(this, d), (d, m) => {                // boomerang donuts: twirl flat, sprinkle crumbs
@@ -1238,7 +1460,7 @@ export class View {
       u.spin.rotation.x += dt * 20;
       u.rib.scale.set(0.22, 0.015, L); u.rib.position.set(0, -0.04 + Math.sin(time * 18 + r.id) * 0.02, -L / 2);
     });
-    sync(g.projectiles, p => p.kind === 'molo' ? this.makeMoloProj() : p.kind === 'hotdog' ? this.makeHotdogProj() : p.kind === 'ice' ? this.makeIceProj() : p.kind === 'cig' ? makeLitCig(this) : makeProjectile(this, p), (p, m) => {
+    sync(g.projectiles, p => p.kind === 'molo' ? this.makeMoloProj() : p.kind === 'hotdog' ? this.makeHotdogProj() : p.kind === 'ice' ? this.makeIceProj() : p.kind === 'cig' ? makeLitCig(this) : p.kind === 'banana' ? makeBanana(this, 1.15) : p.kind === 'miniburger' ? makeMiniBurger(this) : makeProjectile(this, p), (p, m) => {
       const grp = m.group; grp.position.set(wx(p.x), p.h, wz(p.y));
       grp.visible = !(p.delay > 0);   // queued gumballs are still inside the machine
       if (p.kind === 'gum') { grp.rotation.x += dt * 9; grp.rotation.z += dt * 6; }
@@ -1264,6 +1486,14 @@ export class View {
         grp.rotation.y = Math.atan2(-p.dy, p.dx); grp.userData.cig.rotation.x += dt * 14;
         if (Math.random() < dt * 40) this.burst(p.x, p.y, p.h, 0xff8c1a, 1, 0.5, 0.5);
         if (Math.random() < dt * 18) this.puff(p.x, p.y, p.h + 0.1, 0x9a9aa8, 0.35, 0.5, 0.35);
+      } else if (p.kind === 'miniburger') {                                                                                   // tiny burger spinning like a frisbee, sauce crumbs behind it
+        grp.userData.body.rotation.y += dt * 16; grp.userData.body.rotation.z = Math.sin(time * 12 + p.id) * 0.25;
+        if (Math.random() < dt * 30) this.burst(p.x, p.y, p.h, Math.random() < 0.5 ? 0xd2231a : 0xd9963a, 1, 0.5, 0.6);
+        if (Math.random() < dt * 14) this.puff(p.x, p.y, p.h, 0xf3e6c8, 0.3, 0.4, 0.3);
+      } else if (p.kind === 'banana') {                                                                                       // tumbling banana, yellow sparkle + peel crumbs
+        grp.rotation.y = Math.atan2(-p.dy, p.dx); grp.rotation.z += dt * 12;
+        if (Math.random() < dt * 30) this.burst(p.x, p.y, p.h, 0xffd93b, 1, 0.5, 0.6);
+        if (Math.random() < dt * 14) this.puff(p.x, p.y, p.h, 0xfff3b0, 0.35, 0.4, 0.35);
       } else if (p.kind === 'molo') {                                                                                         // spinning bottle with a burning rag
         grp.rotation.z += dt * 9; grp.rotation.x += dt * 4;
         if (Math.random() < dt * 34) this.flame(p.x, p.y, p.h + 0.18);
@@ -1297,6 +1527,7 @@ export class View {
       if (trap) m.group.scale.multiplyScalar(k); else m.group.scale.setScalar(Math.max(0.01, k));
       if (x >= 1) this.pops.delete(id); else this.pops.set(id, t);
     }
+    this.stepDying(dt);
     for (const [id, m] of this.meshes) if (!seen.has(id)) { if (id === this.hoverId) { this.hoverId = null; this.outline = []; } this.dyn.remove(m.group); if (m.mark) { this.scene.remove(m.mark); m.mark.material.dispose(); } if (m.warn) this.scene.remove(m.warn); this.meshes.delete(id); }
 
     // doors swing open for anybody walking up to them
@@ -1317,6 +1548,9 @@ export class View {
     this.renderer.setClearColor(this.sky.setRGB(0, 0, 0));   // black outside the store, day and night
     if (this.clerk) this.clerk.position.y = 0.9 + Math.abs(Math.sin(time * 2.2)) * 0.03;
 
+    if (this.sched && this.sched.length) for (let i = this.sched.length - 1; i >= 0; i--) {   // delayed effects (grid ripples)
+      const q = this.sched[i]; q.t -= dt; if (q.t <= 0) { this.sched.splice(i, 1); q.fn(); }
+    }
     // fx particles
     for (let i = this.fx.length - 1; i >= 0; i--) {
       const f = this.fx[i]; f.t += dt;
@@ -1327,6 +1561,10 @@ export class View {
         const y0 = 0.08, drop = Math.min(1, f.t / 0.25);
         f.m.position.y = y0 + (1 - drop) * (1 - drop) * 0.8; if (drop < 1) f.m.rotation.x += f.spin * dt;
         const k = Math.max(0.01, Math.min(1, f.t / 0.1, (f.life - f.t) / 0.6)); f.m.scale.setScalar(f.s * k);
+      }
+      else if (f.spike) {   // ice crystal: shoots up out of the tile, shrinks away at the end
+        const up = Math.min(1, f.t / 0.14), out = Math.max(0.01, Math.min(1, (f.life - f.t) / 0.5));
+        f.m.scale.set(f.sx * out, Math.max(0.01, f.sy * up * out), f.sz * out); f.m.position.y = f.sy * up * out * 0.5 + 0.05;
       }
       else if (f.ball) {
         const p = f.m.position;
@@ -1372,12 +1610,69 @@ export class View {
     const offX = (this.ext.right - this.ext.left) / 2, offZ = (this.ext.bottom - this.ext.top) / 2;   // fixed camera, aimed at the middle of the whole shop
     this.camera.position.set(offX + this.camDir.x * 30 + (Math.random() - 0.5) * sh, 0.2 + this.camDir.y * 30 + (Math.random() - 0.5) * sh, offZ + this.camDir.z * 30);
     this.camera.lookAt(offX, 0.2, offZ);
+    this.stepView(dt);
 
     // two-pass: low-res target, then nearest-neighbour upscale
     this.renderer.setRenderTarget(this.rt);
     this.renderer.render(this.scene, this.camera);
     this.renderer.setRenderTarget(null);
     this.renderer.render(this.quadScene, this.quadCam);
+  }
+
+  // damaged items glow: below 60% HP a soft amber pulse, below 30% HP (or broken) a blinking red glow with a popping squash
+  // white hit flash on every material of a model (clones the shared toon materials while it lasts, then puts the originals back)
+  enemyFlash(m, k) {
+    const g = m.group;
+    if (k <= 0) { g.traverse(x => { if (x.userData.origMat) { if (x.material !== x.userData.origMat) x.material.dispose(); x.material = x.userData.origMat; delete x.userData.origMat; } }); m.hitOn = false; return; }
+    m.hitOn = true;
+    g.traverse(x => {
+      if (!x.isMesh || x.userData.ol || !x.material || Array.isArray(x.material)) return;
+      if (!x.userData.origMat) { if (!x.material.isMeshToonMaterial || x.material.transparent) return; x.userData.origMat = x.material; x.material = x.material.clone(); }
+      x.material.emissive.setRGB(k, k, k);
+    });
+  }
+  // a defeated burglar sinks into the floor (tilting back) instead of vanishing
+  stepDying(dt) {
+    const L = this.dying; if (!L || !L.length) return;
+    for (let i = L.length - 1; i >= 0; i--) {
+      const d = L[i]; d.t += dt;
+      const k = Math.min(1, d.t / 0.75), u = d.group.userData;
+      d.group.position.y = -k * k * 1.6 - k * 0.1;
+      if (u.body) u.body.rotation.x = -k * 1.0;
+      if (d.t > 0.15) { const f = Math.min(1, (d.t - 0.15) / 0.3); d.m.hitT = 0; this.enemyFlash(d.m, 0.6 * (1 - f)); }
+      if (d.t >= 0.8) { this.enemyFlash(d.m, 0); this.dyn.remove(d.group); L.splice(i, 1); }
+    }
+  }
+  glowItem(o, m, time) {
+    const r = o.broken ? 0 : o.maxhp ? o.hp / o.maxhp : 1, lvl = r < 0.3 ? 2 : r < 0.6 ? 1 : 0, g = m.group;
+    if (lvl === 0) {
+      if (m.glowing) {
+        g.traverse(x => { if (x.userData.origMat) { if (x.material !== x.userData.origMat) x.material.dispose(); x.material = x.userData.origMat; delete x.userData.origMat; } });
+        m.glowing = false; if (m.glowPop) { g.scale.set(1, 1, 1); m.glowPop = false; }
+      }
+      return;
+    }
+    m.glowing = true;
+    const mats = [];
+    g.traverse(x => {
+      if (!x.isMesh || x.userData.ol || !x.material || Array.isArray(x.material)) return;
+      if (!x.userData.origMat) {
+        if (!x.material.isMeshToonMaterial || x.material.transparent) return;
+        x.userData.origMat = x.material; x.material = x.material.clone();
+      }
+      mats.push(x.material);
+    });
+    const id = o.id || 0;
+    let k, col;
+    if (lvl === 1) { k = 0.12 + 0.28 * (0.5 + 0.5 * Math.sin(time * 4 + id)); col = [1, 0.62, 0.12]; }
+    else { k = Math.floor(time * 7 + id) % 2 ? 0.95 : 0.1; col = [1, 0.12, 0.08]; }
+    for (const mt of mats) mt.emissive.setRGB(col[0] * k, col[1] * k, col[2] * k);
+    // popping: a quick squash-and-stretch once a second (only when no other animation owns the scale)
+    const busy = (m.kick > 0) || (m.pop > 0) || m.popping || this.pops.has(o.id);
+    if (lvl === 2 && !busy) {
+      const ph = (time * 1.3 + id * 0.37) % 1, s = ph < 0.35 ? Math.sin(ph / 0.35 * Math.PI) : 0;
+      g.scale.set(1 + 0.07 * s, 1 + 0.13 * s, 1 + 0.07 * s); m.glowPop = true;
+    } else if (m.glowPop && !busy) { g.scale.set(1, 1, 1); m.glowPop = false; }
   }
 
   updTower(t, m, dt) {
@@ -1467,13 +1762,17 @@ export class View {
       u.batPivot.rotation.x = smashing ? -2.3 : sw2 > 0 ? -2.3 + (1 - sw2) * 3.5 : 0;
     }
     if (u.wheels) {                                                          // motorbike: wheels spin, exhaust puffs, wrecked after the crash
-      const ride = e.moto === 'ride' || (e.bk === 'motoduo' && !e.parked && !e.spin), crash = e.moto === 'crash';
+      const ride = e.moto === 'ride' || (e.bk === 'motoduo' && !e.parked && !e.spin && !e.rev), crash = e.moto === 'crash';
       for (const w of u.wheels) w.rotation.x -= dt * (ride ? 32 : 0);
       u.legs[0].rotation.x = u.legs[1].rotation.x = 0;
-      u.body.position.y = ride ? Math.abs(Math.sin(time * 40)) * 0.015 : 0;
+      u.body.position.y = ride ? Math.abs(Math.sin(time * 40)) * 0.015 : e.rev ? Math.abs(Math.sin(time * 70)) * 0.03 : 0;
+      if (e.rev) for (const w of u.wheels) w.rotation.x -= dt * 45;   // engine charging: the bike shakes, the back wheel screams
       u.body.rotation.x = crash ? -0.45 + Math.sin(time * 50) * 0.03 : ride ? -0.06 : 0;
-      u.body.rotation.z = crash ? Math.sin(time * 30) * 0.12 : 0;
-      if ((m.dust = (m.dust || 0) - dt) <= 0) { m.dust = ride ? 0.05 : 0.12; if (ride) this.puff(e.x, e.y, 0.22, 0xb9b3a4, 0.45, 0.4, 0.4); else if (crash) this.puff(e.x, e.y, 0.5, 0x55556a, 0.8, 1.0, 0.8); }
+      u.body.rotation.z = crash ? Math.sin(time * 30) * 0.12 : e.rev ? Math.sin(time * 65) * 0.05 : 0;
+      if ((m.dust = (m.dust || 0) - dt) <= 0) { m.dust = ride ? 0.05 : 0.12; if (e.rev) { m.dust = 0.035; this.puff(e.x - Math.sin(e.angle) * 0.5, e.y - Math.cos(e.angle) * 0.5, 0.3, Math.random() < 0.5 ? 0x4a4a52 : 0x8a8a92, 1.0, 1.1, 1.0); } else if (ride) {
+        this.puff(e.x, e.y, 0.22, 0xb9b3a4, 0.45, 0.4, 0.4);
+        if (e.bk === 'motoduo') { const bx = e.x - Math.sin(e.angle) * 0.55, by = e.y - Math.cos(e.angle) * 0.55; this.puff(bx, by, 0.32, Math.random() < 0.5 ? 0x5a5a62 : 0x8a8a92, 0.7, 0.75, 0.8); }   // exhaust smoke trailing behind the tandem
+      } else if (crash) this.puff(e.x, e.y, 0.5, 0x55556a, 0.8, 1.0, 0.8); }
     }
     if (u.door) {                                                            // Door Robber: shield door up front; raised overhead for the slam, gone once it breaks
       u.door.visible = e.shield > 0;
@@ -1487,7 +1786,9 @@ export class View {
     if (e.burn > 0 && m.fl <= 0) { m.fl = 0.05; this.flame(e.x, e.y, (0.25 + Math.random() * 0.55) * u.big); }       // on fire!
     if (e.soak > 0 && (m.sk = (m.sk || 0) - dt) <= 0) { m.sk = 0.07; this.trailDrop(wx(e.x), (0.25 + Math.random() * 0.6) * u.big, wz(e.y), COLA_PAL, -0.5, 0.7); }   // soaked in cola: fizz rising off them
     if (e.dash && (m.dust = (m.dust || 0) - dt) <= 0) { m.dust = 0.04; this.burst(e.x, e.y, 0.1, 0xe9ddc0, 2, 1, 0.9); }   // dash dust trail
-    u.body.visible = !(e.flash > 0 && Math.floor(time * 40) % 2 === 0);
+    if (e.flash > 0) m.hitT = 0.13;                                         // hit: the whole burglar flashes white
+    if ((m.hitT || 0) > 0 || m.hitOn) this.enemyFlash(m, (m.hitT || 0) > 0 ? Math.min(1, m.hitT / 0.13) : 0);
+    if (m.hitT > 0) m.hitT -= dt;
     const r = Math.max(0, e.hp / e.maxhp);
     u.bar.visible = r < 0.999; u.bar.quaternion.copy(this.camera.quaternion);
     u.fg.scale.set(0.58 * r, 0.07, 1); u.fg.position.x = -0.29 * (1 - r);
