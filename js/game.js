@@ -190,11 +190,11 @@ export const ENEMIES = {
   moto:   { name: 'Motor Bandit', hp: 50, push: 0, speed: 4, steal: 0, bounty: 10, armor: 1, cost: 3, abil: {}, cd: 99 },
   bat:    { name: 'Bat',     hp: 110, push: 24, speed: 1.1,  steal: 2, bounty: 14, armor: 1, cost: 3, abil: { smash: 1 }, cd: 3.2 },
   // ----- BOSSES (boss: true). bk = a custom behaviour handled in bossAct() -----
-  bombexpert: { name: 'Bomb Expert', hp: 750, push: 70, speed: 0.95, steal: 5, bounty: 80, armor: 2, cost: 0, abil: { bomb: 3, dash: 2 }, cd: 3.5, dashMul: 1.6, boss: true },
-  gunslinger: { name: 'Gunslinger', hp: 850, push: 50, speed: 1.0, steal: 5, bounty: 90, armor: 2, cost: 0, abil: {}, cd: 99, boss: true, bk: 'gunslinger' },
+  bombexpert: { name: 'Bomb Expert', hp: 420, push: 70, speed: 0.95, steal: 5, bounty: 80, armor: 2, cost: 0, abil: { bomb: 3, dash: 2 }, cd: 3.5, dashMul: 1.6, boss: true },
+  gunslinger: { name: 'Gunslinger', hp: 520, push: 50, speed: 1.0, steal: 5, bounty: 90, armor: 2, cost: 0, abil: {}, cd: 99, boss: true, bk: 'gunslinger' },
   gunner:     { name: 'Gunner', hp: 30, push: 6, speed: 3.6, steal: 1, bounty: 5, armor: 0, cost: 0, abil: {}, cd: 99, bk: 'gunner' },
-  motoduo:    { name: 'Riding in Tandem', hp: 980, push: 0, speed: 3.2, steal: 5, bounty: 100, armor: 2, cost: 0, abil: {}, cd: 99, boss: true, bk: 'motoduo', noSlow: true },
-  doorrobber: { name: 'Door Robber', hp: 920, push: 60, speed: 0.8, steal: 6, bounty: 100, armor: 3, cost: 0, abil: {}, cd: 5, boss: true, bk: 'doorrobber', shield: 0.7 },
+  motoduo:    { name: 'Riding in Tandem', hp: 600, push: 0, speed: 3.2, steal: 5, bounty: 100, armor: 2, cost: 0, abil: {}, cd: 99, boss: true, bk: 'motoduo', noSlow: true },
+  doorrobber: { name: 'Door Robber', hp: 560, push: 60, speed: 0.8, steal: 6, bounty: 100, armor: 3, cost: 0, abil: {}, cd: 5, boss: true, bk: 'doorrobber', shield: 0.7 },
 };
 
 // ---------- Restock upgrades (random per night) ----------
@@ -1050,7 +1050,7 @@ export class Game {
     const def = ENEMIES[type], n = this.wave + 1, out = (type === 'moto' || type === 'motoduo') ? 5.5 : 0.9;
     const tier = this.tierOf(n);
     const st0 = at ? null : (out > 2 ? { x: s.x + s.ox * out, y: s.y + s.oy * out } : this.sidewalkPoint(s, 2.2));   // burglars come along the sidewalk (bikes ride in from the street)
-    const hpMul = (def.boss ? 1 + 0.06 * (n - 1) + 0.0022 * (n - 1) * (n - 1) : 1 + 0.07 * (n - 1) + 0.004 * (n - 1) * (n - 1)) * (def.boss ? 1 + 0.2 * tier : 1 + 0.3 * tier);   // slow pace: day 10 burglars have ~2x HP (was 5.5x), and it keeps climbing smoothly, +15% HP per tier
+    const hpMul = (def.boss ? 1 + 0.04 * (n - 1) + 0.0015 * (n - 1) * (n - 1) : 1 + 0.07 * (n - 1) + 0.004 * (n - 1) * (n - 1)) * (def.boss ? 1 + 0.15 * tier : 1 + 0.3 * tier);   // slow pace: day 10 burglars have ~2x HP (was 5.5x), and it keeps climbing smoothly, +15% HP per tier
     const e = {
       id: this.nextId++, type, x: at ? at.x : st0.x, y: at ? at.y : st0.y, hp: def.hp * hpMul, maxhp: def.hp * hpMul,
       speed: def.speed * (0.8 + Math.min(0.08, 0.008 * n)) * Math.min(1.4, 1 + 0.045 * tier), push: def.push * (1 + 0.15 * tier), pushT: 0, armor: def.boss ? Math.min(def.armor + 1, def.armor + Math.floor(tier / 2)) : def.armor + Math.floor(tier / 2), steal: def.steal, bounty: Math.round(def.bounty * (1 + 0.1 * tier)), tier,   // faster, shove harder, tougher armor, a bit more bounty
