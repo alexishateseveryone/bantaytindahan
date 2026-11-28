@@ -113,6 +113,8 @@ export class View {
 
     this.resize();
     new ResizeObserver(() => this.resize()).observe(container);
+    window.addEventListener('resize', () => this.resize());
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', () => this.resize());
   }
 
   toon(color) {
@@ -133,7 +135,7 @@ export class View {
   }
 
   resize() {
-    const w = Math.max(50, this.container.clientWidth), h = Math.max(50, this.container.clientHeight);
+    const w = Math.max(50, window.innerWidth), h = Math.max(50, window.innerHeight);   // the whole screen, not the container's (possibly smaller) box
     this.w = w; this.h = h;
     this.pixel = Math.max(2, Math.round(h / 240));
     const P = this.pixel, tw = Math.ceil(w / P), th = Math.ceil(h / P);
