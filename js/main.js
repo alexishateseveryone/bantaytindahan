@@ -669,7 +669,17 @@ function buildCards() {
     icons[id] = view.makeIcon(id);
     const c = document.createElement('button'); c.className = 'sc'; c.dataset.id = id; c.title = ITEMS[id].name;
     c.innerHTML = `<img alt="" src="${icons[id]}"><span class="sc-k" data-k></span><span class="sc-lk">🔒</span><span class="sc-ct" data-ct></span><span class="sc-pr" data-pr></span>`;
-    c.onclick = () => { focusId = id; refresh(); };
+    c.onclick = () => {   // an item you already own: one tap on its icon selects it (no need to press Build)
+      focusId = id;
+      if (game && game.isUnlocked(id)) {
+        if (selected === id) selected = null;
+        else if (game.countOf(id) >= game.limitOf(id)) { sfx.bad(); banner(`${ITEMS[id].name}: limit reached`); }
+        else if (game.costOf(id) > game.cash) { sfx.bad(); banner(`Need ${peso(game.costOf(id))} for ${ITEMS[id].name}`); }
+        else { selected = id; noteSkill(id, true); noteRecent(id); }
+        pickedTower = null; moving = null; preview = null; view.setCursor(null);
+      }
+      refresh();
+    };
     cells.set(id, c);
   });
   applySub();
@@ -677,7 +687,7 @@ function buildCards() {
 // the STOCKS tab has two sub-tabs: SELLABLES (shelves + turrets) and SKILL ITEMS (mop, shaken cola, cigarettes)
 let subTab = 'sell';
 // items whose unlock day has not been reached yet are NOT shown on the receipt card at all
-const visibleIds = () => BUILD_ORDER.filter(id => !game || SKILLS.includes(id) || game.isUnlocked(id) || game.canUnlock(id));   // skills are always listed (with their goal)
+const visibleIds = () => BUILD_ORDER.filter(id => !game || game.isUnlocked(id) || game.canUnlock(id));   // locked skills stay hidden until their goal is done
 let visKey = '';
 function applySub() {
   syncTabs();
@@ -709,7 +719,7 @@ function renderDetail() {
   act.className = 'pxb ' + (locked ? 'gold' : selected === id ? 'green' : '');
   const lm = game.limitOf(id), cn = game.countOf(id), full = !locked && lm !== Infinity && cn >= lm;
   act.disabled = locked ? (!!sk || !reach || game.cash < uc) : (cost > game.cash || (full && selected !== id));
-  const txt = locked ? (sk ? '🔒 Locked' : reach ? `Unlock  ${peso(uc)}` : `🔒 Day ${ud}`) : selected === id ? 'Selected ✓' : full ? 'Limit reached' : `Build  ${peso(cost)}`;
+  const txt = locked ? (sk ? '🔒 Locked' : reach ? `Unlock  ${peso(uc)}` : `🔒 Day ${ud}`) : selected === id ? `Selected ✓  ${peso(cost)}` : full ? 'Limit reached' : `Build  ${peso(cost)}`;
   if (act.dataset.t !== txt) { act.dataset.t = txt; act.textContent = txt; }
   const info = locked ? `<b>${def.name}</b>${sk ? sk.text + ' (' + sk.prog(game).join('/') + ')' : reach ? 'Locked · buy it to use it' : 'Unlocks on day ' + ud}` : `<b>${def.name}</b>${selected === id ? 'Tap the store to place it' : 'Cost ' + peso(cost)}${lm === Infinity ? '' : ' · Placed ' + cn + '/' + lm}`;
   if ($('gInfo').dataset.k !== info) { $('gInfo').dataset.k = info; $('gInfo').innerHTML = info; }
@@ -854,7 +864,11 @@ try {
 function renderTabletStatus() { placeBuild(); }
 
 
+// on touch screens there is no hover, so the item you tapped (or are moving) keeps the white pixel outline
+let touchUI = false;
+$('view').addEventListener('pointerdown', e => { touchUI = e.pointerType !== 'mouse'; }, true);
 function refresh() {
+  if (touchUI && game) view.setHover(moving || pickedTower || null);
   if (!game) return;
   $('lives').textContent = game.lives; $('cash').textContent = pesoN(game.cash);
   const ck = game.clock();
